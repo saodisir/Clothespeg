@@ -1,0 +1,49 @@
+Clothespeg
+Copyright 2026 VIZWISE (HONGKONG) LIMITED
+
+This product includes software developed at Tendedero
+(https://github.com/alejandrobujan/tendedero),
+Copyright 2026 Alejandro Buján, licensed under the MIT License.
+Tendedero's licence as published is LICENSE-MIT, and it is not changed by this
+fork.
+
+The additions listed below are licensed under the Apache License, Version 2.0.
+The licence text is LICENSE.
+
+So the two apply to different parts: MIT to Alejandro Buján's work as
+published in Tendedero, Apache-2.0 to everything written for Clothespeg.
+
+The licensor for the Apache-2.0 half is VIZWISE (HONGKONG) LIMITED. It is also
+the company whose Developer ID a release is signed with, which keeps the
+copyright and the signature on the same party — the patent grant in section 3
+of the licence can only be given by the copyright holder, so a split between the
+two would weaken what that clause is worth.
+
+Apache-2.0 asks that a redistributed copy carry these notices. This file is
+where the provenance of a fork is recorded; it is not itself a licence.
+
+
+---
+
+Changes made in this fork
+--------------------------
+
+Alejandro Buján's work, carried over: the rope, the clothespin, the glass, and
+the way a card swings when it lands on the line.
+
+Written for Clothespeg:
+
+- The data model. A card stores the contents rather than a path to a file, so
+  text and images can be hung on the line at all, and copied without the
+  original having to exist any more.
+- A second rope for notes, written rather than copied, with rows that can be
+  ticked off and a paper that scrolls.
+- The pill on the line: a filter, a search, the page counter, dates, and the
+  prop toggle.
+- Watching — pinning a card so it stays on the line — and hiding.
+- The screenshot inbox, opt-in, off by default.
+- A line that can be paged without a trackpad: the wheel, a hold on the
+  arrows, and the mouse's thumb keys behind a switch. A two-finger swipe over
+  the empty part of the line works now, which it did not before.
+- Accent colours drawn from the wallpaper, and a light/dark reading that
+  follows the system.

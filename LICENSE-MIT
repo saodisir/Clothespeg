@@ -1,0 +1,51 @@
+Tendedero's licence, kept whole
+===============================
+
+This is the licence the work Clothespeg is forked from was distributed under.
+It is here because Tendedero is MIT-licensed, and MIT is what the rope, the
+clothespin, the glass and the swing of a card landing on the line are licensed
+under — that has not changed and does not change with this fork.
+
+Tendedero itself is not relicensed. It stays MIT. Clothespeg adds its own work
+on top and is Apache-2.0, which MIT permits and which is the licence this
+repository is distributed under. Where the two apply to different parts, this
+file says which is which.
+
+What follows is Tendedero's LICENSE file as it was published, including the
+"Name and icon" restriction, which is part of that grant and travels with the
+fork whatever licence the fork itself is under.
+
+--- MIT License
+
+Copyright (c) 2026 Alejandro Buján
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Name and icon
+
+The MIT License above covers the source code. It does not grant any rights
+to the Tendedero name or the Tendedero icon, including the icon artwork drawn
+by scripts/make-icon.swift and the images in the docs folder.
+
+You may build and use the app as published, and you may refer to Tendedero
+to say where your work comes from. Modified or redistributed versions must
+use a different name and a different icon, and must not suggest that they
+are Tendedero or are endorsed by its author.

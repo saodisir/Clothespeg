@@ -1,0 +1,17 @@
+.build/
+build/
+.DS_Store
+*.xcodeproj
+.swiftpm/
+build/
+.build/
+
+# 站点部署脚本：只在本机用，不进仓库（2026-10-14 定：仓库只放项目相关内容）
+scripts/deploy_site.sh
+
+# 内部参考材料：编辑器对比截图与内部方案，不进仓库（2026-10-16 定：
+# 从这个节点起仓库只保留项目本身，历史里那 111 个提交也不再有它们）
+docs/
+
+# 本机的 agent 工作记忆与备份，不进仓库
+.workbuddy/

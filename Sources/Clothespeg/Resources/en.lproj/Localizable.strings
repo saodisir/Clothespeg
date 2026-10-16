@@ -1,0 +1,209 @@
+/* Each key is the English text exactly as written in L("...") in the code.
+   Every language has the same keys; run scripts/check-strings.swift to check. */
+
+/* AppDelegate */
+"Anything you copy hangs on the line" = "Anything you copy hangs on the line";
+"Clothespeg, hanging what you copy" = "Clothespeg, hanging what you copy";
+"Quit Clothespeg" = "Quit Clothespeg";
+"Bring the line down" = "Bring the line down";
+"When the pointer rests in the notch" = "When the pointer rests in the notch";
+"Push the pointer up against the notch to bring the line down" = "Push the pointer up against the notch to bring the line down";
+"Rest the pointer in the menu bar to bring the line down" = "Rest the pointer in the menu bar to bring the line down";
+"Type to search" = "Type to search";
+"esc to leave" = "esc to leave";
+"Today" = "Today";
+"Yesterday" = "Yest.";
+"Over full screen apps" = "Over full screen apps";
+"Open at login" = "Open at login";
+"Could not change the login setting" = "Could not change the login setting";
+"Sounds" = "Sounds";
+"Move to Trash" = "Move to Trash";
+"Move Clothespeg to the Applications folder and try again." = "Move Clothespeg to the Applications folder and try again.";
+"New note" = "New note";
+"The notes hang on the same line as what you copy" = "The notes hang on the same line as what you copy";
+"Clear every note?" = "Clear every note?";
+"The notes are kept nowhere else, so this cannot be undone." = "The notes are kept nowhere else, so this cannot be undone.";
+"Clear them" = "Clear them";
+"Keep them" = "Keep them";
+
+/* GrabArea */
+"Copy" = "Copy";
+"Open" = "Open";
+"Open in Browser" = "Open in Browser";
+"Markup" = "Markup";
+"Show in Finder" = "Show in Finder";
+"Save to Desktop" = "Save to Desktop";
+"Discard" = "Discard";
+
+/* LineView */
+"Copy something and it will hang here" = "Copy something and it will hang here";
+"Press the + above the rope to write a note" = "Press the + above the rope to write a note";
+
+/* Note window */
+"Bullet list" = "Bullet list";
+"Numbered list" = "Numbered list";
+"Tick box" = "Tick box";
+"Bold" = "Bold";
+"Save" = "Save";
+
+/* Note tint */
+"Yellow" = "Yellow";
+"Red" = "Red";
+"Blue" = "Blue";
+"Green" = "Green";
+"Orange" = "Orange";
+"Grey" = "Grey";
+"Tint" = "Tint";
+
+/* PeggedView */
+"Copied" = "Copied";
+"Swipe the other way" = "Swipe the other way";
+"Mouse side buttons page" = "Mouse side buttons page";
+"Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this.";
+"1 file" = "1 file";
+"%lld files" = "%lld files";
+"All" = "All";
+"Text" = "Text";
+"Links" = "Links";
+"Colours" = "Colours";
+"Pictures" = "Pictures";
+"Files" = "Files";
+"What the clipboard shows" = "What the clipboard shows";
+
+
+/* Menu and settings */
+"Open the clipboard" = "Open the clipboard";
+"Open the notes" = "Open the notes";
+"Lock the clipboard rope" = "Lock the clipboard rope";
+"Lock the notes rope" = "Lock the notes rope";
+"New note shortcut" = "New note shortcut";
+"Lock the rope shortcut" = "Lock the rope shortcut";
+"Locks the rope the line is showing — the clipboard's or the notes' — and keeps it on screen. Choose again to let it go" = "Locks the rope the line is showing — the clipboard's or the notes' — and keeps it on screen. Choose again to let it go";
+"Cream" = "Cream";
+"System colour" = "System colour";
+"Monitor the clipboard" = "Monitor the clipboard";
+"Pin" = "Pin";
+"Pinned" = "Pinned";
+"Unpin" = "Unpin";
+"Lock" = "Lock";
+"Unlock" = "Unlock";
+"Watch what is pinned" = "Show the cards you pinned";
+"Watching what is pinned" = "Showing the cards you pinned";
+"Hang new screenshots" = "Hang new screenshots";
+"When on, screenshots hang at once instead of piling up on the Desktop (or the folder you changed them to); the previous save location is put back when this is off or the app quits" = "When on, screenshots hang at once instead of piling up on the Desktop (or the folder you changed them to); the previous save location is put back when this is off or the app quits.";
+"When something new is copied" = "When something new is copied";
+"Clipboard" = "Clipboard";
+"Notes" = "Notes";
+
+/* Settings window */
+"Settings…" = "Settings…";
+"Settings" = "Settings";
+"Appearance" = "Appearance";
+"Appearance & behaviour" = "Appearance & behaviour";
+"Keeping" = "Keeping";
+"Permissions" = "Permissions";
+"Diagnostics" = "Diagnostics";
+"About" = "About";
+"Clothespeg takes its cue from Tendedero, Spanish for a clothesline. One line strings together a clipboard and a notebook: screenshots, text and files hang there, yours when you need them; notes hang there too, for a thought or a to-do, a glance away." = "Clothespeg takes its cue from Tendedero, Spanish for a clothesline. One line strings together a clipboard and a notebook: screenshots, text and files hang there, yours when you need them; notes hang there too, for a thought or a to-do, a glance away.";
+"Same as the system" = "Same as the system";
+"Light" = "Light";
+"Dark" = "Dark";
+
+"days" = "days";
+"Cards" = "Cards";
+"Pictures" = "Pictures";
+"On disk" = "On disk";
+"Clipboard pictures" = "Clipboard pictures";
+"Clean up clipboard pictures?" = "Clean up clipboard pictures?";
+"Pictures are put in the Trash rather than deleted, so anything cleared can be recovered." = "Pictures are put in the Trash rather than deleted, so anything cleared can be recovered.";
+"Cleaned" = "Cleaned";
+"Accessibility" = "Accessibility";
+"Granted. Clicking a card puts it where you are working." = "Granted. Clicking a card puts it where you are working.";
+"Not granted. Clicking a card still copies it, but you have to paste it yourself." = "Not granted. Clicking a card still copies it, but you have to paste it yourself.";
+"It is used for one thing: pressing ⌘V in the app you came from, so a click on a card lands where you were typing. Nothing is read and nothing is recorded." = "It is used for one thing: pressing ⌘V in the app you came from, so a click on a card lands where you were typing. Nothing is read and nothing is recorded.";
+"Open System Settings" = "Open System Settings";
+"After granting it, macOS may ask you to reopen Clothespeg." = "After granting it, macOS may ask you to reopen Clothespeg.";
+"Based on Tendedero" = "Based on Tendedero";
+"by Alejandro Buján, used under the MIT License. This fork is Apache-2.0." = "by Alejandro Buján, used under the MIT License. This fork is Apache-2.0.";
+"Licence" = "Licence";
+"Done" = "Done";
+"Retention" = "Retention";
+"Granted" = "Granted";
+"Not granted" = "Not granted";
+
+/* General page */
+"General" = "General";
+"Invocation" = "Invocation";
+"Language" = "Language";
+"Changes apply at once." = "Changes apply at once.";
+"Clean up" = "Clean up";
+"Clipboard cards" = "Clipboard cards";
+"Clear the clipboard?" = "Clear the clipboard?";
+"Everything on the clipboard comes down. Its pictures are put in the Trash rather than deleted." = "Everything on the clipboard comes down. Its pictures are put in the Trash rather than deleted.";
+"Click one, then press the new combination. Esc cancels." = "Click one, then press the new combination. Esc cancels.";
+"Show the new note button" = "Show the new note button";
+"Show the lock button" = "Show the lock button";
+"The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown." = "The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown.";
+"While the line is down" = "While the line is down";
+"These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere." = "These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere.";
+"Already used by another shortcut." = "Already used by another shortcut.";
+"Clear" = "Clear";
+
+/* Invocation */
+"How the line comes down" = "How the line comes down";
+"Style" = "Style";
+"Flip key" = "Flip key";
+"None" = "None";
+"Left and right of the notch" = "Left and right of the notch";
+"A modifier key" = "A modifier key";
+"Left half" = "Left half";
+"Right half" = "Right half";
+"Default deck" = "Default deck";
+"Rest on the left of the notch for one deck, on the right for the other. On a display without a notch, resting on the menu bar brings the left half's deck." = "Rest on the left of the notch for one deck, on the right for the other. On a display without a notch, resting on the menu bar brings the left half's deck.";
+"Resting brings the default deck; holding the flip key brings the other one." = "Resting brings the default deck; holding the flip key brings the other one.";
+"Cards older than the window chosen here, and the pictures they came with, are cleared when the app starts." = "Cards older than the window chosen here, and the pictures they came with, are cleared when the app starts.";
+"Earlier" = "Earlier";
+"Rest delay" = "Rest delay";
+"Sensitive" = "Sensitive";
+"Standard" = "Standard";
+"Relaxed" = "Relaxed";
+"Shortcuts" = "Shortcuts";
+"Type the new shortcut…" = "Type the new shortcut…";
+"Already used by the other door." = "Already used by the other door.";
+"Copy with formatting" = "Copy with formatting";
+"When on, a card copied or pasted keeps the formatting it was copied with" = "When on, a card copied or pasted keeps the formatting it was copied with";
+"Single click copies and double click pastes with the formatting; a drag always comes out plain. Right-click holds Copy plain text, for the times formatting gets in the way." = "Single click copies and double click pastes with the formatting; a drag always comes out plain. Right-click holds Copy plain text, for the times formatting gets in the way.";
+"Single click copies and double click pastes as plain text. Right-click holds Copy formatted, for the times you want it anyway." = "Single click copies and double click pastes as plain text. Right-click holds Copy formatted, for the times you want it anyway.";
+"Copy formatted" = "Copy formatted";
+"Copy plain text" = "Copy plain text";
+"Open the log folder" = "Open the log folder";
+"Copy Logs" = "Copy Logs";
+"Export diagnostics…" = "Export diagnostics…";
+"Could not export the diagnostics" = "Could not export the diagnostics";
+"Logs stay on this Mac and rotate on their own. To report a bug, export the diagnostics — the log and the newest crash report in one file." = "Logs stay on this Mac and rotate on their own. To report a bug, export the diagnostics — the log and the newest crash report in one file.";
+"Copy limit" = "Copy limit";
+"A copied picture file hangs as a reference to the original, exactly like any other file." = "A copied picture file hangs as a reference to the original, exactly like any other file.";
+"Original file deleted" = "Original file deleted";
+"Some files deleted" = "Some files deleted";
+"Discard missing files" = "Discard missing files";
+"Cards whose file has been deleted or moved away are cleared" = "Cards whose file has been deleted or moved away are cleared";
+"Open folder" = "Open folder";
+"Delete this pinned card?" = "Delete this pinned card?";
+"The card is pinned — you asked to keep it. Its copy in the app's folder goes to the Trash with it." = "The card is pinned — you asked to keep it. Its copy in the app's folder goes to the Trash with it.";
+"The note is pinned — you asked to keep it. A note taken down is gone for good." = "The note is pinned — you asked to keep it. A note taken down is gone for good.";
+"The card is pinned — you asked to keep it. The original file is not touched." = "The card is pinned — you asked to keep it. The original file is not touched.";
+"Delete" = "Delete";
+
+"Add Folder…" = "Add Folder…";
+"Stop Watching" = "Stop Watching";
+"Watch" = "Watch";
+"Re-pick" = "Re-pick";
+"This folder cannot be reached right now. Pick it again to keep watching it." = "This folder cannot be reached right now. Pick it again to keep watching it.";
+"Cannot watch this folder" = "Cannot watch this folder";
+"The app's own folder, and everything around or inside it, is already covered: pictures landing there hang without help." = "The app's own folder, and everything around or inside it, is already covered: pictures landing there hang without help.";
+"This folder is being watched already." = "This folder is being watched already.";
+
+"Picture files show as thumbnails" = "Picture files show as thumbnails";
+"When on, a copied picture file keeps a copy of itself in the app's folder, so the picture does not vanish when the original is deleted. A picture over the limit (1–1024 MB) shows only a file icon and hangs by reference: when the original is deleted the card greys out and can no longer be copied." = "When on, a copied picture file keeps a copy of itself in the app's folder, so the picture does not vanish when the original is deleted. A picture over the limit (1–1024 MB) shows only a file icon and hangs by reference: when the original is deleted the card greys out and can no longer be copied.";
+"Add folders to watch" = "Add folders to watch";
+"Watch a folder and every new picture in it hangs on the line by itself. Add the folder where macOS saves screenshots (⌘⇧3 / ⌘⇧4 / ⌘⇧5) — by default, the Desktop." = "Watch a folder and every new picture in it hangs on the line by itself. Add the folder where macOS saves screenshots (⌘⇧3 / ⌘⇧4 / ⌘⇧5) — by default, the Desktop.";

@@ -1,0 +1,209 @@
+/* Each key is the English text exactly as written in L("...") in the code.
+   Every language has the same keys; run scripts/check-strings.swift to check. */
+
+/* AppDelegate */
+"Anything you copy hangs on the line" = "复制的东西都会挂到晾衣绳上";
+"Clothespeg, hanging what you copy" = "Clothespeg，正在晾你复制的内容";
+"Quit Clothespeg" = "退出 Clothespeg";
+"Bring the line down" = "放下晾衣绳";
+"When the pointer rests in the notch" = "鼠标停在刘海时";
+"Push the pointer up against the notch to bring the line down" = "把鼠标推到刘海上就能放下晾衣绳";
+"Rest the pointer in the menu bar to bring the line down" = "把鼠标停在菜单栏上就能放下晾衣绳";
+"Type to search" = "输入以搜索";
+"esc to leave" = "esc 退出";
+"Today" = "今天";
+"Yesterday" = "昨天";
+"Over full screen apps" = "在全屏应用上显示";
+"Open at login" = "登录时打开";
+"Could not change the login setting" = "无法更改登录项设置";
+"Sounds" = "声音";
+"Move to Trash" = "移到废纸篓";
+"Move Clothespeg to the Applications folder and try again." = "请把 Clothespeg 移到「应用程序」文件夹后再试。";
+"New note" = "新建便签";
+"The notes hang on the same line as what you copy" = "便签和复制的内容挂在同一条绳子上";
+"Clear every note?" = "清空所有便签？";
+"The notes are kept nowhere else, so this cannot be undone." = "便签只存在这里，取下之后就找不回来了。";
+"Clear them" = "清空";
+"Keep them" = "留着";
+
+/* GrabArea */
+"Copy" = "复制";
+"Open" = "打开";
+"Open in Browser" = "在浏览器中打开";
+"Markup" = "标注";
+"Show in Finder" = "在访达中显示";
+"Save to Desktop" = "存储到桌面";
+"Discard" = "丢弃";
+
+/* LineView */
+"Copy something and it will hang here" = "复制点什么，就会挂到这里";
+"Press the + above the rope to write a note" = "点晾衣绳中间上方的 +，写一张便签";
+
+/* Note window */
+"Bullet list" = "项目符号";
+"Numbered list" = "编号列表";
+"Tick box" = "勾选框";
+"Bold" = "粗体";
+"Save" = "保存";
+
+/* Note tint */
+"Yellow" = "黄色";
+"Red" = "红色";
+"Blue" = "蓝色";
+"Green" = "绿色";
+"Orange" = "橙色";
+"Grey" = "灰色";
+"Tint" = "底色";
+
+/* PeggedView */
+"Copied" = "已复制";
+"Swipe the other way" = "反向滑动";
+"Mouse side buttons page" = "鼠标侧键翻页";
+"Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "默认关闭。如果别的软件把这两个侧键录制成了全局快捷键（比如 Flyring），按下时两边会同时响应，这一点在这里无法避免。不开这个开关，滚轮和胶囊箭头一样能翻页。";
+"1 file" = "1 个文件";
+"%lld files" = "%lld 个文件";
+"All" = "全部";
+"Text" = "文字";
+"Links" = "链接";
+"Colours" = "颜色";
+"Pictures" = "图片";
+"Files" = "文件";
+"What the clipboard shows" = "剪切板显示内容";
+
+
+/* Menu and settings */
+"Open the clipboard" = "呼出剪贴板";
+"Open the notes" = "呼出便签";
+"Lock the clipboard rope" = "锁住剪贴板绳子";
+"Lock the notes rope" = "锁住便签绳子";
+"New note shortcut" = "新建便签快捷键";
+"Lock the rope shortcut" = "锁住绳子快捷键";
+"Locks the rope the line is showing — the clipboard's or the notes' — and keeps it on screen. Choose again to let it go" = "锁住线当前被激活的绳子（剪贴板或便签），把它留在屏幕上；再选一次即可收回。";
+"Cream" = "奶白";
+"System colour" = "系统颜色";
+"Monitor the clipboard" = "监控剪贴板";
+"Pin" = "盯住";
+"Pinned" = "已盯住";
+"Unpin" = "取消盯住";
+"Lock" = "锁住";
+"Unlock" = "解除锁住";
+"Watch what is pinned" = "只看盯住的卡片";
+"Watching what is pinned" = "正在只看盯住的卡片";
+"Hang new screenshots" = "系统截图自动上绳";
+"When on, screenshots hang at once instead of piling up on the Desktop (or the folder you changed them to); the previous save location is put back when this is off or the app quits" = "开启后，系统截图直接挂上晾衣绳、不再堆在桌面（或你修改后的保存文件夹）；关闭此功能时，恢复系统默认的截图逻辑。";
+"When something new is copied" = "有新复制的内容时放下";
+"Clipboard" = "剪贴板";
+"Notes" = "便签";
+
+/* Settings window */
+"Settings…" = "设置…";
+"Settings" = "设置";
+"Appearance" = "外观";
+"Appearance & behaviour" = "外观与行为";
+"Keeping" = "保留";
+"Permissions" = "权限";
+"Diagnostics" = "诊断";
+"About" = "关于";
+"Clothespeg takes its cue from Tendedero, Spanish for a clothesline. One line strings together a clipboard and a notebook: screenshots, text and files hang there, yours when you need them; notes hang there too, for a thought or a to-do, a glance away." = "Clothespeg 的灵感来自 Tendedero，西班牙语里的“晾衣绳”。用一根晾衣绳穿起了一个剪贴板，一个便签簿。复制过的截图、文字、文件夹都晾在上面，随用随取；便签也可以晾在绳上，写灵感、记待办，抬眼就在。";
+"Same as the system" = "跟随系统";
+"Light" = "浅色";
+"Dark" = "深色";
+
+"days" = "天";
+"Cards" = "卡片";
+"Pictures" = "图片";
+"On disk" = "磁盘占用";
+"Clipboard pictures" = "剪贴板图片";
+"Clean up clipboard pictures?" = "清理剪贴板图片？";
+"Pictures are put in the Trash rather than deleted, so anything cleared can be recovered." = "图片会被移到废纸篓而不是删除，清理掉的内容都能找回。";
+"Cleaned" = "已清理";
+"Accessibility" = "辅助功能";
+"Granted. Clicking a card puts it where you are working." = "已授权。点击卡片会把内容送到你正在工作的地方。";
+"Not granted. Clicking a card still copies it, but you have to paste it yourself." = "未授权。点击卡片仍会复制，但需要你自己粘贴。";
+"It is used for one thing: pressing ⌘V in the app you came from, so a click on a card lands where you were typing. Nothing is read and nothing is recorded." = "它只用于一件事：在你原来所在的 app 中按下 ⌘V，让点击卡片的内容落到你正在输入的地方。不读取任何内容，也不记录任何内容。";
+"Open System Settings" = "打开系统设置";
+"After granting it, macOS may ask you to reopen Clothespeg." = "授权后，macOS 可能会要求你重新打开 Clothespeg。";
+"Based on Tendedero" = "基于 Tendedero";
+"by Alejandro Buján, used under the MIT License. This fork is Apache-2.0." = "作者 Alejandro Buján，依 MIT 许可证使用；本 fork 依 Apache-2.0 授权。";
+"Licence" = "许可证";
+"Done" = "完成";
+"Retention" = "保留天数";
+"Granted" = "已授权";
+"Not granted" = "未授权";
+
+/* General page */
+"General" = "通用";
+"Invocation" = "呼出";
+"Language" = "语言";
+"Changes apply at once." = "改动立即生效，不用重启。";
+"Clean up" = "清理";
+"Clipboard cards" = "剪贴板文字";
+"Clear the clipboard?" = "清空剪贴板？";
+"Everything on the clipboard comes down. Its pictures are put in the Trash rather than deleted." = "剪贴板上的内容会全部取下，图片会移到废纸篓而不是删除。";
+"Click one, then press the new combination. Esc cancels." = "点击后按下新的组合，esc 取消。";
+"Show the new note button" = "显示新建便签按钮";
+"Show the lock button" = "显示锁住按钮";
+"The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown." = "这两个按钮在绳子上、卡片上方的凹陷处。无论是否显示按钮，对应的快捷键都可用。";
+"While the line is down" = "绳子放下时";
+"These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere." = "这两个快捷键在绳子放下时生效，鼠标在哪儿都可以。Clothespeg 自己在前台时会暂停，免得吃掉你输进它的字母；无论按钮是否显示都可以使用；锁住的绳子在任何位置按 Esc 都能收起。";
+"Already used by another shortcut." = "与另一个快捷键重复。";
+"Clear" = "清除";
+
+/* Invocation */
+"How the line comes down" = "呼出方式";
+"Style" = "方式";
+"Flip key" = "翻转键";
+"None" = "无";
+"Left and right of the notch" = "刘海左右分区";
+"A modifier key" = "修饰键";
+"Left half" = "左半区";
+"Right half" = "右半区";
+"Default deck" = "默认面板";
+"Rest on the left of the notch for one deck, on the right for the other. On a display without a notch, resting on the menu bar brings the left half's deck." = "停在刘海左侧呼出左半区的面板，右侧呼出右半区的面板。在没有刘海的屏幕上，悬停菜单栏呼出左半区的内容。";
+"Resting brings the default deck; holding the flip key brings the other one." = "悬停呼出默认面板；按住翻转键则呼出另一条。";
+"Cards older than the window chosen here, and the pictures they came with, are cleared when the app starts." = "早于此处所选天数的卡片及其图片会在应用启动时清理。";
+"Earlier" = "更早以前";
+"Rest delay" = "停顿时长";
+"Sensitive" = "灵敏";
+"Standard" = "标准";
+"Relaxed" = "从容";
+"Shortcuts" = "快捷键";
+"Type the new shortcut…" = "按下新的快捷键…";
+"Already used by the other door." = "已被另一扇门使用。";
+"Copy with formatting" = "复制时带上格式";
+"When on, a card copied or pasted keeps the formatting it was copied with" = "打开后，点击卡片或粘贴会带上复制时的格式";
+"Single click copies and double click pastes with the formatting; a drag always comes out plain. Right-click holds Copy plain text, for the times formatting gets in the way." = "单击复制、双击粘贴都带上格式；拖动出去永远是纯文本。右键是「复制纯文本」，格式碍事的时候用它。";
+"Single click copies and double click pastes as plain text. Right-click holds Copy formatted, for the times you want it anyway." = "单击复制、双击粘贴都只给纯文本。右键是「复制（带格式）」，偶尔要格式的时候用它。";
+"Copy formatted" = "复制（带格式）";
+"Copy plain text" = "复制纯文本";
+"Open the log folder" = "打开日志文件夹";
+"Copy Logs" = "复制日志";
+"Export diagnostics…" = "导出诊断包…";
+"Could not export the diagnostics" = "无法导出诊断包";
+"Logs stay on this Mac and rotate on their own. To report a bug, export the diagnostics — the log and the newest crash report in one file." = "日志只保存在本机，自动轮转不会无限变大。反馈 bug 时可导出诊断包（运行日志 + 最近一份崩溃报告）发给我们。";
+"Copy limit" = "复制上限";
+"A copied picture file hangs as a reference to the original, exactly like any other file." = "复制的图片文件与其他文件一样，按对原文件的引用挂绳。";
+"Original file deleted" = "原文件已删除";
+"Some files deleted" = "部分文件已删除";
+"Discard missing files" = "清除已删除的文件";
+"Cards whose file has been deleted or moved away come down at once" = "原文件已删除或移走的卡片会被清除";
+"Open folder" = "打开文件夹";
+"Delete this pinned card?" = "删除这张被盯住的卡片？";
+"The card is pinned — you asked to keep it. Its copy in the app's folder goes to the Trash with it." = "这张卡被你盯住了。删除后，App 文件夹里的副本会一起进废纸篓。";
+"The note is pinned — you asked to keep it. A note taken down is gone for good." = "这条便签被你盯住了。删除后无法恢复。";
+"The card is pinned — you asked to keep it. The original file is not touched." = "这张卡被你盯住了。删除只摘卡片，原文件不受影响。";
+"Delete" = "删除";
+
+"Add Folder…" = "添加文件夹…";
+"Stop Watching" = "停止监视";
+"Watch" = "监视";
+"Re-pick" = "重新选择";
+"This folder cannot be reached right now. Pick it again to keep watching it." = "暂时无法访问这个文件夹，重新选择一次即可继续监视。";
+"Cannot watch this folder" = "无法监视这个文件夹";
+"The app's own folder, and everything around or inside it, is already covered: pictures landing there hang without help." = "App 自己的文件夹以及它的上层和内部位置已经覆盖：落到那里的图片本来就会挂上绳。";
+"This folder is being watched already." = "已经在监视这个文件夹了。";
+
+"Picture files show as thumbnails" = "图片文件显示缩略图";
+"When on, a copied picture file keeps a copy of itself in the app's folder, so the picture does not vanish when the original is deleted. A picture over the limit (1–1024 MB) shows only a file icon and hangs by reference: when the original is deleted the card greys out and can no longer be copied." = "开启后，复制的图片文件会在 App 文件夹里存一份副本，原文件删除后图片不消失。超过上限（1–1024 MB）的图片只显示文件图标，按引用挂绳，原图删除后卡片变灰、无法再复制。";
+"Add folders to watch" = "增加监视文件夹";
+"Watch a folder and every new picture in it hangs on the line by itself. Add the folder where macOS saves screenshots (⌘⇧3 / ⌘⇧4 / ⌘⇧5) — by default, the Desktop." = "监视所选的文件夹，其中新出现的图片会自动挂上晾衣绳。可以把系统截图（⌘⇧3 / ⌘⇧4 / ⌘⇧5）默认的存储文件夹加进来——系统默认存在桌面。";

@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="meta.title">Clothespeg — 一根晾衣绳，穿起剪贴板和便签簿</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#faf8f3;
+    --bg-soft:#f3efe4;
+    --ink:#2a251d;
+    --ink-2:#5c5548;
+    --ink-3:#8a8171;
+    --peg:#b07a3f;
+    --peg-light:#cfa05f;
+    --peg-deep:#8a5c26;
+    --glow:rgba(176,122,63,.18);
+    --line:rgba(60,48,30,.1);
+    --card:#fffdf9;
+    --paper:#fbfaf5;
+    --radius:18px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  /* 锚点跳转要绕开顶部两条固定栏（公告条 40px + 导航 64px），
+     否则目标区块的标题会被压在导航底下 */
+  section[id],header[id]{scroll-margin-top:104px}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Noto Sans SC","Inter",-apple-system,"PingFang SC",sans-serif;
+    font-size:16px;line-height:1.7;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:rgba(176,122,63,.25)}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 32px}
+  h1,h2{letter-spacing:-.02em;text-wrap:balance}
+  p{text-wrap:pretty}
+
+  /* ---------- 中英切换：按 <html lang> 双开同一份 DOM ---------- */
+  html[lang="en"] .zh-only{display:none !important}
+  html[lang="zh-CN"] .en-only{display:none !important}
+
+  /* ---------- 通用小元素 ---------- */
+  .kbd{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:34px;height:34px;padding:0 10px;
+    font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ink);
+    background:linear-gradient(180deg,#fffdf9,#f0ebdf);
+    border:1px solid rgba(60,48,30,.16);
+    border-bottom-width:3px;border-radius:9px;
+    box-shadow:0 3px 8px rgba(60,48,30,.08);
+    transition:transform .12s ease,border-color .12s ease;
+  }
+  .kbd:hover{transform:translateY(2px);border-bottom-width:1px;border-color:var(--peg)}
+  .kbd.word{min-width:0;font-family:"Noto Sans SC","PingFang SC",sans-serif;font-size:12px}
+  .btn{
+    display:inline-flex;align-items:center;gap:10px;
+    padding:15px 34px;border-radius:999px;
+    font-weight:700;font-size:16px;letter-spacing:.02em;
+    transition:transform .18s ease,box-shadow .18s ease,background .18s ease;
+    cursor:pointer;
+  }
+  .btn-primary{
+    color:#fff;
+    background:linear-gradient(135deg,var(--peg-light),var(--peg) 55%,var(--peg-deep));
+    box-shadow:0 8px 28px var(--glow),inset 0 1px 0 rgba(255,255,255,.3);
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(176,122,63,.32),inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn-alt{
+    color:var(--peg-deep);background:#fff;
+    border:1px solid rgba(176,122,63,.38);
+    padding:15px 30px;font-size:15px;font-weight:600;
+  }
+  .btn-alt:hover{border-color:var(--peg);background:rgba(176,122,63,.05);transform:translateY(-2px);box-shadow:0 8px 24px rgba(176,122,63,.14)}
+
+  /* 首屏入口的层级（口径与 Flyring 一致）：
+     前两个是同一条路（GitHub 直发：下载 / 看源码），
+     第三个是另一个产品（苹果专版）。中间一条竖线把断层画出来，
+     不必读文字就知道「右边那个不是同一种东西」。
+       下载·开源   暖色实心 —— 唯一主入口
+       操作手册    白底暖边 —— 同一条路
+       苹果专版   灰调描边 —— 另一个渠道，主动退后
+     三个 padding/字号统一，避免一个胖一个瘦。 */
+  .btn-store{
+    color:var(--ink-2);background:#fff;
+    border:1px solid rgba(60,48,30,.16);
+    padding:15px 28px;font-size:15px;font-weight:600;
+  }
+  .btn-store:hover{transform:translateY(-2px);border-color:rgba(60,48,30,.34);color:var(--ink);box-shadow:0 8px 22px rgba(60,48,30,.08)}
+  /* 分组分隔线：把「同一条路」与「另一个渠道」在视觉上切开。
+     窄屏换行时它会被挤到行首/行尾，丧失分组含义 —— 索性隐藏，靠配色仍能分出两组。 */
+  .hero-sep{width:1px;height:26px;background:rgba(60,48,30,.14);margin:0 4px}
+
+  /* 滚动入场 */
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ---------- 作者另一款 APP：顶部公告条（引流到 Flyring） ---------- */
+  /* 口径：通栏公告条是通行的"另一个入口"形态，不进导航、不抢 CTA。
+     ⚠️ Flyring 官网正式域名上线后，把 href 换成
+     https://<正式域名>/?utm_source=clothespeg&utm_medium=website&utm_campaign=cross-promo
+     utm 参数别丢——Flyring 侧靠它统计这条入口带来的流量。 */
+  .topbar{
+    position:fixed;top:0;left:0;right:0;z-index:60;
+    height:40px;
+    background:linear-gradient(90deg,var(--peg-deep),var(--peg) 50%,var(--peg-deep));
+    display:flex;align-items:center;justify-content:center;
+  }
+  .topbar a{
+    display:inline-flex;align-items:center;gap:8px;
+    color:#faf3e6;font-size:13px;letter-spacing:.02em;
+    padding:2px 30px 2px 0; /* 给右侧 × 留位，避免重叠 */
+  }
+  .topbar a b{color:#fff;font-weight:700}
+  .topbar a:hover b{text-decoration:underline;text-underline-offset:3px}
+  .topbar .promo-arrow{transition:transform .18s ease}
+  .topbar a:hover .promo-arrow{transform:translateX(4px)}
+  /* 公告条只留一个出口 → Flyring 主页（Cloudflare Pages，国内访问稳）。
+     不放 GitHub 直链：GitHub 访问不稳定，仓库入口收在 Flyring 主页里。 */
+  .topbar-close{
+    position:absolute;right:10px;top:50%;transform:translateY(-50%);
+    width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;
+    background:rgba(250,243,230,.14);color:#faf3e6;
+    font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;
+    transition:background .15s ease;
+  }
+  .topbar-close:hover{background:rgba(250,243,230,.3)}
+  body.promo-off .topbar{display:none}
+  body.promo-off nav{top:0}
+
+  /* ---------- 导航 ---------- */
+  nav{
+    position:fixed;top:40px;left:0;right:0;z-index:50;
+    transition:top .25s ease;
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    background:rgba(250,248,243,.8);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-inner{
+    max-width:1160px;margin:0 auto;padding:0 32px;
+    height:64px;display:flex;align-items:center;gap:36px;
+  }
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.14em;font-size:14px}
+  .brand img{width:28px;height:28px;border-radius:7px;display:block}
+  .nav-links{display:flex;gap:24px;margin-left:auto;font-size:14px;color:var(--ink-2)}
+  .nav-links a{transition:color .15s}
+  .nav-links a:hover{color:var(--peg)}
+  .nav-cta{
+    margin-left:8px;padding:8px 20px;border-radius:999px;font-size:13px;font-weight:700;
+    color:#fff;background:linear-gradient(135deg,var(--peg-light),var(--peg));
+    transition:transform .15s,box-shadow .15s;
+  }
+  .nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 18px var(--glow)}
+  /* 中英切换按钮：桌面上紧跟导航链接右侧；导航链接在窄屏隐藏后，由它自己吃掉剩余空间 */
+  .lang-btn{
+    flex:0 0 auto;padding:7px 13px;border-radius:999px;cursor:pointer;
+    border:1px solid rgba(60,48,30,.16);background:rgba(255,255,255,.72);
+    color:var(--ink-2);
+    font-family:"JetBrains Mono","Inter",monospace;font-size:12px;font-weight:600;letter-spacing:.06em;
+    line-height:1;white-space:nowrap;
+    transition:color .15s ease,border-color .15s ease,background .15s ease,transform .15s ease;
+  }
+  .lang-btn:hover{color:var(--peg-deep);border-color:var(--peg);background:#fff;transform:translateY(-1px)}
+
+  /* ---------- Hero ---------- */
+  .hero{
+    position:relative;
+    padding:210px 0 110px; /* 顶部公告条 40px + 导航 64px，再留呼吸 */
+    text-align:center;
+    overflow:hidden;
+  }
+  /* 背景装饰：暖光晕 + 一根横贯的晾衣绳 */
+  .hero-bg{position:absolute;inset:0;pointer-events:none}
+  .glow-blob{position:absolute;border-radius:50%;filter:blur(110px);opacity:.7}
+  .glow-a{width:560px;height:560px;left:50%;top:-160px;transform:translateX(-50%);
+    background:radial-gradient(circle,rgba(176,122,63,.15),transparent 65%)}
+  .glow-b{width:420px;height:420px;left:-140px;top:220px;
+    background:radial-gradient(circle,rgba(138,92,38,.08),transparent 65%)}
+  .glow-c{width:380px;height:380px;right:-120px;top:120px;
+    background:radial-gradient(circle,rgba(207,160,95,.1),transparent 65%)}
+  /* 晾衣绳：一根带垂弧的线，夹着三张小卡片，轻轻摇摆 */
+  .hero-rope{position:absolute;left:50%;top:96px;transform:translateX(-50%);width:min(920px,94vw)}
+  .hero-rope .sway{transform-origin:50% 0;animation:sway 7s ease-in-out infinite}
+  .hero-rope .sway.s2{animation-delay:-2.4s}
+  .hero-rope .sway.s3{animation-delay:-4.6s}
+  @keyframes sway{0%,100%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}}
+  .hero-inner{position:relative;z-index:1}
+  .hero-mark{
+    font-size:clamp(40px,6.2vw,80px);
+    font-weight:900;letter-spacing:.16em;text-indent:.16em;
+    color:var(--ink);line-height:1.1;
+  }
+  .hero h1{
+    margin:34px 0 22px;
+    font-size:clamp(38px,5.8vw,74px);
+    font-weight:900;line-height:1.14;
+  }
+  .bloom{
+    background:linear-gradient(120deg,var(--peg) 10%,var(--peg-deep) 60%,#6e4a1e);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero .sub{
+    max-width:640px;margin:0 auto;color:var(--ink-2);font-size:17px;line-height:1.9;
+  }
+  .hero .sub-en{margin-top:14px;color:var(--ink-3);font-size:14px;letter-spacing:.04em}
+  .hero-cta{margin-top:44px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap;align-items:center}
+  .hero-note{
+    margin-top:46px;color:var(--ink-3);font-size:14px;letter-spacing:.05em;
+  }
+
+  /* ---------- 界面预览（轮播） ---------- */
+  .gallery{padding:20px 0 110px}
+  .car-viewport{
+    overflow:hidden;border-radius:var(--radius);
+    border:1px solid var(--line);background:var(--card);
+  }
+  .car-track{display:flex;transition:transform .55s cubic-bezier(.2,.7,.2,1)}
+  /* 一页一个版面：大标题 + 截图，三页统一 7:2 宽幅（约3.5:1），等宽等高。
+     前两页是 7.5:1 的绳条幅，第三页两张设置条幅横排——都贴合这个比例，空白最小。 */
+  .car-page{
+    flex:0 0 100%;padding:16px;
+  }
+  .car-shot{
+    margin:0;border-radius:var(--radius);overflow:hidden;position:relative;
+    aspect-ratio:7/2;background:var(--card);border:1px solid var(--line);
+    display:flex;flex-direction:column;
+  }
+  .car-title{
+    font-size:clamp(22px,2.6vw,30px);font-weight:900;letter-spacing:.02em;
+    padding:20px 30px 2px;
+  }
+  .car-body{
+    flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+    padding:8px 30px 22px;
+  }
+  .car-body img{
+    max-width:100%;max-height:100%;width:auto;height:auto;display:block;
+    border-radius:8px;box-shadow:0 12px 30px rgba(60,48,30,.16);
+  }
+  /* 设置页：两条设置横幅左右并排 */
+  .car-body.side{gap:18px}
+  .car-body.side img{max-width:calc(50% - 9px)}
+  .car-cap{
+    margin-top:18px;text-align:center;color:var(--ink-3);font-size:14px;
+    letter-spacing:.03em;min-height:1.7em;
+  }
+  .car-ctrl{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:14px}
+  .car-btn{
+    width:38px;height:38px;border-radius:50%;
+    border:1px solid rgba(60,48,30,.18);background:#fff;color:var(--ink-2);
+    font-size:15px;line-height:1;cursor:pointer;
+    transition:transform .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease;
+  }
+  .car-btn:hover{border-color:var(--peg);color:var(--peg-deep);transform:translateY(-1px);box-shadow:0 6px 16px var(--glow)}
+  .car-dots{display:flex;gap:9px}
+  .car-dot{
+    width:8px;height:8px;border-radius:50%;padding:0;border:none;cursor:pointer;
+    background:rgba(60,48,30,.18);transition:background .2s ease,transform .2s ease;
+  }
+  .car-dot.active{background:var(--peg);transform:scale(1.25)}
+
+  /* ---------- 特性卡 ---------- */
+  .features{padding:20px 0 110px}
+  .sec-head{margin-bottom:46px}
+  .sec-head .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--peg-deep);letter-spacing:.18em;
+  }
+  .sec-head h2{margin-top:14px;font-size:clamp(28px,3.6vw,44px);font-weight:900}
+  .feat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+  .feat-card{
+    position:relative;padding:34px 32px;border-radius:var(--radius);
+    border:1px solid var(--line);background:var(--card);
+    overflow:hidden;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease;
+  }
+  .feat-card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),rgba(176,122,63,.1),transparent 60%);
+    opacity:0;transition:opacity .25s ease;pointer-events:none;
+  }
+  .feat-card:hover{transform:translateY(-4px);border-color:rgba(176,122,63,.5);box-shadow:0 18px 44px rgba(60,48,30,.1)}
+  .feat-card:hover::before{opacity:1}
+  .feat-num{
+    font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--peg-deep);
+    letter-spacing:.2em;margin-bottom:18px;display:block;
+  }
+  .feat-card h3{font-size:21px;font-weight:800;margin-bottom:10px}
+  .feat-card p{color:var(--ink-2);font-size:15px}
+  .feat-card .feat-note{margin-top:12px;font-size:13px;color:var(--ink-3);line-height:1.7}
+  .feat-keys{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .feat-keys .kbd{min-width:30px;height:30px;font-size:12px}
+
+  /* ---------- 两个版本（完整版 / 苹果专版） ---------- */
+  .versions{padding:20px 0 110px}
+  .ver-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:stretch}
+  .ver-card{
+    position:relative;padding:32px 30px;border-radius:var(--radius);
+    border:1px solid var(--line);background:var(--card);
+    display:flex;flex-direction:column;
+    transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+  }
+  .ver-card:hover{transform:translateY(-4px);border-color:rgba(176,122,63,.5);box-shadow:0 14px 36px rgba(60,48,30,.1)}
+  .ver-card.best{
+    border-color:rgba(176,122,63,.55);
+    background:radial-gradient(ellipse 90% 60% at 50% 0%,rgba(176,122,63,.08),transparent),var(--card);
+  }
+  .ver-card h3{font-size:18px;font-weight:800}
+  .ch-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .ch-src{
+    font-size:12px;font-weight:600;letter-spacing:.02em;
+    color:var(--peg-deep);background:rgba(176,122,63,.09);
+    border:1px solid rgba(176,122,63,.22);
+    padding:3px 10px;border-radius:999px;white-space:nowrap;
+  }
+  /* 价格带：一行横排，按内容定高 */
+  .ch-band{display:flex;align-items:baseline;gap:26px;flex-wrap:wrap;padding-bottom:4px}
+  .ch-band.alt{margin-top:10px;padding-top:12px;border-top:1px solid var(--line)}
+  .ch-item{display:inline-flex;align-items:baseline;gap:6px}
+  .ch-num{
+    font-family:"JetBrains Mono",monospace;font-weight:600;
+    color:var(--ink);font-size:22px;line-height:1.2;
+  }
+  /* 非数字那行（如「永久免费」）不用等宽字体，中文更稳，字号略收一档配平 */
+  .ch-num.word{
+    font-family:"Noto Sans SC",-apple-system,"PingFang SC",sans-serif;
+    font-size:19px;font-weight:700;letter-spacing:.02em;
+  }
+  .ch-unit{color:var(--ink-3);font-size:13px}
+  .ch-note{margin-top:16px;color:var(--ink-3);font-size:13px;line-height:1.8}
+  .ch-note b{color:var(--ink-2);font-weight:700}
+  .ch-go{
+    display:inline-block;margin-top:auto;padding-top:14px;align-self:flex-start;
+    font-size:14px;font-weight:600;color:var(--peg-deep);
+  }
+  .ch-go:hover{color:var(--peg)}
+
+  /* ---------- 两版功能对比表 ---------- */
+  .cmp{margin-top:56px}
+  /* 这行是整段说明，不是侧栏引言 —— 放宽到接近正文宽度，
+     避免断在半句上（如「保留天数——两版完全一致。」被甩到最后一行） */
+  .cmp-hint{
+    max-width:940px;margin-top:26px;color:var(--ink-2);font-size:15px;line-height:1.9;
+  }
+  .cmp-wrap{
+    border:1px solid rgba(60,48,30,.12);border-radius:var(--radius);
+    overflow:hidden;overflow-x:auto;background:var(--card);
+  }
+  .cmp-table{width:100%;border-collapse:collapse;font-size:15px;min-width:600px}
+  .cmp-table th,.cmp-table td{padding:13px 20px;text-align:left;border-bottom:1px solid var(--line)}
+  .cmp-table thead th{
+    background:var(--bg-soft);font-size:13px;letter-spacing:.06em;
+    color:var(--ink-2);font-weight:700;
+  }
+  .cmp-table th:nth-child(2),.cmp-table td:nth-child(2),
+  .cmp-table th:nth-child(3),.cmp-table td:nth-child(3){text-align:center;width:150px}
+  .cmp-table .yes{color:var(--peg-deep);font-weight:700}
+  .cmp-table .no{color:var(--ink-3)}
+  .cmp-table tbody tr:last-child td{border-bottom:none}
+  /* 一行小字：两版数据不互通（bundle id 不同）—— 不说清会被当成 bug */
+  .cmp-foot{margin-top:16px;color:var(--ink-3);font-size:13px;line-height:1.8}
+
+  /* ---------- 未开放入口的统一提示 ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:32px;z-index:999;
+    transform:translateX(-50%) translateY(16px);
+    background:#2a251d;color:#faf8f3;
+    padding:11px 20px;border-radius:999px;
+    font-size:13px;line-height:1.5;text-align:center;
+    max-width:82vw;
+    opacity:0;pointer-events:none;
+    transition:opacity .25s ease,transform .25s ease;
+    box-shadow:0 6px 24px rgba(60,48,30,.24);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  footer{border-top:1px solid var(--line);padding:34px 0 44px}
+  .foot-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .foot-inner .brand{font-size:12px;color:var(--ink-3)}
+  .foot-inner p{color:var(--ink-3);font-size:13px}
+  .foot-links{display:flex;gap:18px;justify-content:flex-end;margin:0 0 6px}
+  .foot-links a{transition:color .15s}
+  .foot-links a:hover{color:var(--peg)}
+
+  @media (max-width:900px){
+    .feat-grid{grid-template-columns:1fr}
+    .car-page{padding:12px}
+    .car-title{padding:18px 20px 2px}
+    .car-body{padding:6px 20px 16px}
+    .car-body.side{gap:10px}
+    .car-body.side img{max-width:calc(50% - 5px)}
+    .nav-links{display:none}
+    .lang-btn{margin-left:auto}
+    .hero{padding:170px 0 80px}
+    .hero-rope{top:118px}
+    /* 窄屏换行时分隔线会被挤到行首/行尾，丧失分组含义 —— 隐藏，靠配色分两组 */
+    .hero-sep{display:none}
+    .ver-grid{grid-template-columns:1fr}
+    .ver-card{padding:26px 22px}
+    .cmp-table th,.cmp-table td{padding:12px 14px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+    .reveal{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ 顶部公告条：同厂出品（引流 Flyring） ============
+     口径：公告条只留一个出口 → Flyring 主页（flyring-site.pages.dev，CF 国内访问稳）；
+     GitHub 仓库入口收在 Flyring 主页里，公告条不直接甩 GitHub 链接。
+     ⚠️ Flyring 正式域名定了之后，把 href 换成
+     https://<正式域名>/?utm_source=clothespeg&utm_medium=website&utm_campaign=cross-promo
+     utm 参数别丢——Flyring 侧靠它统计这条入口带来的流量。 -->
+<div class="topbar" id="topbar">
+  <a href="https://flyring-site.pages.dev/?utm_source=clothespeg&utm_medium=website&utm_campaign=cross-promo" target="_blank" rel="noopener">
+    <span data-i18n-html="topbar.promo">作者另一款 APP —— <b>Flyring 让应用切换，如此优雅</b></span>
+    <span class="promo-arrow" aria-hidden="true">→</span>
+  </a>
+  <button class="topbar-close" id="topbarClose"
+          data-i18n-aria="topbar.closeLabel" data-i18n-title="topbar.close"
+          aria-label="关闭公告条" title="关闭">✕</button>
+</div>
+
+<!-- ============ 导航 ============ -->
+<nav>
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="Clothespeg">
+      <img src="icon.png" data-i18n-alt="ui.icon" alt="Clothespeg 图标">
+      CLOTHESPEG
+    </a>
+    <div class="nav-links">
+      <a href="#demo" data-i18n="nav.demo">界面</a>
+      <a href="#features" data-i18n="nav.features">特性</a>
+      <a href="#versions" data-i18n="nav.versions">版本</a>
+      <a href="manual.html" data-i18n="nav.manual">操作手册</a>
+    </div>
+    <button class="lang-btn" id="langBtn" type="button"
+            data-i18n-aria="ui.lang" data-i18n-title="ui.lang"
+            aria-label="切换语言" title="切换语言"><span id="langLabel">EN</span></button>
+    <a class="nav-cta" data-i18n="nav.cta" href="https://github.com/saodisir/Clothespeg/releases/latest" target="_blank" rel="noopener">免费获取</a>
+  </div>
+</nav>
+
+<!-- ============ Hero ============ -->
+<header class="hero" id="top">
+  <div class="hero-bg" aria-hidden="true">
+    <div class="glow-blob glow-a"></div>
+    <div class="glow-blob glow-b"></div>
+    <div class="glow-blob glow-c"></div>
+    <!-- 一根晾衣绳，夹着三张小卡 -->
+    <div class="hero-rope">
+      <svg viewBox="0 0 920 120" fill="none" width="100%">
+        <path d="M0 14 Q460 92 920 14" stroke="rgba(90,75,45,.22)" stroke-width="2.5" fill="none"/>
+        <g class="sway">
+          <rect x="182" y="42" width="9" height="26" rx="4" fill="#b07a3f"/>
+          <rect x="140" y="62" width="94" height="52" rx="9" fill="#fbfaf5" stroke="rgba(60,48,30,.14)"/>
+          <rect x="152" y="76" width="52" height="6" rx="3" fill="rgba(90,75,45,.25)"/>
+          <rect x="152" y="90" width="70" height="6" rx="3" fill="rgba(90,75,45,.16)"/>
+        </g>
+        <g class="sway s2">
+          <rect x="452" y="52" width="9" height="26" rx="4" fill="#8a5c26"/>
+          <rect x="410" y="72" width="94" height="52" rx="9" fill="#f7ecc9" stroke="rgba(160,130,40,.2)"/>
+          <rect x="422" y="86" width="46" height="6" rx="3" fill="rgba(130,105,35,.3)"/>
+          <rect x="422" y="100" width="62" height="6" rx="3" fill="rgba(130,105,35,.18)"/>
+        </g>
+        <g class="sway s3">
+          <rect x="722" y="42" width="9" height="26" rx="4" fill="#b07a3f"/>
+          <rect x="680" y="62" width="94" height="52" rx="9" fill="#fbfaf5" stroke="rgba(60,48,30,.14)"/>
+          <rect x="692" y="76" width="58" height="6" rx="3" fill="rgba(176,122,63,.5)"/>
+          <rect x="692" y="90" width="66" height="6" rx="3" fill="rgba(90,75,45,.16)"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="wrap hero-inner">
+    <div class="hero-mark">CLOTHESPEG</div>
+    <h1 data-i18n-html="hero.title">一根晾衣绳，<span class="bloom">穿起剪贴板和便签簿</span></h1>
+    <p class="sub" data-i18n="hero.sub">Clothespeg的灵感来自 Tendedero，西班牙语里的“晾衣绳”。用一根晾衣绳穿起了一个剪贴板，一个便签簿。复制过的截图、文字、文件夹都晾在上面，随用随取；便签也可以晾在绳上，写灵感、记待办，抬眼就在。</p>
+    <p class="sub-en zh-only">One line strings together a clipboard and a notebook. Yours when you need them, gone when you don't.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" data-i18n="hero.cta.download" href="https://github.com/saodisir/Clothespeg/releases/latest" target="_blank" rel="noopener">免费下载 · 开源</a>
+      <a class="btn btn-alt" data-i18n="hero.cta.manual" href="manual.html">操作手册</a>
+      <a class="btn btn-alt" data-i18n="hero.cta.source" href="https://github.com/saodisir/Clothespeg" target="_blank" rel="noopener">查看源码</a>
+      <!-- 苹果专版：尚未上架，点击给提示，不给坏链接。
+           文案走 data-notice → 弹 toast，提示语用 i18n key notice.store -->
+      <span class="hero-sep" aria-hidden="true"></span>
+      <a class="btn btn-store" data-i18n="hero.cta.store" data-notice="notice.store" href="#">苹果专版（免费）</a>
+    </div>
+    <p class="hero-note" data-i18n="hero.note">刘海停一停，绳就放下来　·　好看的剪切板　·　优雅的便签</p>
+  </div>
+</header>
+
+<!-- ============ 界面预览（图片轮播） ============ -->
+<section class="gallery" id="demo">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow" data-i18n="sec.demo.eyebrow">SCREENSHOTS · 界面预览</span>
+      <h2 data-i18n="sec.demo.h2">刘海停一下，绳就放下来</h2>
+    </div>
+    <div class="reveal">
+      <div class="car-viewport">
+        <div class="car-track" id="carTrack">
+          <div class="car-page">
+            <figure class="car-shot">
+              <figcaption class="car-title" data-i18n="shot.1">剪贴板</figcaption>
+              <div class="car-body">
+                <img src="shots/line-clipboard.png" data-i18n-alt="alt.shot1" alt="剪贴板绳：复制的文件夹、文件、代码、颜色、链接都晾在同一条绳上">
+              </div>
+            </figure>
+          </div>
+          <div class="car-page">
+            <figure class="car-shot">
+              <figcaption class="car-title" data-i18n="shot.2">便签</figcaption>
+              <div class="car-body">
+                <img src="shots/line-notes.png" data-i18n-alt="alt.shot2" alt="便签绳：待办、灵感、日程、购物清单晾在同一条绳上">
+              </div>
+            </figure>
+          </div>
+          <div class="car-page">
+            <figure class="car-shot">
+              <figcaption class="car-title" data-i18n="shot.3">设置</figcaption>
+              <div class="car-body side">
+                <img src="shots/set-invocation.png" data-i18n-alt="alt.shot3a" alt="设置 · 呼出方式：刘海左右分区，左半区剪贴板、右半区便签，停顿时长可调">
+                <img src="shots/set-retention.png" data-i18n-alt="alt.shot3b" alt="设置 · 保留天数：30 天自选，卡片与磁盘占用一目了然">
+              </div>
+            </figure>
+          </div>
+        </div>
+      </div>
+      <p class="car-cap" id="carCap">复制过的东西，都晾在绳上，点一下就粘贴</p>
+      <div class="car-ctrl">
+        <button class="car-btn" id="carPrev" data-i18n-aria="ui.prev" aria-label="上一页">←</button>
+        <div class="car-dots" id="carDots">
+          <button class="car-dot active" data-i18n-aria="ui.page" data-i18n-aria-i="1" aria-label="第 1 页"></button>
+          <button class="car-dot" data-i18n-aria="ui.page" data-i18n-aria-i="2" aria-label="第 2 页"></button>
+          <button class="car-dot" data-i18n-aria="ui.page" data-i18n-aria-i="3" aria-label="第 3 页"></button>
+        </div>
+        <button class="car-btn" id="carNext" data-i18n-aria="ui.next" aria-label="下一页">→</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 特性 ============ -->
+<section class="features" id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow" data-i18n="sec.feat.eyebrow">FEATURES · 特性</span>
+      <h2 data-i18n="sec.feat.h2">晾上来的，都随手可得</h2>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.1.num">01 · 呼出</span>
+        <h3 data-i18n="feat.1.h3">刘海停一下，绳就放下来</h3>
+        <p data-i18n="feat.1.p">鼠标停在刘海上，绳滑下来；在全屏应用上也能放。移开就收起，不打断手头的事。</p>
+        <p class="feat-note" data-i18n="feat.1.note">停顿时长三档可选：0.15 / 0.25 / 0.4 秒。</p>
+      </div>
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.2.num">02 · 截图</span>
+        <h3 data-i18n="feat.2.h3">MACOS 自带截完图也可保留</h3>
+        <p data-i18n="feat.2.p">打开「新截图自动上绳」，macOS 自带的⌘⇧3/4截图落盘即挂绳——截完不用再复制一次。</p>
+        <p class="feat-note" data-i18n="feat.2.note">默认关闭；关闭开关或退出应用时，会自动恢复原来的保存位置。</p>
+      </div>
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.3.num">03 · 分类</span>
+        <h3 data-i18n="feat.3.h3">复制什么，就长什么样</h3>
+        <p data-i18n="feat.3.p">文字、链接、颜色、图片、文件，各自成卡；一条筛选栏，一眼找到刚才那一下。</p>
+        <p class="feat-note" data-i18n="feat.3.note">颜色卡直接显示色块，点一下回到剪贴板。</p>
+      </div>
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.4.num">04 · 便签</span>
+        <h3 data-i18n="feat.4.h3">便签也晾在绳上</h3>
+        <p data-i18n="feat.4.p">点绳中间上方的 +，写一张便签。清单、待办也都可以晾在同一条绳上，想看哪条看哪条。</p>
+        <p class="feat-note" data-i18n="feat.4.note">多种底色可选，每张便签自己挑。</p>
+      </div>
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.5.num">05 · 呼出方式</span>
+        <h3 data-i18n="feat.5.h3">如何呼出，你说了算</h3>
+        <p data-i18n="feat.5.p">两种方式选一种：刘海左右分区——左半剪贴板、右半便签；或者通过修饰键翻转。</p>
+        <p class="feat-note" data-i18n="feat.5.note">快捷键可录制，默认 ⌃⌥C 剪贴板、⌃⌥N 便签，冲突即时提示。</p>
+      </div>
+      <div class="feat-card reveal">
+        <span class="feat-num" data-i18n="feat.6.num">06 · 暂存</span>
+        <h3 data-i18n="feat.6.h3">文件暂存架？复制就是</h3>
+        <p data-i18n="feat.6.p">复制文件或文件夹，它就晾在绳上；要用了拖下来，丢进聊天窗口、邮件、终端都行。不用常驻一个侧边暂存架，绳子本身就是暂存架。</p>
+        <p class="feat-note" data-i18n="feat.6.note">一次复制多个也是一张卡，拖出来就复制。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 两个版本 ============ -->
+<!-- 口径（与 Flyring 官网一致）：完整版是主入口，苹果专版是另一个渠道，
+     沙盒砍掉的功能必须逐条写清，不能含糊 —— 含糊等于欺骗。
+     ⚠️ 三处差异直接来自源码的 #if APPSTORE_LITE（PasteInto.swift 双击粘贴、
+     AppDelegate.swift 截图收件箱、FullScreen.swift 全屏判定），
+     改代码就要同步改这张表。 -->
+<section class="versions" id="versions">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow" data-i18n="sec.ver.eyebrow">VERSIONS · 版本</span>
+      <h2 data-i18n="sec.ver.h2">两个版本，同一根绳</h2>
+    </div>
+    <div class="ver-grid">
+      <div class="ver-card best reveal">
+        <div class="ch-head">
+          <h3 data-i18n="ver.full.h3">完整版</h3>
+          <span class="ch-src" data-i18n="ver.full.src">GitHub 直发</span>
+        </div>
+        <div class="ch-band">
+          <span class="ch-item"><span class="ch-num word" data-i18n="ver.full.price">免费开源</span><span class="ch-unit" data-i18n="ver.full.priceUnit">Apache-2.0 许可</span></span>
+        </div>
+        <div class="ch-band alt">
+          <span class="ch-item"><span class="ch-num word" data-i18n="ver.full.band2">全功能</span><span class="ch-unit" data-i18n="ver.full.band2Unit">新功能先到这里</span></span>
+        </div>
+        <p class="ch-note" data-i18n="ver.full.note">全部功能都在这，代码公开在 GitHub。签了名但没有公证——首次启动 macOS 会拦一下，去「系统设置 → 隐私与安全性」点「仍要打开」就行，只此一次。</p>
+        <a class="ch-go" data-i18n="ui.go" href="https://github.com/saodisir/Clothespeg/releases/latest" target="_blank" rel="noopener">前往下载</a>
+      </div>
+      <div class="ver-card reveal">
+        <div class="ch-head">
+          <h3 data-i18n="ver.store.h3">苹果专版</h3>
+          <span class="ch-src" data-i18n="ver.store.src">App Store</span>
+        </div>
+        <div class="ch-band">
+          <span class="ch-item"><span class="ch-num" data-i18n="ver.store.price">¥0</span><span class="ch-unit" data-i18n="ver.store.priceUnit">暂时免费</span></span>
+        </div>
+        <div class="ch-band alt">
+          <span class="ch-item"><span class="ch-num word" data-i18n="ver.store.band2">开发中</span><span class="ch-unit" data-i18n="ver.store.band2Unit">还没上架</span></span>
+        </div>
+        <p class="ch-note" data-i18n-html="ver.store.note">正在开发中，还没上架。<b>目标是跟完整版保持一致</b>，目前受 App Store 沙盒限制还有几处差别——详见下表。换来的是双击即用、不必去系统设置放行，更新由 App Store 自动完成。先以免费上架；日后若转为收费，已经下载过的用户不受影响。</p>
+        <a class="ch-go" data-i18n="ui.go" data-notice="notice.store" href="#">前往下载</a>
+      </div>
+    </div>
+
+    <p class="cmp-hint reveal" data-i18n="ver.hint">下表是两版的全部差异。除此之外的一切——剪贴板绳、便签绳、钉住、筛选、搜索、拖拽、右键菜单、保留天数——两版完全一致。</p>
+    <div class="cmp reveal">
+      <div class="cmp-wrap">
+        <table class="cmp-table">
+          <thead>
+            <tr><th data-i18n="cmp.th1">功能</th><th data-i18n="cmp.th2">苹果专版</th><th data-i18n="cmp.th3">完整版</th></tr>
+          </thead>
+          <tbody>
+            <tr><td data-i18n="cmp.r1">剪贴板绳 · 便签绳</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r2">刘海停顿 / 快捷键呼出</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r3">钉住 · 筛选 · 搜索 · 拖拽</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r4">监视文件夹</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r6">新截图自动上绳</td><td data-i18n="cmp.v6a">手动设置</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r5">双击卡片直接粘贴回原来的应用</td><td class="no">—</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r7">全屏应用上也能放绳</td><td class="no">—</td><td class="yes">✓</td></tr>
+            <tr><td data-i18n="cmp.r8">首次启动</td><td data-i18n="cmp.v8a">双击即用</td><td data-i18n="cmp.v8b">系统设置里点「仍要打开」</td></tr>
+            <tr><td data-i18n="cmp.r9">更新方式</td><td data-i18n="cmp.v9a">App Store 自动更新</td><td data-i18n="cmp.v9b">手动下载新版</td></tr>
+            <tr><td data-i18n="cmp.r10">新功能到达</td><td data-i18n="cmp.v10a">随审核，略晚一些</td><td data-i18n="cmp.v10b">第一时间</td></tr>
+            <tr><td data-i18n="cmp.r11">价格</td><td data-i18n="cmp.v11a">暂时免费</td><td data-i18n="cmp.v11b">免费开源</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="cmp-foot reveal" data-i18n="cmp.foot">两版 bundle id 不同，可以同时装，但绳上内容各自独立。同时开启可能会引起冲突。</p>
+  </div>
+</section>
+
+<!-- ============ 给作者买杯咖啡 ============ -->
+<section id="coffee">
+  <div class="wrap" style="text-align:center;padding:64px 0 56px">
+    <h2 style="font-size:clamp(26px,4vw,38px);margin:0 0 10px;letter-spacing:-.01em" data-i18n="coffee.title">给作者买杯咖啡</h2>
+    <p style="max-width:540px;margin:0 auto 28px;color:rgba(60,48,30,.72);line-height:1.8" data-i18n="coffee.p">Clothespeg 免费开源，不放广告，也没有付费墙。
+      如果它帮你省了时间，欢迎请作者喝杯咖啡，这是对一根晾衣绳最实在的鼓励。</p>
+    <a href="https://cv4z8ffs.jsjform.com/p/j5Jhqc" target="_blank" rel="noopener"
+       style="display:inline-block;background:#fff;padding:12px;border-radius:18px;
+              box-shadow:0 12px 32px rgba(60,48,30,.14),inset 0 1px 0 rgba(255,255,255,.6);
+              border:1px solid rgba(60,48,30,.08);transition:transform .22s ease">
+      <img src="coffee-qr.png" data-i18n-alt="coffee.qrAlt" alt="给作者买杯咖啡的收款二维码" width="168" height="168"
+           style="display:block;border-radius:8px">
+    </a>
+    <p style="margin:18px 0 0;font-size:14px;color:rgba(60,48,30,.6)">
+      <span data-i18n="coffee.scan">扫码请喝，或</span>
+      <a href="https://cv4z8ffs.jsjform.com/p/j5Jhqc" target="_blank" rel="noopener"
+         style="color:var(--peg);font-weight:600" data-i18n="coffee.link">打开收款页面 ↗</a>
+    </p>
+  </div>
+</section>
+
+<!-- ============ 页脚 ============ -->
+<footer>
+  <div class="wrap foot-inner">
+    <a class="brand" href="#top" data-i18n-aria="ui.top" aria-label="回到顶部">
+      <img src="icon.png" data-i18n-alt="ui.icon" alt="Clothespeg 图标">
+      CLOTHESPEG
+    </a>
+    <div style="text-align:right">
+      <!-- 署名口径：fork / 基于关系与许可证全文只放许可页，主页不出现 -->
+      <p class="foot-links">
+        <a href="https://flyring-site.pages.dev/?utm_source=clothespeg&utm_medium=website&utm_campaign=cross-promo" target="_blank" rel="noopener" data-i18n="foot.flyring">Flyring 主页 ↗</a>
+        <a href="https://github.com/saodisir/flyring" target="_blank" rel="noopener">Flyring GitHub ↗</a>
+        <a href="manual.html" data-i18n="nav.manual">操作手册</a>
+        <a href="licence.html" data-i18n="foot.licence">许可证</a>
+        <a href="#coffee" data-i18n="foot.coffee">请喝咖啡</a>
+        <a href="https://github.com/saodisir/Clothespeg" target="_blank" rel="noopener">GitHub</a>
+      </p>
+      <p data-i18n="meta.slogan">一根晾衣绳，穿起剪贴板和便签簿</p>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ---------- 语言预置：赶在首屏绘制前定下 <html lang>，避免中英串味 ---------- */
+(function(){
+  try{
+    var saved = localStorage.getItem("cp-lang");
+    if(saved !== "zh" && saved !== "en"){
+      saved = ((navigator.language || "") + "").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+    }
+    document.documentElement.lang = (saved === "zh") ? "zh-CN" : "en";
+  }catch(e){}
+})();
+</script>
+
+<script>
+/* ==================================================================
+   Clothespeg 主页 · 中英双语
+   一份 DOM 两套文案：数据属性声明 key，字典按 lang 回填。
+   数据属性：
+     data-i18n         → textContent（纯文本）
+     data-i18n-html    → innerHTML（含 <b> / <span class="bloom"> 等标签）
+     data-i18n-alt     → alt
+     data-i18n-aria    → aria-label（可带 data-i18n-aria-i 做占位符 {n}）
+     data-i18n-title   → title
+   另：class="zh-only" / "en-only" 的节点由 CSS 按 <html lang> 显隐
+       （hero 底下那行英文小注，切到英文后正文就是它，不必重复）
+   新增文案时，zh / en 两个字典都要补，缺 key 会原样留中文。
+   ================================================================== */
+(function(){
+  "use strict";
+
+  var DICT = {
+    zh:{
+      "meta.title":"Clothespeg — 一根晾衣绳，穿起剪贴板和便签簿",
+      "topbar.promo":"作者另一款 APP —— <b>Flyring 让应用切换，如此优雅</b>",
+      "topbar.closeLabel":"关闭公告条",
+      "topbar.close":"关闭",
+      "nav.demo":"界面",
+      "nav.features":"特性",
+      "nav.versions":"版本",
+      "nav.manual":"操作手册",
+      "nav.cta":"免费获取",
+      "hero.title":"一根晾衣绳，<span class=\"bloom\">穿起剪贴板和便签簿</span>",
+      "hero.sub":"Clothespeg的灵感来自 Tendedero，西班牙语里的“晾衣绳”。用一根晾衣绳穿起了一个剪贴板，一个便签簿。复制过的截图、文字、文件夹都晾在上面，随用随取；便签也可以晾在绳上，写灵感、记待办，抬眼就在。",
+      "hero.cta.download":"免费下载 · 开源",
+      "hero.cta.manual":"操作手册",
+      "hero.cta.source":"查看源码",
+      "hero.cta.store":"苹果专版（免费）",
+      "hero.note":"刘海停一停，绳就放下来　·　好看的剪切板　·　优雅的便签",
+      "sec.demo.eyebrow":"SCREENSHOTS · 界面预览",
+      "sec.demo.h2":"刘海停一下，绳就放下来",
+      "shot.1":"剪贴板",
+      "shot.2":"便签",
+      "shot.3":"设置",
+      "cap.1":"复制过的东西，都晾在绳上，点一下就粘贴",
+      "cap.2":"写灵感、记待办，抬眼就在",
+      "cap.3":"呼出方式、保留天数，都随你调",
+      "sec.feat.eyebrow":"FEATURES · 特性",
+      "sec.feat.h2":"晾上来的，都随手可得",
+      "feat.1.num":"01 · 呼出",
+      "feat.1.h3":"刘海停一下，绳就放下来",
+      "feat.1.p":"鼠标停在刘海上，绳滑下来；在全屏应用上也能放。移开就收起，不打断手头的事。",
+      "feat.1.note":"停顿时长三档可选：0.15 / 0.25 / 0.4 秒。",
+      "feat.2.num":"02 · 截图",
+      "feat.2.h3":"MACOS 自带截完图也可保留",
+      "feat.2.p":"打开「新截图自动上绳」，macOS 自带的⌘⇧3/4截图落盘即挂绳——截完不用再复制一次。",
+      "feat.2.note":"默认关闭；关闭开关或退出应用时，会自动恢复原来的保存位置。",
+      "feat.3.num":"03 · 分类",
+      "feat.3.h3":"复制什么，就长什么样",
+      "feat.3.p":"文字、链接、颜色、图片、文件，各自成卡；一条筛选栏，一眼找到刚才那一下。",
+      "feat.3.note":"颜色卡直接显示色块，点一下回到剪贴板。",
+      "feat.4.num":"04 · 便签",
+      "feat.4.h3":"便签也晾在绳上",
+      "feat.4.p":"点绳中间上方的 +，写一张便签。清单、待办也都可以晾在同一条绳上，想看哪条看哪条。",
+      "feat.4.note":"多种底色可选，每张便签自己挑。",
+      "feat.5.num":"05 · 呼出方式",
+      "feat.5.h3":"如何呼出，你说了算",
+      "feat.5.p":"两种方式选一种：刘海左右分区——左半剪贴板、右半便签；或者通过修饰键翻转。",
+      "feat.5.note":"快捷键可录制，默认 ⌃⌥C 剪贴板、⌃⌥N 便签，冲突即时提示。",
+      "feat.6.num":"06 · 暂存",
+      "feat.6.h3":"文件暂存架？复制就是",
+      "feat.6.p":"复制文件或文件夹，它就晾在绳上；要用了拖下来，丢进聊天窗口、邮件、终端都行。不用常驻一个侧边暂存架，绳子本身就是暂存架。",
+      "feat.6.note":"一次复制多个也是一张卡，拖出来就复制。",
+      "coffee.title":"给作者买杯咖啡",
+      "coffee.p":"Clothespeg 免费开源，不放广告，也没有付费墙。如果它帮你省了时间，欢迎请作者喝杯咖啡，这是对一根晾衣绳最实在的鼓励。",
+      "coffee.qrAlt":"给作者买杯咖啡的收款二维码",
+      "coffee.scan":"扫码请喝，或",
+      "coffee.link":"打开收款页面 ↗",
+      "foot.flyring":"Flyring 主页 ↗",
+      "foot.licence":"许可证",
+      "foot.coffee":"请喝咖啡",
+      "meta.slogan":"一根晾衣绳，穿起剪贴板和便签簿",
+      "sec.ver.eyebrow":"VERSIONS · 版本",
+      "sec.ver.h2":"两个版本，同一根绳",
+      "ver.full.h3":"完整版",
+      "ver.full.src":"GitHub 直发",
+      "ver.full.price":"免费开源",
+      "ver.full.priceUnit":"Apache-2.0 许可",
+      "ver.full.band2":"全功能",
+      "ver.full.band2Unit":"新功能先到这里",
+      "ver.full.note":"全部功能都在这，代码公开在 GitHub。签了名但没有公证——首次启动 macOS 会拦一下，去「系统设置 → 隐私与安全性」点「仍要打开」就行，只此一次。",
+      "ver.store.h3":"苹果专版",
+      "ver.store.src":"App Store",
+      "ver.store.price":"¥0",
+      "ver.store.priceUnit":"暂时免费",
+      "ver.store.band2":"开发中",
+      "ver.store.band2Unit":"还没上架",
+      "ver.store.note":"正在开发中，还没上架。<b>目标是跟完整版保持一致</b>，目前受 App Store 沙盒限制还有几处差别——详见下表。换来的是双击即用、不必去系统设置放行，更新由 App Store 自动完成。先以免费上架；日后若转为收费，已经下载过的用户不受影响。",
+      "ver.hint":"下表是两版的全部差异。除此之外的一切——剪贴板绳、便签绳、钉住、筛选、搜索、拖拽、右键菜单、保留天数——两版完全一致。",
+      "ui.go":"前往下载",
+      "cmp.th1":"功能",
+      "cmp.th2":"苹果专版",
+      "cmp.th3":"完整版",
+      "cmp.r1":"剪贴板绳 · 便签绳",
+      "cmp.r2":"刘海停顿 / 快捷键呼出",
+      "cmp.r3":"钉住 · 筛选 · 搜索 · 拖拽",
+      "cmp.r4":"监视文件夹",
+      "cmp.r5":"双击卡片直接粘贴回原来的应用",
+      "cmp.r6":"新截图自动上绳",
+      "cmp.v6a":"手动设置",
+      "cmp.r7":"全屏应用上也能放绳",
+      "cmp.r8":"首次启动",
+      "cmp.v8a":"双击即用",
+      "cmp.v8b":"系统设置里点「仍要打开」",
+      "cmp.r9":"更新方式",
+      "cmp.v9a":"App Store 自动更新",
+      "cmp.v9b":"手动下载新版",
+      "cmp.r10":"新功能到达",
+      "cmp.v10a":"随审核，略晚一些",
+      "cmp.v10b":"第一时间",
+      "cmp.r11":"价格",
+      "cmp.v11a":"暂时免费",
+      "cmp.v11b":"免费开源",
+      "cmp.foot":"两版 bundle id 不同，可以同时装，但绳上内容各自独立。同时开启可能会引起冲突。",
+      "notice.store":"苹果专版正在开发中，敬请期待",
+      "ui.icon":"Clothespeg 图标",
+      "ui.lang":"切换语言",
+      "ui.top":"回到顶部",
+      "ui.prev":"上一页",
+      "ui.next":"下一页",
+      "ui.page":"第 {n} 页",
+      "alt.shot1":"剪贴板绳：复制的文件夹、文件、代码、颜色、链接都晾在同一条绳上",
+      "alt.shot2":"便签绳：待办、灵感、日程、购物清单晾在同一条绳上",
+      "alt.shot3a":"设置 · 呼出方式：刘海左右分区，左半区剪贴板、右半区便签，停顿时长可调",
+      "alt.shot3b":"设置 · 保留天数：30 天自选，卡片与磁盘占用一目了然"
+    },
+    en:{
+      "meta.title":"Clothespeg — One clothesline for your clipboard and notes",
+      "topbar.promo":"From the same author —— <b>Flyring, app switching with grace</b>",
+      "topbar.closeLabel":"Dismiss announcement",
+      "topbar.close":"Close",
+      "nav.demo":"Screenshots",
+      "nav.features":"Features",
+      "nav.versions":"Versions",
+      "nav.manual":"Manual",
+      "nav.cta":"Get it free",
+      "hero.title":"One clothesline for <span class=\"bloom\">your clipboard and your notes</span>",
+      "hero.sub":"Clothespeg takes its name — and its idea — from Tendedero, Spanish for clothesline. One line holds a clipboard and a notebook: screenshots, text and folders you copy hang on it, ready when you are; notes hang there too, for ideas and to-dos, in view the moment you look up.",
+      "hero.cta.download":"Download free · open source",
+      "hero.cta.manual":"Manual",
+      "hero.cta.source":"Source code",
+      "hero.cta.store":"Apple Edition (free)",
+      "hero.note":"Dwell at the notch, the line comes down　·　A good-looking clipboard　·　Notes with grace",
+      "sec.demo.eyebrow":"SCREENSHOTS",
+      "sec.demo.h2":"Dwell at the notch, and the line drops down",
+      "shot.1":"Clipboard",
+      "shot.2":"Notes",
+      "shot.3":"Settings",
+      "cap.1":"Everything you copy hangs on the line — one click pastes it",
+      "cap.2":"Ideas and to-dos, there the moment you look up",
+      "cap.3":"How it comes down, how long things stay — your call",
+      "sec.feat.eyebrow":"FEATURES",
+      "sec.feat.h2":"What hangs here is always at hand",
+      "feat.1.num":"01 · DWELL",
+      "feat.1.h3":"Dwell at the notch, the line comes down",
+      "feat.1.p":"Rest the pointer at the notch and the line slides down; it works over full-screen apps too. Move away and it rolls up, without breaking whatever you were doing.",
+      "feat.1.note":"Three dwell speeds: 0.15 / 0.25 / 0.4 s.",
+      "feat.2.num":"02 · SCREENSHOTS",
+      "feat.2.h3":"System screenshots land on the line too",
+      "feat.2.p":"Turn on Hang new screenshots and macOS's own ⌘⇧3 / ⌘⇧4 capture goes straight onto the line — no need to copy again afterwards.",
+      "feat.2.note":"Off by default; the previous save location is restored when the switch goes off or the app quits.",
+      "feat.3.num":"03 · KINDS",
+      "feat.3.h3":"Every copy takes its own shape",
+      "feat.3.p":"Text, links, colours, pictures and files each become their own card; a pill filter bar finds the last one at a glance.",
+      "feat.3.note":"A colour card shows its own swatch; one click sends it back to the clipboard.",
+      "feat.4.num":"04 · NOTES",
+      "feat.4.h3":"Notes hang on the line too",
+      "feat.4.p":"Click + above the middle of the line to write a note. Lists and to-dos hang on the same line — look at whichever you like.",
+      "feat.4.note":"Every note picks its own background colour.",
+      "feat.5.num":"05 · HOW IT COMES DOWN",
+      "feat.5.h3":"How it comes down is up to you",
+      "feat.5.p":"Pick one of two ways: the notch splits left and right — clipboard on the left half, notes on the right; or hold a modifier to flip them.",
+      "feat.5.note":"Hotkeys are recordable: ⌃⌥C for the clipboard, ⌃⌥N for notes, with a warning the moment one clashes.",
+      "feat.6.num":"06 · SHELF",
+      "feat.6.h3":"A staging shelf? Copying is the shelf",
+      "feat.6.p":"Copy a file or folder and it hangs on the line; drag it down into a chat, an email or a terminal when you need it. No sidebar shelf parked on your screen — the line is the shelf.",
+      "feat.6.note":"Copy several things at once and they hang as one card; drag it out and they all copy.",
+      "coffee.title":"Buy the author a coffee",
+      "coffee.p":"Clothespeg is free and open source — no ads, no paywall. If it has saved you time, a coffee is the kindest way to say so.",
+      "coffee.qrAlt":"QR code to buy the author a coffee",
+      "coffee.scan":"Scan the code, or",
+      "coffee.link":"open the donation page ↗",
+      "foot.flyring":"Flyring home ↗",
+      "foot.licence":"Licence",
+      "foot.coffee":"Buy me a coffee",
+      "meta.slogan":"One clothesline for your clipboard and notes",
+      "sec.ver.eyebrow":"VERSIONS",
+      "sec.ver.h2":"Two builds, one line",
+      "ver.full.h3":"Full build",
+      "ver.full.src":"Direct from GitHub",
+      "ver.full.price":"Free, open source",
+      "ver.full.priceUnit":"Apache-2.0 licence",
+      "ver.full.band2":"Everything",
+      "ver.full.band2Unit":"New features land here first",
+      "ver.full.note":"Everything is here, source included, and new features land in this build first. It is signed but not notarized — macOS steps in on first launch: open System Settings → Privacy & Security and click Open Anyway. Once is enough.",
+      "ver.store.h3":"Apple Edition",
+      "ver.store.src":"App Store",
+      "ver.store.price":"Free",
+      "ver.store.priceUnit":"for now",
+      "ver.store.band2":"In development",
+      "ver.store.band2Unit":"not on the store yet",
+      "ver.store.note":"In development, not on the store yet. <b>It aims to match the full build</b>; a few things are still out of reach under the App Store sandbox — see the table below. What you get instead is a double-click install with nothing to allow, and updates handled by the App Store. It goes up free; if it turns paid later, anyone who has already downloaded it keeps it.",
+      "ver.hint":"That table is the whole difference. Everything else — the clipboard line, the notes line, pinning, filtering, search, drag and drop, the right-click menu, retention — is identical in both builds.",
+      "ui.go":"Get it",
+      "cmp.th1":"Feature",
+      "cmp.th2":"Apple Edition",
+      "cmp.th3":"Full build",
+      "cmp.r1":"Clipboard line · notes line",
+      "cmp.r2":"Notch dwell / hotkeys",
+      "cmp.r3":"Pin · filter · search · drag",
+      "cmp.r4":"Watched folders",
+      "cmp.r5":"Double-click to paste back into the app you came from",
+      "cmp.r6":"Hang new screenshots",
+      "cmp.v6a":"Set it up manually",
+      "cmp.r7":"Drop the line over full-screen apps",
+      "cmp.r8":"First launch",
+      "cmp.v8a":"Just open it",
+      "cmp.v8b":"Click Open Anyway in System Settings",
+      "cmp.r9":"Updates",
+      "cmp.v9a":"Automatic, via the App Store",
+      "cmp.v9b":"Download the new build",
+      "cmp.r10":"New features",
+      "cmp.v10a":"After review, a little later",
+      "cmp.v10b":"Straight away",
+      "cmp.r11":"Price",
+      "cmp.v11a":"Free for now",
+      "cmp.v11b":"Free and open source",
+      "cmp.foot":"The two builds have different bundle identifiers, so both can be installed side by side — but what hangs on one line stays separate, and running both at once can cause conflicts.",
+      "notice.store":"The Apple Edition is in development — coming soon",
+      "ui.icon":"Clothespeg icon",
+      "ui.lang":"Switch language",
+      "ui.top":"Back to top",
+      "ui.prev":"Previous page",
+      "ui.next":"Next page",
+      "ui.page":"Page {n}",
+      "alt.shot1":"The clipboard line: folders, files, code, colours and links hanging on the same line",
+      "alt.shot2":"The notes line: to-dos, ideas, a schedule and a shopping list on the same line",
+      "alt.shot3a":"Settings · How it comes down: the notch splits left and right, clipboard on the left, notes on the right, with a dwell speed to pick",
+      "alt.shot3b":"Settings · Retention: pick up to 30 days, with cards and disk use in view"
+    }
+  };
+
+  /* ---------- 当前语言 ---------- */
+  var curLang = document.documentElement.lang === "en" ? "en" : "zh";
+
+  /* ---------- 界面预览轮播 ---------- */
+  var carCur = 0;
+  var carGo = null;
+  (function(){
+    var track = document.getElementById("carTrack");
+    if (!track) return;
+    var pages = track.children.length;
+    var cap = document.getElementById("carCap");
+    var dots = Array.prototype.slice.call(document.querySelectorAll("#carDots .car-dot"));
+
+    carGo = function(i){
+      carCur = (i + pages) % pages;
+      track.style.transform = "translateX(-" + (carCur * 100) + "%)";
+      dots.forEach(function(d, k){ d.classList.toggle("active", k === carCur); });
+      if (cap) cap.textContent = DICT[curLang]["cap." + (carCur + 1)] || cap.textContent;
+    };
+    document.getElementById("carPrev").addEventListener("click", function(){ carGo(carCur - 1); });
+    document.getElementById("carNext").addEventListener("click", function(){ carGo(carCur + 1); });
+    dots.forEach(function(d, k){ d.addEventListener("click", function(){ carGo(k); }); });
+    /* 触摸滑动翻页 */
+    var carX = null;
+    track.addEventListener("touchstart", function(e){ carX = e.touches[0].clientX; }, {passive:true});
+    track.addEventListener("touchend", function(e){
+      if (carX === null) return;
+      var dx = e.changedTouches[0].clientX - carX;
+      if (Math.abs(dx) > 40) carGo(carCur + (dx < 0 ? 1 : -1));
+      carX = null;
+    }, {passive:true});
+  })();
+
+  /* ---------- 应用语言 ---------- */
+  function applyLang(lang, remember){
+    curLang = (lang === "en") ? "en" : "zh";
+    var d = DICT[curLang];
+
+    document.documentElement.lang = curLang === "zh" ? "zh-CN" : "en";
+    document.title = d["meta.title"] || document.title;
+
+    document.querySelectorAll("[data-i18n]").forEach(function(el){
+      var v = d[el.getAttribute("data-i18n")];
+      if (v != null) el.textContent = v;
+    });
+    document.querySelectorAll("[data-i18n-html]").forEach(function(el){
+      var v = d[el.getAttribute("data-i18n-html")];
+      if (v != null) el.innerHTML = v;
+    });
+    document.querySelectorAll("[data-i18n-alt]").forEach(function(el){
+      var v = d[el.getAttribute("data-i18n-alt")];
+      if (v != null) el.setAttribute("alt", v);
+    });
+    document.querySelectorAll("[data-i18n-title]").forEach(function(el){
+      var v = d[el.getAttribute("data-i18n-title")];
+      if (v != null) el.setAttribute("title", v);
+    });
+    document.querySelectorAll("[data-i18n-aria]").forEach(function(el){
+      var v = d[el.getAttribute("data-i18n-aria")];
+      if (v != null){
+        var n = el.getAttribute("data-i18n-aria-i");
+        el.setAttribute("aria-label", n ? v.replace("{n}", n) : v);
+      }
+    });
+
+    /* 切换按钮显示的是「点一下会变成的那一边」 */
+    var label = document.getElementById("langLabel");
+    if (label) label.textContent = curLang === "zh" ? "EN" : "中文";
+
+    /* 跟着换说明文字 */
+    if (carGo) carGo(carCur);
+
+    /* toast 正显示时，切语言也要跟着换文案 */
+    var toast = document.getElementById("toast");
+    if (toast && toast.classList.contains("show") && toast._key){
+      var nt = d[toast._key];
+      if (nt != null) toast.textContent = nt;
+    }
+
+    if (remember){
+      try { localStorage.setItem("cp-lang", curLang); } catch(e){}
+    }
+  }
+
+  /* 首屏：不带记忆地套一次（语言已在 head 里探好） */
+  applyLang(curLang, false);
+
+  var langBtn = document.getElementById("langBtn");
+  if (langBtn){
+    langBtn.addEventListener("click", function(){
+      applyLang(curLang === "zh" ? "en" : "zh", true);
+    });
+  }
+
+  /* ---------- 未开放的入口：统一提示，不给坏链接 ----------
+     元素上写 data-notice="<i18n key>"，点一下弹 toast；文案跟着语言走。 */
+  function tr(key){ return DICT[curLang] && DICT[curLang][key]; }
+  function notice(ev, key){
+    if (ev) ev.preventDefault();
+    var t = document.getElementById("toast");
+    if (!t) return false;
+    t._key = key;
+    t.textContent = tr(key) || "上线测试中，敬请期待";
+    t.classList.add("show");
+    clearTimeout(t._h);
+    t._h = setTimeout(function(){ t.classList.remove("show"); }, 2800);
+    return false;
+  }
+
+  document.querySelectorAll("[data-notice]").forEach(function(el){
+    el.addEventListener("click", function(ev){ notice(ev, el.getAttribute("data-notice")); });
+  });
+
+  /* ---------- 滚动入场 ---------- */
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+    });
+  },{threshold:.12});
+  document.querySelectorAll(".reveal").forEach(function(el,i){
+    el.style.transitionDelay = (i % 4) * 70 + "ms";
+    io.observe(el);
+  });
+
+  /* ---------- 特性卡：光斑跟随 ---------- */
+  document.querySelectorAll(".feat-card").forEach(function(card){
+    card.addEventListener("mousemove", function(ev){
+      var r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", (ev.clientX - r.left) + "px");
+      card.style.setProperty("--my", (ev.clientY - r.top) + "px");
+    });
+  });
+
+  /* ---------- 顶部公告条：可关闭（本会话内不再出现） ---------- */
+  var topbarClose = document.getElementById("topbarClose");
+  if (topbarClose) {
+    try {
+      if (sessionStorage.getItem("promoOff") === "1") {
+        document.body.classList.add("promo-off");
+      }
+    } catch(e){}
+    topbarClose.addEventListener("click", function(){
+      document.body.classList.add("promo-off");
+      try { sessionStorage.setItem("promoOff", "1"); } catch(e){}
+    });
+  }
+})();
+</script>
+</body>
+</html>

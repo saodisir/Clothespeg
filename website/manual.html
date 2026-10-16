@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>操作手册 — Clothespeg</title>
+<meta name="description" content="Clothespeg 操作手册：呼出与收起、卡片手势、角落按钮、右键菜单、键盘快捷键，绳上的每一个动作都在这里。">
+<!--
+  操作手册二级页。口径：与 licence.html 同一规格——简单文字说明，
+  不做主页式的排版；内容与 README「操作一览」保持同步。
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#faf8f3;--bg-soft:#f3efe4;--ink:#2a251d;--ink-2:#5c5548;--ink-3:#8a8171;
+    --peg:#b07a3f;--peg-light:#cfa05f;--peg-deep:#8a5c26;
+    --glow:rgba(176,122,63,.18);--line:rgba(60,48,30,.1);--card:#fffdf9;--radius:18px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:"Noto Sans SC","Inter",-apple-system,"PingFang SC",sans-serif;font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:820px;margin:0 auto;padding:0 32px}
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);background:rgba(250,248,243,.8);border-bottom:1px solid var(--line)}
+  .nav-inner{max-width:1160px;margin:0 auto;padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.14em;font-size:14px}
+  .brand svg{width:26px;height:26px}
+  .back{font-size:14px;color:var(--ink-2);transition:color .15s}
+  .back:hover{color:var(--peg)}
+  header{padding:80px 0 30px;text-align:center}
+  h1{font-size:clamp(30px,4.5vw,48px);font-weight:900;letter-spacing:-.02em}
+  .sub{margin-top:14px;color:var(--ink-2)}
+  section{padding:26px 0}
+  .box{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);padding:34px 36px}
+  .box h2{font-size:20px;font-weight:800;margin-bottom:14px}
+  .box p{color:var(--ink-2);font-size:15px;line-height:1.9}
+  .box p + p{margin-top:10px}
+  .box a{color:var(--peg-deep);border-bottom:1px solid rgba(176,122,63,.32);padding-bottom:1px;transition:border-color .15s}
+  .box a:hover{border-color:var(--peg)}
+  /* 手势条目：加粗的动作名 + 一句话说明 */
+  .ops{list-style:none}
+  .ops li{padding:12px 0;border-bottom:1px solid var(--line);font-size:15px;color:var(--ink-2);line-height:1.85}
+  .ops li:last-child{border-bottom:none}
+  .ops b{color:var(--ink);font-weight:700;margin-right:10px}
+  .ops .key{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--peg-deep);font-weight:600}
+  footer{border-top:1px solid var(--line);padding:30px 0 40px;margin-top:40px}
+  .foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;color:var(--ink-3);font-size:13px}
+  .foot a:hover{color:var(--peg)}
+  @media (max-width:640px){ .box{padding:26px 22px} }
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <a class="brand" href="index.html" aria-label="Clothespeg">
+      <svg viewBox="0 0 200 200" fill="none" aria-hidden="true">
+        <path d="M8 62 Q100 96 192 62" stroke="#b07a3f" stroke-width="11" stroke-linecap="round" fill="none"/>
+        <rect x="86" y="78" width="28" height="86" rx="13" fill="#8a5c26"/>
+        <rect x="93" y="86" width="14" height="70" rx="7" fill="#faf8f3" opacity=".35"/>
+        <circle cx="100" cy="150" r="9" fill="#b07a3f"/>
+      </svg>
+      CLOTHESPEG
+    </a>
+    <a class="back" href="index.html">← 回到主页</a>
+  </div>
+</nav>
+
+<header>
+  <h1>操作手册</h1>
+  <p class="sub">绳上的每一个动作，都在这一页。</p>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="box">
+      <h2>把绳放下来</h2>
+      <ul class="ops">
+        <li><b>刘海停顿</b>鼠标停在刘海左半区，剪贴板绳滑下来；停在右半区，出来的是便签绳。全屏应用上也能放。停顿时长三档可选：0.15 / 0.25 / 0.4 秒。没有刘海的屏幕，停在菜单栏上即可。</li>
+        <li><b>快捷键</b><span class="key">⌃⌥C</span> 放下 / 收起剪贴板绳，<span class="key">⌃⌥N</span> 放下 / 收起便签绳。都可以在设置里录制成自己的，冲突即时提示。</li>
+        <li><b>修饰键翻转</b>按住修饰键，刘海左右两个区对调——一种手势管两条绳。</li>
+        <li><b>收起绳子</b>点绳子外面任意一处、再按一次快捷键，或指针离开片刻，绳就自己卷回去。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="box">
+      <h2>卡片上的手势</h2>
+      <ul class="ops">
+        <li><b>悬停</b>卡片微微浮起，左上角的 ✕ 和右上角的按钮淡入。</li>
+        <li><b>单击</b>复制到剪贴板，卡片下方闪一下「已复制」。便签例外：单击便签不复制，留给勾选框和滚动。</li>
+        <li><b>双击</b>粘贴回上一个使用的 app——自动切回去、替你按下 ⌘V。未授权「辅助功能」时退化为仅复制。便签双击是打开编辑。</li>
+        <li><b>长按</b>调系统「标注」编辑图片和 PDF，存盘后缩略图跟着更新。不能标注的卡片（文字、文件夹等）退化为复制。</li>
+        <li><b>按住拖动</b>拖进任何输入框、聊天窗口、邮件就是粘贴；拖进访达文件夹是真移动，原卡随之取下；拖到废纸篓上就是删除；哪儿都不接，卡片就飞回绳子。</li>
+        <li><b>右键</b>弹出菜单，见下。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="box">
+      <h2>卡片角落的按钮</h2>
+      <ul class="ops">
+        <li><b>左上 ✕</b>取下卡片：应用自己文件夹里的图片进废纸篓，外部文件只从绳上取下、原文件不动。盯住的卡也认这个 ✕，只是会先弹窗确认——删不删，再按一次才算数。</li>
+        <li><b>右上放大镜</b>打开预览窗：图片直接看，文字可滚动、可选中，PDF 等文档走系统快速查看，一次复制多个文件时列出清单。链接卡这里直接开浏览器，文件夹卡开访达。</li>
+        <li><b>笔记的铅笔</b>打开笔记编辑窗。</li>
+        <li><b>笔记的勾选框</b>点一下划掉一行；全部勾完，整张便签变淡但不会消失。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="box">
+      <h2>右键菜单</h2>
+      <p>随卡片类型增减，常用的都在：</p>
+      <ul class="ops">
+        <li><b>复制</b>文本卡在「复制纯文本」和「复制（带格式）」之间取反，跟设置里「复制时带上格式」开关正好互补：手势按开关来，右键永远备着另一副面孔。</li>
+        <li><b>盯住 / 取消盯住</b>盯住的卡豁免自动清理、豁免清空；✕ 还在，只是删之前会先问一声。</li>
+        <li><b>打开 / 标注 / 在访达中显示</b>标注只对图片和图片型 PDF 出现，走系统 Markup。</li>
+        <li><b>在浏览器中打开</b>链接文本卡才有。</li>
+        <li><b>存储到桌面</b>图片复制一份到桌面，文字存成 .txt。</li>
+        <li><b>丢弃 / 移到废纸篓</b>应用文件夹内的图丢弃，外部文件移到废纸篓。盯住的卡不给这一项：取下它走 ✕，那里会先确认。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="box">
+      <h2>键盘</h2>
+      <ul class="ops">
+        <li><b><span class="key">⌃⌥C</span></b>放下 / 收起剪贴板绳（可在设置里录制）。</li>
+        <li><b><span class="key">⌃⌥N</span></b>放下 / 收起便签绳（同上）。</li>
+        <li><b><span class="key">⌘↩</span>（指针悬在卡片上）</b>打开这张卡的预览，再按一次关闭。</li>
+        <li><b><span class="key">Esc</span></b>关预览、关搜索框；在笔记窗里按 Esc 保存并离开。</li>
+        <li><b><span class="key">⌘S</span></b>保存笔记。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="box">
+      <h2>绳子本身</h2>
+      <ul class="ops">
+        <li><b>翻页</b>滚轮 / 触控板横向滑动翻页，胶囊两端的 ‹ › 逐屏翻，正中显示「当前 – 截止 / 总数」。</li>
+        <li><b>胶囊工具条</b>按类型筛选（全部 / 文字 / 链接 / 颜色 / 图片 / 文件）、搜索、只看盯住的卡、按日期回看以前挂过的卡。</li>
+        <li><b>绳中间的 +</b>新建便签。</li>
+        <li><b>菜单栏图标</b>实心 = 正在监控剪贴板，空心 = 已暂停。点图标弹菜单：呼出两条绳、新建便签、监控开关、系统截图自动上绳、设置、退出。</li>
+      </ul>
+      <p style="margin-top:14px">截屏也能直接上绳：打开菜单里的「系统截图自动上绳」，照常按 <span class="key">⌘⇧3</span> 或 <span class="key">⌘⇧4</span>，截图直接挂上绳子。详见主页<a href="index.html#features">特性介绍</a>。</p>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 Clothespeg</span>
+    <a href="index.html">主页</a>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The App Store build runs sandboxed: no entitlement means no API. -->
+  <key>com.apple.security.app-sandbox</key><true/>
+  <!-- Watched folders: the user picks a folder by hand, and the
+       security-scoped bookmark the pick grants is what the watcher lives
+       on. Read-write, because a picked folder's new pictures are taken in
+       as copies and the original can be left where it is. -->
+  <key>com.apple.security.files.user-selected.read-write</key><true/>
+</dict>
+</plist>
