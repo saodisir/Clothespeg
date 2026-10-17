@@ -32,6 +32,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var zoomKeyMonitor: Any?
     private var zoomLocalMonitor: Any?
     private var zoomDismissMonitor: Any?
+    /// Space, as Quick Look answers it: pressed while the pointer is on a
+    /// card, it previews that card. Held only while it can be answered
+    /// honestly — see `updateSpaceKey` for when that is, and
+    /// `watchSpacePreview` for what tracks it.
+    private var spaceHotKey: HotKey?
+    /// The pointer's wanderings, watched only to know when the space key can
+    /// honestly be armed or must be let go. Local and global both, for the
+    /// same reason `watchScroll` keeps a pair: over the cards the event is
+    /// this app's, over the pass-through everywhere else it is somebody's.
+    private var spaceMoveMonitor: Any?
+    private var spaceLocalMoveMonitor: Any?
+    /// Space when this app itself is frontmost, where the Carbon key is
+    /// deliberately disarmed and the local monitor answers instead.
+    private var spaceLocalKeyMonitor: Any?
     /// Kept so the ticks can be refreshed when the filter changes on the line
     /// rather than in here.
     private var filterMenuRef: NSMenu?
@@ -256,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watchScroll()
         watchSideButtons()
         watchZoomKey()
+        watchSpacePreview()
         watchFrontmost()
 
         line.$items
@@ -1448,8 +1463,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 diagLog("Hotkey panel disarmed: revealed=\(isRevealed) appActive=\(NSApp.isActive)")
                 panelKeys = [:]
             }
+            // The space key answers to the same two conditions the panel
+            // doors do, and a change here can end an arming with no mouse
+            // move to announce it — the line going up under a resting
+            // pointer, most commonly.
+            updateSpaceKey()
             return
         }
+        updateSpaceKey()
         for door in Door.panelDoors {
             guard door.isSet else { panelKeys[door] = nil; continue }
             guard panelKeys[door] == nil else { continue }
@@ -1482,22 +1503,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ///
         /// Command-return has no meaning in the apps this is used with, and
         /// a command key is not something a text field eats by accident.
-        let open: (NSEvent) -> Void = { [weak self] event in
-            guard event.keyCode == 36, event.modifierFlags.contains(.command) else { return }
-            MainActor.assumeIsolated {
-                guard let self, self.isRevealed else { return }
-                guard let id = self.hoveredCardID(),
-                      let item = self.line.items.first(where: { $0.id == id }) else { return }
-                // A file has nothing to enlarge: it is read by the system.
-                if case .file(let urls) = item.payload {
-                    if urls.count == 1 { NSWorkspace.shared.open(urls[0]) }
-                    else { self.line.copy(id) }
-                    return
-                }
-                guard let frame = self.cardFrame(for: id) else { return }
-                let anchor = NSPoint(x: frame.midX, y: frame.minY)
-                ZoomController.shared.toggle(item, at: anchor, on: self.panel.screen)
-            }
+        /// (Space itself is answered too now, but on its own terms — see
+        /// `watchSpacePreview`, which arms it only while it can be swallowed.)
+        let open: (NSEvent) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleHoveredZoom() }
         }
         // Returning nil would swallow the key, and a global monitor cannot: the
         // command-return still goes to the app behind. That is the trade for
@@ -1514,17 +1523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             if event.keyCode == 36 && event.modifierFlags.contains(.command) {
                 MainActor.assumeIsolated {
-                    guard let self, self.isRevealed else { return }
-                    guard let id = self.hoveredCardID(),
-                          let item = self.line.items.first(where: { $0.id == id }) else { return }
-                    if case .file(let urls) = item.payload {
-                        if urls.count == 1 { NSWorkspace.shared.open(urls[0]) }
-                        else { self.line.copy(id) }
-                        return
-                    }
-                    guard let frame = self.cardFrame(for: id) else { return }
-                    ZoomController.shared.toggle(
-                        item, at: NSPoint(x: frame.midX, y: frame.minY), on: self.panel.screen)
+                    self?.toggleHoveredZoom()
                 }
                 return nil
             }
@@ -1549,6 +1548,115 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }) {
             zoomDismissMonitor = dismiss
+        }
+    }
+
+    /// Previews whichever card the pointer is over, or closes that preview.
+    ///
+    /// The one gesture ⌘↩ and the space key both mean, so the one body
+    /// answers both and neither can drift. A note card is nobody's preview:
+    /// its content lives only in the editor (see `ZoomController.toggleZoom`),
+    /// and a reader showing an empty sheet of paper is a reader lying — so a
+    /// key aimed at a note is left for whatever would otherwise have it.
+    private func toggleHoveredZoom() {
+        guard isRevealed,
+              let id = hoveredCardID(),
+              let item = line.items.first(where: { $0.id == id }) else { return }
+        if case .note = item.payload { return }
+        // A file has nothing to enlarge: it is read by the system.
+        if case .file(let urls) = item.payload {
+            if urls.count == 1 { NSWorkspace.shared.open(urls[0]) }
+            else { line.copy(id) }
+            return
+        }
+        guard let frame = cardFrame(for: id) else { return }
+        ZoomController.shared.toggle(item, at: NSPoint(x: frame.midX, y: frame.minY),
+                                     on: panel.screen)
+    }
+
+    /// The space key, on Quick Look's terms.
+    ///
+    /// The reason ⌘↩ exists at all is that a global key monitor hears a space
+    /// pressed elsewhere but cannot swallow it, so the space leaked into the
+    /// app behind. But that is a fact about *monitors*, not about the key:
+    /// the Carbon hot key registration the panel doors use does swallow, and
+    /// the panel doors already showed the shape of an honest answer — hold
+    /// the key only while it can be taken without stealing. Their condition
+    /// is "the line is down and this app is not frontmost"; space tightens it
+    /// with the pointer, which is exactly the sense Quick Look gives the key:
+    /// the hovered card is the selected one.
+    ///
+    /// So the space key is registered only while the pointer sits on a card
+    /// that a space can answer, and unregistered the moment that stops being
+    /// true. While it is armed the hand is up on the line, not behind the
+    /// keyboard — nothing is being typed into for a space to be taken from.
+    /// On a note card it is never armed at all: eating a key to do nothing
+    /// with it is the one answer worse than not hearing it.
+    private func watchSpacePreview() {
+        let moved: (NSEvent) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateSpaceKey() }
+        }
+        let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .otherMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: kinds, handler: moved) {
+            spaceMoveMonitor = global
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: kinds, handler: { [weak self] event in
+            moved(event)
+            return event
+        }) {
+            spaceLocalMoveMonitor = local
+        }
+        // This app frontmost is the one state the Carbon key must not cover —
+        // armed there it would eat the spaces typed into the search field and
+        // the note editor. The local monitor answers instead, swallowing only
+        // when the pointer is on a card and nothing here is taking text.
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == 49,
+                  event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+            else { return event }
+            var swallow = false
+            MainActor.assumeIsolated {
+                guard let self, self.isRevealed, NSApp.isActive else { return }
+                // The two places this app is typed into: a field editor
+                // (the search field over the pill, the note being written)
+                // arrives as an `NSTextView`.
+                if let first = NSApp.keyWindow?.firstResponder,
+                   first is NSTextView || first is NSTextField { return }
+                guard let id = self.hoveredCardID(),
+                      let item = self.line.items.first(where: { $0.id == id }),
+                      !(item.payload.isNote) else { return }
+                self.toggleHoveredZoom()
+                swallow = true
+            }
+            return swallow ? nil : event
+        }) {
+            spaceLocalKeyMonitor = local
+        }
+    }
+
+    /// Arms or disarms the space hot key to match the moment.
+    ///
+    /// Called on every mouse move while the line is down — a question of one
+    /// rectangle test — and on the two changes that can end an arming without
+    /// a move: the line going up, and this app becoming frontmost. Cheap when
+    /// nothing changed, which is nearly always.
+    private func updateSpaceKey() {
+        let eligible = isRevealed && !NSApp.isActive
+            && hoveredCardID().map { id in
+                line.items.first(where: { $0.id == id }).map { !$0.payload.isNote } ?? false
+            } ?? false
+        if eligible {
+            guard spaceHotKey == nil else { return }
+            let key = HotKey(keyCode: 49, modifiers: 0, id: 5) { [weak self] in
+                MainActor.assumeIsolated { self?.toggleHoveredZoom() }
+            }
+            spaceHotKey = key
+            diagLog("Space preview armed: install=\(key.installStatus) register=\(key.registerStatus)")
+        } else if spaceHotKey != nil {
+            // Releasing the instance unregisters it — each `HotKey` takes its
+            // own registration with it.
+            spaceHotKey = nil
+            diagLog("Space preview disarmed")
         }
     }
 

@@ -170,18 +170,24 @@ struct SettingsView: View {
             // and spends 170 points on it — and across the top the row is one
             // line of choices, which is what it is.
             //
-            // A filled accent bar for the chosen one rather than a segmented
-            // control: a segmented control draws its own fill, and its fill is
-            // a tint of the label, so "which one am I on" is answered by a
-            // slightly darker row. A filled bar answers it with colour, and
-            // from across a room it is the only one of the two that does.
-            HStack(spacing: 6) {
-                Spacer(minLength: 0)
+            // The CDS segmented capsule rather than the filled accent bar the
+            // tabs wore first: a 999px track with a clay pill that slides
+            // between choices on the 120 ms spring. The bar answered "which
+            // one am I on" with colour; the sliding pill answers it with
+            // colour *and* gives the answer a direction — the eye follows the
+            // pill from the choice it is leaving to the one it is making,
+            // which is the one question a row of five never answers on its
+            // own.
+            HStack(spacing: 2) {
                 ForEach(Section.allCases) { option in
                     tab(option)
                 }
-                Spacer(minLength: 0)
             }
+            .padding(3)
+            .background(Capsule().fill(Color.primary.opacity(0.05)))
+            // The track hugs the five choices; the frame centres it without
+            // stretching the track behind them.
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
 
@@ -202,10 +208,15 @@ struct SettingsView: View {
         // The ground for the whole window, tab strip included. The pages hide
         // the form background themselves; the strip above them answered to
         // the window's grey, and in light mode that grey against the pages'
-        // white read as two windows in one. Dark mode keeps the system grey.
-        .background(colorScheme == .light
-                    ? Color.white
-                    : Color(nsColor: .windowBackgroundColor))
+        // white read as two windows in one. Now the CDS warm ground — the
+        // same reasoning the white answered, warmed to match the paper the
+        // rest of the app wears.
+        .background(CDS.ground)
+        // Clay is the emphasis colour of every control in the window: the
+        // switches, the pickers' highlights, the focus of the fields. One
+        // tint here rather than one per control, because an accent asked for
+        // five times is an accent that can be forgotten the sixth.
+        .tint(CDS.clay)
         .id(languageToken)
         .onReceive(NotificationCenter.default.publisher(for: Localization.changedNotification)) { _ in
             languageToken += 1
@@ -214,7 +225,8 @@ struct SettingsView: View {
     }
 
     private func tab(_ option: Section) -> some View {
-        Button {
+        let selected = section == option
+        return Button {
             section = option
         } label: {
             HStack(spacing: 6) {
@@ -223,21 +235,29 @@ struct SettingsView: View {
                 Text(option.label)
                     .lineLimit(1)
             }
-            .font(.system(size: 12, weight: section == option ? .semibold : .regular))
-            // White on the accent bar, not the label colour behind a tinted
-            // background: a tinted label on a tinted fill is two greys meeting,
-            // and which of them is which depends on the appearance.
-            .foregroundStyle(section == option ? Color.white : Color.primary)
+            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+            // Ink on clay in the dark, white in the light: white on clay
+            // in the dark glows less than it reads (see `CDS.label`).
+            .foregroundStyle(selected ? CDS.label(onClayIn: colorScheme) : Color.primary)
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(section == option ? Color.accentColor : Color.clear)
-            )
-            .contentShape(Rectangle())
+            .padding(.vertical, 5)
+            .background {
+                if selected {
+                    // One capsule for the whole strip, moved by
+                    // `matchedGeometryEffect`: the pill slides rather than
+                    // appears, which is the 120 ms geometric bite.
+                    Capsule()
+                        .fill(CDS.clay)
+                        .matchedGeometryEffect(id: "settings.tab.pill", in: pillSpace)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .animation(CDS.slideAnimation, value: section)
     }
+
+    @Namespace private var pillSpace
 }
 
 // MARK: - General
@@ -399,6 +419,7 @@ struct GeneralPage: View {
                     Text(L("Add folders to watch"))
                     Spacer()
                     Button(L("Add Folder…")) { addFolder() }
+                        .buttonStyle(CDSPillButtonStyle())
                 }
                 ForEach(folders) { entry in
                     watchedFolderRow(entry)
@@ -469,11 +490,13 @@ struct GeneralPage: View {
             HStack(spacing: 8) {
                 if staleFolders.contains(entry.id) {
                     Button(L("Re-pick")) { repickFolder(entry) }
+                        .buttonStyle(CDSPillButtonStyle())
                 } else {
                     Button(entry.enabled ? L("Stop Watching") : L("Watch")) {
                         FolderWatchStore.setEnabled(entry.id, !entry.enabled)
                         commitFolderChange()
                     }
+                    .buttonStyle(CDSPillButtonStyle())
                 }
                 Button {
                     FolderWatchStore.remove(entry.id)
@@ -837,7 +860,7 @@ struct HotkeyRecorder: View {
                 .frame(minWidth: 130)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(recording ? Color.accentColor : Color.primary.opacity(0.08))
+                        .fill(recording ? CDS.clay : Color.primary.opacity(0.08))
                 )
                 .contentShape(Rectangle())
             }
@@ -971,6 +994,7 @@ struct KeepingPage: View {
                             Inbox.prepare()
                             NSWorkspace.shared.open(Inbox.folder)
                         }
+                        .buttonStyle(CDSPillButtonStyle())
                         Button(justCleaned ? L("Cleaned") : L("Clean up")) {
                             guard confirm(L("Clean up clipboard pictures?"),
                                           L("Pictures are put in the Trash rather than deleted, so anything cleared can be recovered.")) else { return }
@@ -983,6 +1007,7 @@ struct KeepingPage: View {
                             }
                         }
                         .disabled(justCleaned)
+                        .buttonStyle(CDSPillButtonStyle())
                     }
                 }
 
@@ -993,6 +1018,7 @@ struct KeepingPage: View {
                         LineKeeper.line?.clear(deck: .clipboard)
                         stats = StorageStats.measure()
                     }
+                    .buttonStyle(CDSPillButtonStyle())
                 }
                 .disabled(!(LineKeeper.line?.hasCards(.clipboard) ?? false))
 
@@ -1003,6 +1029,7 @@ struct KeepingPage: View {
                         LineKeeper.line?.clear(deck: .notes)
                         stats = StorageStats.measure()
                     }
+                    .buttonStyle(CDSPillButtonStyle())
                 }
                 .disabled(!(LineKeeper.line?.hasCards(.notes) ?? false))
                 VStack(alignment: .leading, spacing: 2) {
@@ -1071,15 +1098,17 @@ struct PermissionsPage: View {
                             Button(L("Open the log folder")) {
                                 NSWorkspace.shared.open(ClothespegLog.directoryURL)
                             }
+                            .buttonStyle(CDSPillButtonStyle())
                             Button(L("Copy Logs")) {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(ClothespegLog.allText, forType: .string)
                             }
+                            .buttonStyle(CDSPillButtonStyle())
                             Button(L("Export diagnostics…")) {
                                 exportDiagnostics()
                             }
+                            .buttonStyle(CDSPillButtonStyle())
                         }
-                        .controlSize(.small)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1124,7 +1153,7 @@ struct PermissionsPage: View {
                 Button(L("Open System Settings")) {
                     AccessibilityPermission.openSettings()
                 }
-                .font(.caption)
+                .buttonStyle(CDSPillButtonStyle())
             }
             Spacer(minLength: 0)
         }
@@ -1189,6 +1218,7 @@ struct AboutPage: View {
                     .padding(.top, 18)
 
                 Button(L("Licence")) { showLicence = true }
+                    .buttonStyle(CDSPillButtonStyle())
                     .padding(.top, 22)
                     .padding(.bottom, 26)
             }
@@ -1246,20 +1276,17 @@ enum AppInfo {
 
 /// The ground the settings pages sit on.
 ///
-/// In light mode the window's own grey sits too close to the grey of the
-/// grouped cards, and one blurs into the other; a white ground gives the
-/// cards their edges back. Dark mode keeps the system ground, where the two
-/// greys already read apart — hidden and re-supplied, so the dark answer is
-/// the same grey it always was.
+/// The CDS warm ground (`CDS.ground`) rather than white-over-grey: in light
+/// mode the window's own grey sat too close to the grey of the grouped cards
+/// and one blurred into the other — the warm `#f5f5f3` gives the cards their
+/// edges back the same way the white did, and matches the paper tone the
+/// cards on the line wear. Dark mode is a warm charcoal rather than the
+/// system's neutral grey, for the same reason.
 private struct SettingsPageBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
-            .background(colorScheme == .light
-                        ? Color.white
-                        : Color(nsColor: .windowBackgroundColor))
+            .background(CDS.ground)
     }
 }
 

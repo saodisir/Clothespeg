@@ -19,11 +19,11 @@ else
   BUNDLE_ID="com.vizwise.clothespeg"
   BUNDLE_NAME="Clothespeg"
 fi
-# 1.6.0 is a minor rather than a patch: the line gained ways to be paged that
-# it did not have — the wheel, and the two thumb keys behind a switch — and
-# the pill's arrows now run on a hold. A patch would say "fixed", which is
-# only half of what changed.
-VERSION="1.6.0"
+# 1.7.0 is a minor: a new way to read a card — the space key, on Quick
+# Look's terms — and the settings window wearing the CDS warm design
+# (the clay accent, one button style where four had been). A patch would
+# say "fixed", which is only half of what changed.
+VERSION="1.7.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -107,7 +107,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleVersion</key><string>4</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
