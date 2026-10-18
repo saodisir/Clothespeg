@@ -852,7 +852,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func pointerOnScrollableCard() -> Bool {
         guard let id = line.hitRects.first(where: {
             $0.value.insetBy(dx: -4, dy: -4).contains(pointerInLine())
-        })?.key, let note = line.items.first(where: { $0.id == id })?.payload.note
+        })?.key, let note = line.onLine.first(where: { $0.id == id })?.payload.note
         else { return false }
         let arrangement = NoteCardLayout.arrange(note)
         return max(0, arrangement.fullHeight - arrangement.height) > 0
@@ -1505,7 +1505,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         /// a command key is not something a text field eats by accident.
         /// (Space itself is answered too now, but on its own terms — see
         /// `watchSpacePreview`, which arms it only while it can be swallowed.)
-        let open: (NSEvent) -> Void = { [weak self] _ in
+        let open: (NSEvent) -> Void = { [weak self] event in
+            // The guard lives here, on the global path, and must never move:
+            // this monitor hears every key every other app receives — the
+            // user's typing, and the ⌘V this app itself synthesizes for a
+            // double-click paste. Unguarded, a double-click on a card would
+            // open its own preview 0.25s later (the paste keystroke arriving
+            // with the pointer still on the card), and any key typed while
+            // hovering a card would toggle it. Regression shipped in 1.7.0
+            // and caught the same evening: the double-click paste came out
+            // wearing a preview.
+            guard event.keyCode == 36, event.modifierFlags.contains(.command) else { return }
             MainActor.assumeIsolated { self?.toggleHoveredZoom() }
         }
         // Returning nil would swallow the key, and a global monitor cannot: the
@@ -1554,15 +1564,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Previews whichever card the pointer is over, or closes that preview.
     ///
     /// The one gesture ⌘↩ and the space key both mean, so the one body
-    /// answers both and neither can drift. A note card is nobody's preview:
-    /// its content lives only in the editor (see `ZoomController.toggleZoom`),
-    /// and a reader showing an empty sheet of paper is a reader lying — so a
-    /// key aimed at a note is left for whatever would otherwise have it.
+    /// answers both and neither can drift. Notes read here too — a note's
+    /// plain text in the reader, the same words a paste of it carries —
+    /// which is the reading half of the 2026-10-17 unification; the editing
+    /// half belongs to the corner mark, the long press and the menu.
     private func toggleHoveredZoom() {
         guard isRevealed,
               let id = hoveredCardID(),
-              let item = line.items.first(where: { $0.id == id }) else { return }
-        if case .note = item.payload { return }
+              // Either deck: a note hovers on the notes deck, where the card
+              // is in `notes` and an `items` lookup made space say nothing.
+              let item = line.onLine.first(where: { $0.id == id }) else { return }
         // A file has nothing to enlarge: it is read by the system.
         if case .file(let urls) = item.payload {
             if urls.count == 1 { NSWorkspace.shared.open(urls[0]) }
@@ -1590,8 +1601,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// that a space can answer, and unregistered the moment that stops being
     /// true. While it is armed the hand is up on the line, not behind the
     /// keyboard — nothing is being typed into for a space to be taken from.
-    /// On a note card it is never armed at all: eating a key to do nothing
-    /// with it is the one answer worse than not hearing it.
+    /// Notes answer it too now: their plain text reads in the zoom, which is
+    /// the reading half of the 2026-10-17 unification.
     private func watchSpacePreview() {
         let moved: (NSEvent) -> Void = { [weak self] _ in
             MainActor.assumeIsolated { self?.updateSpaceKey() }
@@ -1623,8 +1634,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let first = NSApp.keyWindow?.firstResponder,
                    first is NSTextView || first is NSTextField { return }
                 guard let id = self.hoveredCardID(),
-                      let item = self.line.items.first(where: { $0.id == id }),
-                      !(item.payload.isNote) else { return }
+                      let item = self.line.items.first(where: { $0.id == id })
+                else { return }
                 self.toggleHoveredZoom()
                 swallow = true
             }
@@ -1641,10 +1652,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// a move: the line going up, and this app becoming frontmost. Cheap when
     /// nothing changed, which is nearly always.
     private func updateSpaceKey() {
-        let eligible = isRevealed && !NSApp.isActive
-            && hoveredCardID().map { id in
-                line.items.first(where: { $0.id == id }).map { !$0.payload.isNote } ?? false
-            } ?? false
+        // Any hovered card qualifies: notes read in the zoom as their plain
+        // text, files open, everything else presents.
+        let eligible = isRevealed && !NSApp.isActive && hoveredCardID() != nil
         if eligible {
             guard spaceHotKey == nil else { return }
             let key = HotKey(keyCode: 49, modifiers: 0, id: 5) { [weak self] in

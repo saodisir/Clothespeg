@@ -871,8 +871,7 @@ struct HotkeyRecorder: View {
             // listening; the dash on the pill is what it leaves behind.
             if door.isSet, !recording {
                 Button(L("Clear"), action: clear)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(CDSPillButtonStyle())
             }
         }
         // Read back on every appearance, so a window reopened after the key
@@ -1256,11 +1255,16 @@ private struct LicenceSheet: View {
             HStack {
                 Spacer()
                 Button(L("Done")) { dismiss() }
+                    .buttonStyle(CDSPillButtonStyle())
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 460, height: 400)
+        // Ground outside the padding: the sheet's own background must not
+        // show as a ring around the warm ground, and the padding is what
+        // keeps the text off the ground's edge.
+        .settingsPageBackground()
     }
 }
 

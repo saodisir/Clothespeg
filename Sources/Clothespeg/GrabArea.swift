@@ -69,16 +69,24 @@ struct GrabArea: NSViewRepresentable {
         view.noteScrollOffset = min(noteScroll.wrappedValue, view.noteScrollMax)
         view.onNoteScroll = { noteScroll.wrappedValue = $0 }
         view.onTick = { row in line.tick(id, row: row) }
-        // A note is written rather than used. Everywhere else a double click
-        // means "put this back where I was working", and here it means "open
-        // this and let me change it" — which is what the card is most for.
-        // The two are different because the contents are: nothing outside
-        // this app has a copy of a note, so opening it is the only thing
-        // there is to do with it.
+        // The two decks answer one set of gestures, whatever they hold (the
+        // 2026-10-17 unification): a press copies, a double click pastes to
+        // the app in front, a long press opens the editor — the system
+        // Markup for a thing with a file, this app's note editor for a thing
+        // that lives nowhere else. The corner mark is the one deliberate
+        // difference: a magnifier over text you cannot edit is the wrong
+        // promise, so a note's corner opens the editor.
         view.onDoubleClick = {
-            if isNote { NoteController.shared.edit(item) } else { line.open(id) }
+            // Said rather than silent: a double click that pastes nothing is
+            // the question this log has to answer (the 2026-10-17 report of a
+            // note's double click doing nothing on the card).
+            diagLog("Card double click: \(isNote ? "note" : "card") \(id)")
+            line.open(id)
         }
         view.onSingleClick = { line.copy(id) }
+        view.onLongPress = {
+            if isNote { NoteController.shared.edit(item) } else { line.markup(id) }
+        }
         view.onDragStart = { line.draggingID = id }
         view.onDragEnd = {
             line.draggingID = nil
@@ -96,7 +104,6 @@ struct GrabArea: NSViewRepresentable {
             }
         }
         view.onDiscard = { line.discard(id) }
-        view.onLongPress = { line.markup(id) }
         view.onPressChange = { pressed in line.pressedID = pressed ? id : nil }
         view.menuProvider = {
             let menu = NSMenu()
@@ -108,6 +115,10 @@ struct GrabArea: NSViewRepresentable {
             // argue about and a file has none either; both keep Copy.
             if item.payload.isNote {
                 menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
+                // The editor's door in the menu. The double click now pastes
+                // like every other card, so the corner mark alone would be
+                // one fragile place to reach a note's own purpose from.
+                menu.addItem(ClosureMenuItem(L("Edit")) { NoteController.shared.edit(item) })
             } else if isText {
                 if FormatCopy.isEnabled {
                     menu.addItem(ClosureMenuItem(L("Copy plain text")) { line.copy(id, formatted: false) })
@@ -177,8 +188,9 @@ final class GrabView: NSView, NSDraggingSource {
     var url: URL?
     var dragImage: NSImage?
     var onDoubleClick: () -> Void = {}
-    /// A single click on a clipboard card: copy it. A note leaves this
-    /// unwired — its press belongs to the squares and the scroll.
+    /// A single click on a clipboard card copies it. A note leaves this
+    /// unwired — its press belongs to the squares (2026-10-17, user: a copy
+    /// on a single press of a ticked paper is a mis-tick waiting to happen).
     var onSingleClick: () -> Void = {}
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
@@ -430,7 +442,16 @@ final class GrabView: NSView, NSDraggingSource {
 
     private var pasteboardWriter: NSPasteboardWriting? {
         if let first = fileWriters.first { return first }
-        guard case .text(let string, _) = payload else { return nil }
+        // A note drags out as its plain text, the same bytes a paste of it
+        // carries — ticks spelled out. It used to fall through the `case
+        // .text` below and answer nil, which the drag read as nothing to
+        // carry: a note card dragged to another app simply did nothing.
+        let string: String
+        switch payload {
+        case .text(let t, _): string = t
+        case .note(let note): string = note.plainText
+        default: return nil
+        }
         let item = NSPasteboardItem()
         // Written as data rather than with `setString`, which is the same
         // bytes and the same type but goes through a different call.
@@ -467,17 +488,19 @@ final class GrabView: NSView, NSDraggingSource {
             didLongPress = false
         }
         // A single press on a clipboard card copies it — the gesture the card
-        // is most for, and the same path the menu's Copy takes, so the tick
-        // under the card and the formatting switch both apply unchanged. The
-        // first click of a double click copies as well, which is the cascade
-        // every double click lives with: the paste that follows puts the very
-        // same thing back on the pasteboard.
+        // is most for, and the same path the menu's Copy takes. The first
+        // click of a double click copies as well, which is the cascade every
+        // double click lives with: the paste that follows puts the very same
+        // thing back on the pasteboard.
         //
-        // A note keeps the press for its squares and its scroll, and its
-        // paper answers nothing — a single click on a note has never copied.
-        // A drag and a long press have already said what they are by the time
-        // the mouse comes up, and the click count keeps the second click of a
-        // double from answering twice.
+        // A note keeps the press for its squares: a click there is a tick or
+        // it is nothing. The unification round of 2026-10-17 tried copying on
+        // a single press and the user called it back the same evening — on a
+        // paper whose rows carry tick boxes, a press that copies is a press
+        // one tick away from a mistake. So a note's click answers nothing
+        // unless it landed on a square; everything else a note does has its
+        // own door (double click pastes, long press edits, the corner mark
+        // edits, drag carries the text out).
         guard let start = downPoint, !startedDrag, !didLongPress,
               event.clickCount == 1, !payload.isNote else { return }
         onSingleClick()

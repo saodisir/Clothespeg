@@ -19,11 +19,11 @@ else
   BUNDLE_ID="com.vizwise.clothespeg"
   BUNDLE_NAME="Clothespeg"
 fi
-# 1.7.0 is a minor: a new way to read a card — the space key, on Quick
-# Look's terms — and the settings window wearing the CDS warm design
-# (the clay accent, one button style where four had been). A patch would
-# say "fixed", which is only half of what changed.
-VERSION="1.7.0"
+# 1.8.0 is a minor: the note cards answer the same gestures as the
+# clipboard cards — a double click pastes, a long press opens the editor,
+# space looks — and the fixes those revealed (the deck lookup that sent
+# a note's paste nowhere, the save that died before its own fix ran).
+VERSION="1.8.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -107,7 +107,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>4</string>
+  <key>CFBundleVersion</key><string>5</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

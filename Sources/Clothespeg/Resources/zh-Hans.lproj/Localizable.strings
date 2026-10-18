@@ -28,6 +28,7 @@
 
 /* GrabArea */
 "Copy" = "复制";
+"Edit" = "编辑";
 "Open" = "打开";
 "Open in Browser" = "在浏览器中打开";
 "Markup" = "标注";

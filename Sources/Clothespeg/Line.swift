@@ -835,8 +835,16 @@ final class Line: ObservableObject {
     /// is still on it, and ⌘V will do the rest.
     @discardableResult
     func paste(_ id: UUID) -> Bool {
-        guard let item = items.first(where: { $0.id == id }) else { return false }
-        if PasteInto.shared.paste(item.payload, rich: item.rich) { return true }
+        // Either deck, like copy and discard: a note lives in `notes`, not
+        // `items`, and a lookup that only asked `items` killed the note's
+        // double click before the paste ever ran (2026-10-17 log: six
+        // "Card double click" lines, not one "Paste").
+        guard let item = onLine.first(where: { $0.id == id }) else { return false }
+        let sent = PasteInto.shared.paste(item.payload, rich: item.rich)
+        // The one question a "double click did nothing" report has to answer:
+        // did the paste go out, and if not, who was in front when it tried.
+        diagLog("Paste \(item.payload.isNote ? "note" : "card"): sent=\(sent) front=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "none")")
+        if sent { return true }
         copy(id)
         return false
     }
@@ -977,12 +985,30 @@ final class Line: ObservableObject {
     }
 
     /// A snippet, on the Desktop as a `.txt` — the image card's "Save to
-    /// Desktop", borrowed for the one kind of card that has no file yet. The
-    /// card stays: nothing was moved, something was made. The name is the
-    /// first line of the snippet, trimmed to something a Finder row can wear.
+    /// Desktop", borrowed for the kinds of card that have no file yet: a
+    /// snippet and a note. The card stays: nothing was moved, something was
+    /// made. The name is the first line, trimmed to something a Finder row
+    /// can wear.
+    ///
+    /// A note lands here as its plain text — the same words a paste carries,
+    /// ticks spelled out — because a note is kept nowhere else. This is also
+    /// where the menu item used to die in silence: the text was read from
+    /// `captionText`, which answers nil for a note, and the guard's exit had
+    /// no voice at all. Shown on the card, answered by nobody.
     func saveTextToDesktop(_ id: UUID) {
-        guard let item = items.first(where: { $0.id == id }),
-              let text = item.payload.captionText else { return }
+        // Either deck: the note's "Save to Desktop" comes from the notes deck,
+        // where the card is in `notes` and an `items` lookup died silently —
+        // the reason backlog #2 stayed broken after the payload switch was
+        // fixed below it (the fix was never reached).
+        guard let item = onLine.first(where: { $0.id == id }) else { return }
+        let text: String
+        switch item.payload {
+        case .text(let string, _): text = string
+        case .note(let note): text = note.plainText
+        // Unreachable while the menu only offers this to text-bearing cards;
+        // a beep rather than silence if that ever stops being true.
+        default: NSSound.beep(); return
+        }
         let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
         var name = text.split(separator: "\n", omittingEmptySubsequences: true)
             .first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""

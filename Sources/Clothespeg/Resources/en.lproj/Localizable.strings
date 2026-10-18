@@ -28,6 +28,7 @@
 
 /* GrabArea */
 "Copy" = "Copy";
+"Edit" = "Edit";
 "Open" = "Open";
 "Open in Browser" = "Open in Browser";
 "Markup" = "Markup";

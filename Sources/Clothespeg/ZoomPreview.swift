@@ -121,20 +121,14 @@ private struct ZoomCard: View {
                 // documentation will get it wrong the same way.
                 SystemPreview(url: url)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if case .note(let note) = preview.payload {
+                // A note reads as its plain text, the same words a paste
+                // carries — ticks spelled out. Editing happens elsewhere
+                // (the corner mark, the long press, the menu); the reader
+                // only shows, which is what a space asks of it.
+                ReadingText(text: note.plainText, isCode: false)
             } else if case .text(let string, let isCode) = preview.payload {
-                ScrollView(.vertical) {
-                    Text(string)
-                        .font(isCode ? .system(size: 13, design: .monospaced)
-                                     : .system(size: 14))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                }
-                // Scrolling rather than truncating: the reason to open this
-                // is that the card cut the text off, and a zoom that cut it
-                // off too would have solved nothing.
-                .scrollIndicators(.automatic)
+                ReadingText(text: string, isCode: isCode)
             }
         }
         .frame(width: ZoomPreview.size.width, height: ZoomPreview.size.height)
@@ -161,6 +155,27 @@ private struct ZoomCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
         )
+    }
+}
+
+/// The reading half of a text or note zoom: the whole thing, scrolling
+/// rather than truncating — the reason to open this is that the card cut the
+/// text off, and a zoom that cut it off too would have solved nothing.
+private struct ReadingText: View {
+    let text: String
+    let isCode: Bool
+
+    var body: some View {
+        ScrollView(.vertical) {
+            Text(text)
+                .font(isCode ? .system(size: 13, design: .monospaced)
+                             : .system(size: 14))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+        }
+        .scrollIndicators(.automatic)
     }
 }
 
