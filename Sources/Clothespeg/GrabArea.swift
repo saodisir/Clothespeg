@@ -69,6 +69,21 @@ struct GrabArea: NSViewRepresentable {
         view.noteScrollOffset = min(noteScroll.wrappedValue, view.noteScrollMax)
         view.onNoteScroll = { noteScroll.wrappedValue = $0 }
         view.onTick = { row in line.tick(id, row: row) }
+        // A ringing card wears its 知道了 along the caption's right end, and
+        // the press region sits under the drawing. A repeated reminder never
+        // carries the fired mark, but both kinds ring, so the test is the
+        // highlight itself rather than the mark.
+        if line.highlightedNoteID == id, let arrangement {
+            view.ackRect = CGRect(
+                x: NoteCardLayout.width * 0.45,
+                y: arrangement.height - NoteCardLayout.bottomPad - NoteCardLayout.captionHeight,
+                width: NoteCardLayout.width * 0.55 - NoteCardLayout.sidePad,
+                height: NoteCardLayout.captionHeight)
+            view.onAcknowledge = {
+                diagLog("Reminder acknowledged: \(id)")
+                line.clearNoteHighlight(id)
+            }
+        }
         // The two decks answer one set of gestures, whatever they hold (the
         // 2026-10-17 unification): a press copies, a double click pastes to
         // the app in front, a long press opens the editor — the system
@@ -255,6 +270,13 @@ final class GrabView: NSView, NSDraggingSource {
     var noteRows: [NoteCardLayout.Row] = []
     var onTick: (Int) -> Void = { _ in }
 
+    /// Where the ringing card says "知道了", and what that press does. The
+    /// caption's right end of a note whose reminder has rung: the one place
+    /// on the card that answers "I have seen it" without opening anything.
+    /// Nil when the card is not ringing.
+    var ackRect: CGRect? = nil
+    var onAcknowledge: () -> Void = {}
+
     /// How far the note's paper can scroll — the distance between the paper
     /// at full length and the window it is seen through. Zero means there is
     /// nothing below the fold and the wheel is left alone.
@@ -295,6 +317,15 @@ final class GrabView: NSView, NSDraggingSource {
         if isInCross(event) {
             downPoint = nil
             onDiscard()
+            return
+        }
+        // Before the tick: a ringing card's 知道了 is a press on paper that
+        // is not a square, and letting it fall through to the copy would
+        // make the one press the reminder is asking for put the note on the
+        // pasteboard instead.
+        if isAck(event) {
+            downPoint = nil
+            onAcknowledge()
             return
         }
         // Before the double click and before the press that copies. A tick is
@@ -353,6 +384,19 @@ final class GrabView: NSView, NSDraggingSource {
             if box.insetBy(dx: -2, dy: -2).contains(inPaper) { return row.index }
         }
         return nil
+    }
+
+    /// Whether this press landed on the ringing card's 知道了.
+    ///
+    /// The caption row sits at the card's fixed bottom, below the scroll —
+    /// a scrolled note moves its rows, not its footer, so the offset stays
+    /// out of the arithmetic here.
+    private func isAck(_ event: NSEvent) -> Bool {
+        guard let rect = ackRect else { return false }
+        let p = convert(event.locationInWindow, from: nil)
+        let inPaper = CGPoint(x: p.x - Frame.inset,
+                              y: (bounds.height - p.y) - Frame.inset)
+        return rect.insetBy(dx: -4, dy: -2).contains(inPaper)
     }
 
     private func endPress() {

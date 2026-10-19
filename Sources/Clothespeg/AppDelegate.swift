@@ -173,7 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let mine = ProcessInfo.processInfo.processIdentifier
         for other in NSRunningApplication.runningApplications(withBundleIdentifier: id)
         where other.processIdentifier != mine {
-            other.terminate()
+            // Kill the stale copy at once rather than ask it to quit: a
+            // graceful quit leaves its menu-bar item up while it winds down,
+            // and the status item we are about to hang can be torn out with
+            // it (see the deferred setUpStatusItem below).
+            other.forceTerminate()
         }
     }
 #endif
@@ -264,7 +268,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // above the middle of the notes' rope is that door.
         registerHotkeys()
 
-        setUpStatusItem()
+        // Hung just after launch, not inline: beTheOnlyInstance (DEBUG) has
+        // just force-terminated any earlier copy, and its menu-bar item lingers
+        // for a beat as the process dies. Adding ours in that window can make
+        // macOS remove it along with the old one — the bug behind a debug
+        // relaunch showing no menu-bar icon. By the time this fires the stale
+        // copy is gone, so ours sticks.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.setUpStatusItem()
+        }
         watchMenuBarClicks()
         watchOutsideClicks()
         watchScroll()
@@ -294,6 +306,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // which one ends with a note on the line.
         NotificationCenter.default.addObserver(forName: .noteHung, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.comeDown(on: nil) }
+        }
+        // The reminder side of the notes: the scheduler answers the system's
+        // deliveries from here on, and a ring brings the rope down with the
+        // notes deck facing, the way a note just written does — a reminder
+        // that rings quietly behind a retracted rope is a clock, not a
+        // reminder.
+        ReminderScheduler.shared.activate()
+        // The in-app ring reads the notes from here on: the rope comes down
+        // for a due reminder whether or not the system ever draws a banner.
+        ReminderScheduler.shared.noteProvider = { [weak self] in
+            guard let self else { return [] }
+            return self.line.notes.filter { !$0.falling }.compactMap { item -> (id: UUID, note: Note)? in
+                guard case .note(let note) = item.payload else { return nil }
+                return (item.id, note)
+            }
+        }
+        NotificationCenter.default.addObserver(forName: ReminderScheduler.firedNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let id = note.userInfo?["id"] as? UUID else { return }
+                self.line.deck = .notes
+                self.openPinned()
+                self.line.noteReminderArrived(id)
+            }
         }
         // Photos kept from last time show themselves for a moment.
         if line.liveCount > 0 { comeDown(on: nil) }
@@ -1818,12 +1853,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The board fills in while copied content is hung, so it shows at a
     /// glance that the clipboard is being watched.
     private func updateStatusIcon() {
+        // Guarded: setClipboard can reach this before setUpStatusItem has run
+        // now that the item is hung a beat after launch.
+        guard let button = statusItem?.button else { return }
         let on = ClipboardWatcher.isEnabled
         let description = on ? L("Clothespeg, hanging what you copy") : "Clothespeg"
-        let image = NSImage(systemSymbolName: on ? "list.clipboard.fill" : "list.clipboard", accessibilityDescription: description)
+        let name = on ? "list.clipboard.fill" : "list.clipboard"
+        // An explicit point size: without it the menu-bar button can size the
+        // template to zero width and the icon never paints, even though the
+        // image itself is valid (a classic status-bar-from-SF-Symbol trap).
+        let base = NSImage(systemSymbolName: name, accessibilityDescription: description)
+        // 14, not 18: this symbol runs tall for its point size (18 drew 19×25),
+        // which read as oversized beside the neighbours' ~16pt glyphs.
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular, scale: .medium)
+        // withSymbolConfiguration is optional: if it ever fails, keep the
+        // base symbol rather than handing the button a nil image and showing
+        // nothing.
+        let image = base?.withSymbolConfiguration(config) ?? base
         image?.isTemplate = true
-        statusItem.button?.image = image
-        statusItem.button?.toolTip = description
+        button.image = image
+        button.toolTip = description
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

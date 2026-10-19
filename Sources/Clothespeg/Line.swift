@@ -268,6 +268,11 @@ final class Line: ObservableObject {
     /// to the thing standing on the other side of it.
     @Published var notes: [Pegged] = []
 
+    /// The note card a ringing reminder has lit. Set when the reminder
+    /// arrives, cleared when the note is opened or its reminder removed —
+    /// a light that only the person it rang for can put out.
+    @Published var highlightedNoteID: UUID?
+
     /// Which of the two is on the line. They share the panel, the rope, the
     /// glass and every gesture, and share nothing else.
     enum Deck: String {
@@ -637,7 +642,7 @@ final class Line: ObservableObject {
         // stayed empty, which is the opposite of what the attic is for. The
         // line shows what fits and the rest is panned to.
         save()
-        if !quietly { play("Tink", volume: 0.35) }
+        if !quietly { play(.hang) }
         return item.id
     }
 
@@ -675,7 +680,7 @@ final class Line: ObservableObject {
         items[i].falling = true
         hitRects[id] = nil
         save()
-        if !quietly { play("Pop", volume: 0.25) }
+        if !quietly { play(.remove) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             self?.items.removeAll { $0.id == id }
         }
@@ -858,7 +863,10 @@ final class Line: ObservableObject {
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
             log.notice("Trashed \(url.lastPathComponent, privacy: .public)")
-            if soundOn && !quietly { Line.trashSound?.play() }
+            // The same sound as any card leaving the line. The dock's own
+            // "drag to trash" used to play here — a second voice for what
+            // is, to the ear, one event: a card coming down.
+            if !quietly { play(.remove) }
             drop(id, quietly: true)
             return true
         } catch {
@@ -867,10 +875,6 @@ final class Line: ObservableObject {
             return false
         }
     }
-
-    private static let trashSound = NSSound(
-        contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/dock/drag to trash.aif",
-        byReference: true)
 
     /// Whether the file lives in Clothespeg's own folder. Those are discarded
     /// to the Trash, or the folder would fill up with forgotten screenshots.
@@ -1159,13 +1163,54 @@ final class Line: ObservableObject {
 
     // MARK: Helpers
 
+    /// The events a line sounds, and the sound each is set to make. The
+    /// names are the system's own set (/System/Library/Sounds); "" is the
+    /// settings page's "无声" — an event asked to make no sound at all.
+    enum SoundEvent: String, CaseIterable {
+        case hang
+        case remove
+        case reminder
+
+        /// How loud the event is played — the event's own business, so the
+        /// settings page's preview sounds like the moment it stands for.
+        var volume: Float {
+            switch self {
+            case .hang: return 0.35
+            case .remove: return 0.25
+            case .reminder: return 0.7
+            }
+        }
+    }
+
+    /// The sound an event carries, read through at play time so a change
+    /// in the settings page is heard on the very next event. Unset keys
+    /// read the sounds the line has always made.
+    static func soundName(for event: SoundEvent) -> String {
+        let stored = UserDefaults.standard.string(forKey: "sound.\(event.rawValue)")
+        return stored ?? Self.defaultSound(for: event)
+    }
+
+    static func setSound(_ name: String, for event: SoundEvent) {
+        UserDefaults.standard.set(name, forKey: "sound.\(event.rawValue)")
+    }
+
+    static func defaultSound(for event: SoundEvent) -> String {
+        switch event {
+        case .hang: return "Tink"
+        case .remove: return "Pop"
+        case .reminder: return "Submarine"
+        }
+    }
+
     /// The one sound this line makes, and the reason it is not private: the
     /// notes half is an extension in a file of its own, and a note coming down
     /// has to sound like a card coming down. Two implementations of one sound
     /// is how the two halves of one line start to sound different.
-    func play(_ name: String, volume: Float) {
-        guard soundOn, let sound = NSSound(named: name)?.copy() as? NSSound else { return }
-        sound.volume = volume
+    func play(_ event: SoundEvent) {
+        let name = Line.soundName(for: event)
+        guard soundOn, !name.isEmpty,
+              let sound = NSSound(named: name)?.copy() as? NSSound else { return }
+        sound.volume = event.volume
         sound.play()
     }
 

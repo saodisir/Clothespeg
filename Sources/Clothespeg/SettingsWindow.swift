@@ -61,7 +61,7 @@ enum Appearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// The settings window: one window, five pages, and nothing else.
+/// The settings window: one window, six pages, and nothing else.
 ///
 /// A window rather than more of the menu, because the menu is a list of
 /// things to do and this is a place to decide — and because the list had
@@ -115,11 +115,10 @@ final class SettingsController {
 }
 
 enum SettingsWindow {
-    /// Tall enough for the busiest page whole — 通用 carries the appearance,
-    /// the language, the login item, the swipe and the sounds, and none of
-    /// it may be cut off by the bottom edge: a setting the user has to
-    /// scroll for is a setting the user does not find.
-    static let size = CGSize(width: 560, height: 560)
+    /// Wide enough that six tabs read without squeezing, and tall enough for
+    /// the busiest page whole — no page may be cut off by the bottom edge: a
+    /// setting the user has to scroll for is a setting the user does not find.
+    static let size = CGSize(width: 600, height: 560)
 }
 
 /// What the window is made of.
@@ -139,12 +138,13 @@ struct SettingsView: View {
     @State private var languageToken = 0
 
     enum Section: String, CaseIterable, Identifiable {
-        case general, invocation, keeping, permissions, about
+        case general, invocation, clipboard, keeping, permissions, about
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .general: L("General")
+            case .clipboard: L("Clipboard")
             case .invocation: L("Invocation")
             case .keeping: L("Keeping")
             case .permissions: L("Permissions")
@@ -155,6 +155,7 @@ struct SettingsView: View {
         var symbol: String {
             switch self {
             case .general: "gearshape"
+            case .clipboard: "doc.on.clipboard"
             case .invocation: "arrow.down.to.line"
             case .keeping: "clock.arrow.circlepath"
             case .permissions: "lock.shield"
@@ -184,9 +185,11 @@ struct SettingsView: View {
                 }
             }
             .padding(3)
-            .background(Capsule().fill(Color.primary.opacity(0.05)))
-            // The track hugs the five choices; the frame centres it without
-            // stretching the track behind them.
+            // No track fill of its own: the strip sits on the window's
+            // material ground, the same surface the in-form page draws, so
+            // the tab row and the page read as one continuous background
+            // rather than a pill floating above them.
+            .background(Capsule().fill(Color.clear))
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -196,6 +199,7 @@ struct SettingsView: View {
             Group {
                 switch section {
                 case .general: GeneralPage(line: line)
+                case .clipboard: ClipboardPage(line: line)
                 case .invocation: InvocationPage()
                 case .keeping: KeepingPage()
                 case .permissions: PermissionsPage()
@@ -205,12 +209,11 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: SettingsWindow.size.width, height: SettingsWindow.size.height)
-        // The ground for the whole window, tab strip included. The pages hide
-        // the form background themselves; the strip above them answered to
-        // the window's grey, and in light mode that grey against the pages'
-        // white read as two windows in one. Now the CDS warm ground — the
-        // same reasoning the white answered, warmed to match the paper the
-        // rest of the app wears.
+        // The warm ground for the whole window, tab strip included. Every page
+        // hands its Form's grey back (`.scrollContentBackground(.hidden)`), so
+        // this colour is the page floor as well: the white grouped cards float
+        // on it and the strip above wears the same paper. The Flyring
+        // arrangement, so the two halves of the window read as one ground.
         .background(CDS.ground)
         // Clay is the emphasis colour of every control in the window: the
         // switches, the pickers' highlights, the focus of the fields. One
@@ -276,23 +279,6 @@ struct GeneralPage: View {
     @State private var panReversed = AppDelegate.panReversed
     @State private var sideButtonPaging = AppDelegate.sideButtonPaging
     @State private var soundOn: Bool
-    @State private var copyFormatted = FormatCopy.isEnabled
-    @State private var imageFilesAsPictures = ImageFileHanging.isEnabled
-    @State private var imageFileLimitText = String(ImageFileHanging.limitMB)
-
-    /// The typed limit, when it is one this app will honour: a whole number
-    /// between one and 1024 megabytes. Anything else is a typing in progress,
-    /// not an answer.
-    private static func parsedLimit(_ text: String) -> Int? {
-        guard let mb = Int(text.trimmingCharacters(in: .whitespaces)), (1...1024).contains(mb) else { return nil }
-        return mb
-    }
-
-    /// Puts the field back to the limit in force, for an entry that never
-    /// became one.
-    private func commitImageFileLimit() {
-        imageFileLimitText = String(ImageFileHanging.limitMB)
-    }
 
     init(line: Line?) {
         self.line = line
@@ -360,15 +346,77 @@ struct GeneralPage: View {
             Section {
                 Toggle(L("Sounds"), isOn: $soundOn)
                     .disabled(line == nil)
+                // The three events a line sounds, each with its own answer.
+                // Shown only while sound is on at all — a picker under a
+                // switch that silences everything reads as broken.
+                if soundOn {
+                    SoundPickerRow(label: L("Card arrives"), event: .hang, line: line)
+                    SoundPickerRow(label: L("Card is taken down"), event: .remove, line: line)
+                    SoundPickerRow(label: L("Reminder"), event: .reminder, line: line)
+                }
             }
 
 
-            // The one clipboard behaviour that is a choice rather than a
-            // fact. The footer is the map of how a copy goes out — which
-            // gesture asks this switch and which answers to nobody — and it
-            // changes with the switch, because the answer is different on
-            // each side of it.
+        }
+        .formStyle(.grouped)
+        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // window's warm ground (CDS.ground) show through, and the grouped
+        // cards — the system's own white cards — float on that paper. The
+        // tab strip above wears the same ground, so strip and page read as
+        // one continuous background.
+        .scrollContentBackground(.hidden)
+        .onChange(of: atLogin) { _, _ in
+            // Asked rather than assumed: the registration can refuse, and the
+            // tick says what the system actually agreed to.
+            AppDelegate.toggleLaunchAtLogin()
+            atLogin = SMAppService.mainApp.status == .enabled
+        }
+        .onChange(of: panReversed) { _, on in
+            AppDelegate.panReversed = on
+        }
+        .onChange(of: sideButtonPaging) { _, on in
+            AppDelegate.sideButtonPaging = on
+        }
+        .onChange(of: soundOn) { _, on in
+            line?.soundOn = on
+        }
+    }
+}
+
+// MARK: - Clipboard
+
+/// What a copy is allowed to become: formatted or plain, picture or file,
+/// and the folders whose new pictures hang by themselves. Everything here
+/// answers one question — how a copy becomes a card — which is why it is a
+/// page of its own rather than rows folded into the general one: the general
+/// page is what the app is, and this page is what a copy turns into.
+struct ClipboardPage: View {
+    let line: Line?
+
+    @State private var copyFormatted = FormatCopy.isEnabled
+    @State private var imageFilesAsPictures = ImageFileHanging.isEnabled
+    @State private var imageFileLimitText = String(ImageFileHanging.limitMB)
+
+    /// The typed limit, when it is one this app will honour: a whole number
+    /// between one and 1024 megabytes. Anything else is a typing in progress,
+    /// not an answer.
+    private static func parsedLimit(_ text: String) -> Int? {
+        guard let mb = Int(text.trimmingCharacters(in: .whitespaces)), (1...1024).contains(mb) else { return nil }
+        return mb
+    }
+
+    /// Puts the field back to the limit in force, for an entry that never
+    /// became one.
+    private func commitImageFileLimit() {
+        imageFileLimitText = String(ImageFileHanging.limitMB)
+    }
+
+    var body: some View {
+        Form {
             Section {
+                Text(L("Copies & pictures"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Toggle(L("Copy with formatting"), isOn: $copyFormatted)
                 Text(copyFormatted
                      ? L("Single click copies and double click pastes with the formatting; a drag always comes out plain. Right-click holds Copy plain text, for the times formatting gets in the way.")
@@ -410,11 +458,25 @@ struct GeneralPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            .onChange(of: imageFilesAsPictures) { _, on in
+                ImageFileHanging.isEnabled = on
+            }
+            .onChange(of: imageFileLimitText) { _, text in
+                if let mb = Self.parsedLimit(text) {
+                    ImageFileHanging.limitMB = mb
+                }
+            }
 
-                // The folders the user asked to watch. The headline row
-                // carries the add button, the folders it has follow, and the
-                // promise comes last: the button is what the eye is here
-                // for, the words are for the moment after.
+            // The folders the user asked to watch, in a container of their
+            // own: these rows come and go with the user's list rather than
+            // sitting under one switch, and a watch is a promise about the
+            // world outside the app, not a question about the cards already
+            // on it.
+            Section {
+                // The headline row carries the add button, the folders it
+                // has follow, and the promise comes last: the button is what
+                // the eye is here for, the words are for the moment after.
                 HStack {
                     Text(L("Add folders to watch"))
                     Spacer()
@@ -428,32 +490,15 @@ struct GeneralPage: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .onChange(of: imageFilesAsPictures) { _, on in
-                ImageFileHanging.isEnabled = on
-            }
-            .onChange(of: imageFileLimitText) { _, text in
-                if let mb = Self.parsedLimit(text) {
-                    ImageFileHanging.limitMB = mb
-                }
-            }
             .onAppear(perform: refreshFolderRows)
         }
-        .formStyle(.grouped).settingsPageBackground()
-        .onChange(of: atLogin) { _, _ in
-            // Asked rather than assumed: the registration can refuse, and the
-            // tick says what the system actually agreed to.
-            AppDelegate.toggleLaunchAtLogin()
-            atLogin = SMAppService.mainApp.status == .enabled
-        }
-        .onChange(of: panReversed) { _, on in
-            AppDelegate.panReversed = on
-        }
-        .onChange(of: sideButtonPaging) { _, on in
-            AppDelegate.sideButtonPaging = on
-        }
-        .onChange(of: soundOn) { _, on in
-            line?.soundOn = on
-        }
+        .formStyle(.grouped)
+        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // window's warm ground (CDS.ground) show through, and the grouped
+        // cards — the system's own white cards — float on that paper. The
+        // tab strip above wears the same ground, so strip and page read as
+        // one continuous background.
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: Watched folders
@@ -764,7 +809,13 @@ struct InvocationPage: View {
                 LineKeeper.line?.showsPropMark = on
             }
         }
-        .formStyle(.grouped).settingsPageBackground()
+        .formStyle(.grouped)
+        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // window's warm ground (CDS.ground) show through, and the grouped
+        // cards — the system's own white cards — float on that paper. The
+        // tab strip above wears the same ground, so strip and page read as
+        // one continuous background.
+        .scrollContentBackground(.hidden)
         .onChange(of: style) { _, on in
             DropDeck.style = on
         }
@@ -1039,7 +1090,13 @@ struct KeepingPage: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped).settingsPageBackground()
+        .formStyle(.grouped)
+        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // window's warm ground (CDS.ground) show through, and the grouped
+        // cards — the system's own white cards — float on that paper. The
+        // tab strip above wears the same ground, so strip and page read as
+        // one continuous background.
+        .scrollContentBackground(.hidden)
         .onChange(of: retention) { _, days in
             Attic.retentionDays = days
         }
@@ -1112,7 +1169,8 @@ struct PermissionsPage: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .formStyle(.grouped).settingsPageBackground()
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
     }
 
@@ -1288,8 +1346,12 @@ enum AppInfo {
 /// system's neutral grey, for the same reason.
 private struct SettingsPageBackground: ViewModifier {
     func body(content: Content) -> some View {
+        // The licence sheet is not a Form, so it simply paints the CDS warm
+        // ground behind its content. (The settings pages no longer use this:
+        // they hand their Form's grey back with `.scrollContentBackground(
+        // .hidden)` so the window's own ground shows through — the Flyring
+        // arrangement, where the white cards float on the warm paper.)
         content
-            .scrollContentBackground(.hidden)
             .background(CDS.ground)
     }
 }
@@ -1297,5 +1359,54 @@ private struct SettingsPageBackground: ViewModifier {
 private extension View {
     func settingsPageBackground() -> some View {
         modifier(SettingsPageBackground())
+    }
+}
+
+/// One event's sound, as the settings page shapes it: the event's name, a
+/// picker over the system's own set, and silence as a first-class answer —
+/// "无声" is a choice, not an absence. A pick is heard at once, because a
+/// picker of sounds that stayed quiet until the next card arrived would be
+/// a picker nobody could use with their eyes closed.
+private struct SoundPickerRow: View {
+    let label: String
+    let event: Line.SoundEvent
+    weak var line: Line?
+
+    @State private var name: String
+
+    init(label: String, event: Line.SoundEvent, line: Line?) {
+        self.label = label
+        self.event = event
+        self.line = line
+        _name = State(initialValue: Line.soundName(for: event))
+    }
+
+    /// The set the system ships — /System/Library/Sounds — spelled out by
+    /// hand, because NSSound offers no way to list them itself.
+    static let systemSounds = ["Basso", "Blow", "Bottle", "Frog", "Funk",
+                               "Glass", "Hero", "Morse", "Ping", "Pop",
+                               "Purr", "Sosumi", "Submarine", "Tink"]
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Picker("", selection: $name) {
+                Text(L("No sound")).tag("")
+                ForEach(Self.systemSounds, id: \.self) { sound in
+                    Text(sound).tag(sound)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 150)
+        }
+        .onChange(of: name) { _, picked in
+            Line.setSound(picked, for: event)
+            // The preview is the answer played back, at the volume the
+            // event itself would carry. Silence needs none — it is heard
+            // by nothing happening.
+            guard !picked.isEmpty else { return }
+            line?.play(event)
+        }
     }
 }

@@ -223,6 +223,31 @@ struct Note: Equatable {
     /// are kept.
     var tint: NoteTint? = nil
 
+    /// When this note's reminder was set to ring.
+    ///
+    /// Three optional fields rather than one wrapped one, because a note
+    /// without a reminder is the common case and the file says so by their
+    /// absence — the same rule `tint` keeps. For a repeating reminder this
+    /// is the anchor it was set from, and the next ring is worked out from
+    /// it; see `reminderOccurrence(after:)`.
+    var remindAt: Date? = nil
+
+    /// How the reminder comes back: every day, every week, every month. Nil
+    /// for one that rings once. The week and the month are read off
+    /// `remindAt` — a reminder set for a Wednesday and repeated weekly is
+    /// every Wednesday, not a second question to answer.
+    var remindRule: RepeatRule? = nil
+
+    /// Whether a one-time reminder has rung and not been cleared yet. A
+    /// repeated one never carries this: it has no "after" to be in.
+    var remindFired: Bool = false
+
+    enum RepeatRule: String, Codable, CaseIterable, Identifiable {
+        case daily, weekly, monthly
+
+        var id: String { rawValue }
+    }
+
     /// The note, one line at a time.
     ///
     /// Worked out on every ask rather than kept beside the text, so that there
@@ -282,7 +307,10 @@ struct Note: Equatable {
             while let last = trimmed.last, last == " " || last == "\t" { trimmed.removeLast() }
             return trimmed
         }
-        return Note(text: kept.joined(separator: "\n"), tint: tint)
+        // The reminder rides along: tidying the words is not the user asking
+        // to be unreminded.
+        return Note(text: kept.joined(separator: "\n"), tint: tint,
+                    remindAt: remindAt, remindRule: remindRule, remindFired: remindFired)
     }
 
     /// The note with the tick on one line flipped, or nil when that line has
@@ -296,7 +324,9 @@ struct Note: Equatable {
         guard lines.indices.contains(index),
               let flipped = NoteMark.flipped(lines[index]) else { return nil }
         lines[index] = flipped
-        return Note(text: lines.joined(separator: "\n"), tint: tint)
+        // A tick is a change to the words, not to the reminder: it rides along.
+        return Note(text: lines.joined(separator: "\n"), tint: tint,
+                    remindAt: remindAt, remindRule: remindRule, remindFired: remindFired)
     }
 }
 
@@ -334,7 +364,9 @@ extension Note: Codable {
         var kind: NoteItem.Kind
     }
 
-    private enum CodingKeys: String, CodingKey { case text, tint }
+    private enum CodingKeys: String, CodingKey {
+        case text, tint, remindAt, remindRule, remindFired
+    }
 
     init(from decoder: Decoder) throws {
         let written = try Written(from: decoder)
@@ -346,6 +378,14 @@ extension Note: Codable {
             self.text = ""
         }
         self.tint = written.tint
+        // A field the reader does not know is a field that was not there
+        // when the file was written — the notes of every version before the
+        // reminder lived here have none, and an unreadable one is read as
+        // none rather than allowed to fail the note.
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.remindAt = try? container.decodeIfPresent(Date.self, forKey: .remindAt)
+        self.remindRule = (try? container.decodeIfPresent(RepeatRule.self, forKey: .remindRule)) ?? nil
+        self.remindFired = (try? container.decodeIfPresent(Bool.self, forKey: .remindFired)) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -355,6 +395,12 @@ extension Note: Codable {
         // choice keeps following it when the choice changes, and the file
         // does not grow a field for the notes that never picked.
         try container.encodeIfPresent(tint, forKey: .tint)
+        // The reminder the same way: a note without one writes nothing.
+        try container.encodeIfPresent(remindAt, forKey: .remindAt)
+        try container.encodeIfPresent(remindRule, forKey: .remindRule)
+        if remindFired {
+            try container.encode(true, forKey: .remindFired)
+        }
     }
 
     /// The old list of lines, as one string.

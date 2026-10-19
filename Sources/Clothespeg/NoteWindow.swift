@@ -108,21 +108,112 @@ final class NoteDraft: ObservableObject {
     /// is drawn from here and the change has to be seen as it is chosen.
     @Published var tint: NoteTint?
 
+    /// The reminder this note carries, as the picker is shaping it. Kept on
+    /// the draft for the same reason the text is: nothing touches the card
+    /// or the file until the note is finished, and an abandoned window
+    /// leaves nothing behind.
+    @Published var remindAt: Date?
+    /// How the reminder comes back, or nil for one that rings once.
+    @Published var remindRule: Note.RepeatRule?
+    /// Whether a one-time reminder has rung and not been cleared. Carried
+    /// through the edit so that opening and saving a ringing note does not
+    /// quietly clear its trace — only removing the reminder does that.
+    @Published var remindFired: Bool
+
+    /// Where a reminder change goes the moment it is made, when there is a
+    /// note on the line to carry it. The controller sets this as the editor
+    /// opens; nil for a note that is not on the line yet, whose reminder
+    /// rides to the line with the save like the rest of the note.
+    ///
+    /// The text stays a draft until the note is finished — that is the
+    /// editor's own manner. But a reminder is a promise about a moment to
+    /// come, and a promise held only in a draft is one the scheduler never
+    /// hears of: the quick presets made their change, the panel showed it,
+    /// and the moment arrived to silence, because the timer is only ever
+    /// built from the saved note. So the reminder commits where the text
+    /// does not, through the one door the scheduler watches.
+    var commitLive: ((Note) -> Void)?
+
     /// The text view, once the editor has made one. Held weakly: the view is
     /// owned by the view tree, and this is only a way to reach it.
     weak var view: NSTextView?
 
     init(editing: UUID? = nil, anchor: CGRect? = nil, text: String = "",
-         tint: NoteTint? = nil) {
+         tint: NoteTint? = nil, remindAt: Date? = nil,
+         remindRule: Note.RepeatRule? = nil, remindFired: Bool = false) {
         self.editing = editing
         self.anchor = anchor
         self.text = text
         self.tint = tint
+        self.remindAt = remindAt
+        self.remindRule = remindRule
+        self.remindFired = remindFired
     }
 
     static func fresh() -> NoteDraft { NoteDraft() }
 
-    var note: Note { Note(text: text, tint: tint) }
+    var note: Note {
+        Note(text: text, tint: tint, remindAt: remindAt,
+             remindRule: remindRule, remindFired: remindFired)
+    }
+
+    // MARK: The reminder, as the picker shapes it
+
+    /// Sets the reminder: the moment, and how it comes back.
+    ///
+    /// The moment lands on the minute. A reminder is read off a clock face,
+    /// not off a stopwatch — "15 分钟后" pressed at 13:14:33 is a reminder
+    /// for 13:29, not one for 13:29:33 that rings a third of a minute late
+    /// and reads wrong on the card.
+    ///
+    /// A repeating one set in the past anchors at its next turn — a weekly
+    /// reminder picked for a Wednesday morning that has already gone by is
+    /// next Wednesday's morning, not a request the system has no answer for.
+    func setReminder(at date: Date, rule: Note.RepeatRule?) {
+        let minute = Calendar.current.dateInterval(of: .minute, for: date)?.start ?? date
+        // An unchanged reminder is not a change: re-setting what the note
+        // already carries — the snap-back of a mis-typed field, a pill
+        // pressed twice — must not wipe the trace of a reminder that has
+        // rung.
+        if remindAt == minute && remindRule == rule { return }
+        remindRule = rule
+        remindFired = false
+        if let rule, minute <= Date() {
+            let probe = Note(text: "", tint: nil, remindAt: minute, remindRule: rule)
+            remindAt = probe.reminderOccurrence() ?? minute
+        } else {
+            remindAt = minute
+        }
+        commitLive?(note)
+        ReminderScheduler.shared.authorize()
+    }
+
+    /// Re-tunes the rule on the reminder the note already carries.
+    ///
+    /// Switching a repeating reminder back to a single one can land on its
+    /// last turn — already gone by — and a single reminder born in the past
+    /// is one that rings the moment the panel closes. So a past anchor moves
+    /// to the next minute: the rule changed, the moment follows it.
+    func setReminder(rule: Note.RepeatRule?) {
+        let anchor: Date
+        if rule == nil, let at = remindAt, at <= Date() {
+            anchor = Calendar.current.date(byAdding: .minute, value: 1, to: Date()) ?? Date()
+        } else {
+            anchor = remindAt ?? Date()
+        }
+        setReminder(at: anchor, rule: rule)
+    }
+
+    func remindIn(minutes: Int) {
+        setReminder(at: Date().addingTimeInterval(Double(minutes) * 60), rule: nil)
+    }
+
+    func clearReminder() {
+        remindAt = nil
+        remindRule = nil
+        remindFired = false
+        commitLive?(note)
+    }
 
     /// Puts the caret in the text.
     ///
@@ -792,6 +883,10 @@ struct NoteEditor: View {
     /// foot of the window, closed by a pick, a second press or a click
     /// anywhere else.
     @State private var showingTints = false
+    /// Whether the reminder picker is out, from the bell beside the circle.
+    /// Same manners as the swatches: one press opens, one closes, a click
+    /// outside closes.
+    @State private var showingReminder = false
     /// The last translation the strip's drag reported, so the window moves
     /// by the step between events rather than by the whole distance from
     /// where the finger went down.
@@ -891,6 +986,7 @@ struct NoteEditor: View {
                     .help(mark.help)
                 }
                 Spacer(minLength: 0)
+                reminderPicker
                 tintPicker
                 Button { onFinish(draft.note.tidied) } label: {
                     Text(L("Save"))
@@ -922,6 +1018,37 @@ struct NoteEditor: View {
                 .stroke(Edge.rim, lineWidth: 0.5).padding(-0.5)
         )
         .onExitCommand { onFinish(nil) }
+    }
+
+    /// The reminder, picked from a panel the bell in the foot of the window
+    /// opens. Same door as the swatches — a system menu redraws its own rows,
+    /// and this one has three sections of its own to draw.
+    ///
+    /// The bell says what it carries: a quiet outline for no reminder, the
+    /// clay filled one for a note that will ring. A ringing note keeps the
+    /// filled bell; its card says so in its own words.
+    private var reminderPicker: some View {
+        Button {
+            showingReminder.toggle()
+        } label: {
+            Group {
+                if draft.remindAt != nil {
+                    Image(systemName: "bell.fill")
+                        .foregroundStyle(CDS.clay)
+                } else {
+                    Image(systemName: "bell")
+                        .foregroundStyle(.primary.opacity(0.7))
+                }
+            }
+            .font(.system(size: 10, weight: .medium))
+            .frame(width: 20, height: 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingReminder, arrowEdge: .bottom) {
+            ReminderPicker(draft: draft)
+        }
+        .help(L("Reminder"))
     }
 
     /// The colour the sheet is, picked from swatches that are the colours
@@ -1009,6 +1136,360 @@ private struct TintSwatches: View {
     }
 }
 
+/// The panel the bell opens: what the note's reminder is, and the ways to
+/// shape it.
+///
+/// Two speeds on purpose. A quick preset applies the moment it is pressed —
+/// the common reminder is "in a while", and the press *is* the decision, so
+/// it lands and the panel closes. The custom side keeps its own copy of the
+/// answer and changes nothing until 确定 says so: a date half-picked must
+/// not quietly become a reminder, and 确定 and 移除 sit side by side so the
+/// two endings — keep this, drop this — read as the pair they are.
+private struct ReminderPicker: View {
+    @ObservedObject var draft: NoteDraft
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+
+    /// The panel is live: a change lands on the note the moment it is made,
+    /// and 确定 only closes. The button stays because "done here" deserves
+    /// a word, not because anything was waiting for it.
+    @State private var timeText: String
+    @State private var showingCalendar = false
+    @FocusState private var timeFocused: Bool
+
+    init(draft: NoteDraft) {
+        self.draft = draft
+        _timeText = State(initialValue: Self.timeString(draft.remindAt ?? Date()))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            // One line, two answers: what the note carries on the left, what
+            // 确定 would store on the right. Reading them side by side is
+            // how a half-made choice never slips past 确定 unnoticed.
+            HStack(alignment: .firstTextBaseline) {
+                Text(statusText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(draft.remindFired ? CDS.clay
+                        : (hasReminder ? Color.primary : Color.secondary))
+                Spacer(minLength: 8)
+                Text(preview)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(CDS.clay)
+                    .lineLimit(1)
+            }
+            Rectangle()
+                .fill(Color.primary.opacity(0.10))
+                .frame(height: 0.5)
+
+            Text(L("Quick"))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                pill(L("In 15 minutes")) { applyNow { draft.remindIn(minutes: 15) } }
+                pill(L("In 30 minutes")) { applyNow { draft.remindIn(minutes: 30) } }
+                pill(L("In 1 hour")) { applyNow { draft.remindIn(minutes: 60) } }
+            }
+
+            Text(L("Custom"))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            // Day and minute in one row, and nothing always on show. The
+            // always-out calendar was the panel's whole height spent on a
+            // question asked twice a month; now the date is a field that
+            // opens its calendar on a click, the time is a text field with
+            // a minute stepper beside it, and the row reads like the two
+            // small answers it is.
+            HStack(spacing: 6) {
+                dateField
+                timeField
+            }
+
+            Text(L("Repeat"))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            // The repeat pills are live like everything else, and they stay
+            // open: the point of a rule is the 下次 it produces, and closing
+            // here would hide the very answer the top line was built to show.
+            HStack(spacing: 6) {
+                pill(L("No repeat"), selected: draft.remindRule == nil) {
+                    draft.setReminder(rule: nil)
+                }
+                pill(L("Every day"), selected: draft.remindRule == .daily) {
+                    draft.setReminder(rule: .daily)
+                }
+                pill(L("Every week"), selected: draft.remindRule == .weekly) {
+                    draft.setReminder(rule: .weekly)
+                }
+                pill(L("Every month"), selected: draft.remindRule == .monthly) {
+                    draft.setReminder(rule: .monthly)
+                }
+            }
+
+            // The pair. 确定 closes the panel; 移除 drops the reminder whole.
+            // Equal in size because they are equal in rank — the two endings
+            // this panel offers — and different in weight so the eye knows
+            // which one keeps the work.
+            HStack(spacing: 8) {
+                Button {
+                    commitTime()
+                    dismiss()
+                } label: {
+                    Text(L("Done"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(CDS.label(onClayIn: scheme))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(CDS.clay))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    draft.clearReminder()
+                    dismiss()
+                } label: {
+                    Label(L("Remove"), systemImage: "bell.slash")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(hasReminder ? Color.primary : Color.primary.opacity(0.35))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.primary.opacity(0.04)))
+                        .overlay(
+                            Capsule().strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5)
+                        )
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasReminder)
+            }
+        }
+        // The field reads the note, not the other way only: a change made
+        // anywhere else in the panel — the calendar, a pill — says itself
+        // back into the time field, so one panel never shows two answers.
+        .onChange(of: draft.remindAt) { _, _ in
+            guard !timeFocused else { return }
+            timeText = Self.timeString(draft.remindAt ?? Date())
+        }
+        .padding(12)
+        .frame(width: 272)
+    }
+
+    /// The day, as a field. The calendar is not always out — it opens over
+    /// this on a click, carries its own day stepper, and goes away.
+    private var dateField: some View {
+        Button {
+            showingCalendar.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Text(Self.dateText(custom.wrappedValue))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.primary)
+                Image(systemName: "calendar")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingCalendar, arrowEdge: .bottom) {
+            DatePicker(selection: custom, in: Self.floor(for: draft.remindAt)...,
+                       displayedComponents: [.date]) { }
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding(12)
+        }
+    }
+
+    /// The minute, as a field: typed, or stepped — five minutes a click,
+    /// because a reminder set to the minute is a coincidence, not a plan.
+    private var timeField: some View {
+        HStack(spacing: 3) {
+            TextField("HH:mm", text: $timeText)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+                .multilineTextAlignment(.center)
+                .frame(width: 58)
+                .focused($timeFocused)
+                .onSubmit { commitTime() }
+                .onChange(of: timeFocused) { _, focused in
+                    if !focused { commitTime() }
+                }
+                // The typed time is taken the instant it parses. Waiting
+                // for the field to give up its focus was a wait the panel
+                // did not always grant — 确定 closed it with the field
+                // still holding the typed time, and the change was left in
+                // the field, not on the note. A keystroke that says a whole
+                // time is a whole answer, and it lands at once; one that
+                // does not parse yet is a half-typed word, and waits.
+                // Only the user's own typing commits. The field is written
+                // from the program too — the sync when the note's reminder
+                // changes, the revert on blur — and those echoes must not be
+                // read back as answers: 移除 synced "now" into the field,
+                // the echo re-wrote it as a single born overdue, and
+                // reconcile rang it at once (16:07:45, twice). The user can
+                // only type while focused, so focus is the line between
+                // input and echo.
+                .onChange(of: timeText) { _, _ in
+                    guard timeFocused else { return }
+                    commitIfValid()
+                }
+            VStack(spacing: 1) {
+                nudgeButton("chevron.up", 5)
+                nudgeButton("chevron.down", -5)
+            }
+        }
+    }
+
+    /// One end of the minute stepper, over the time field.
+    private func nudgeButton(_ symbol: String, _ minutes: Int) -> some View {
+        Button { nudge(minutes) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(Color.primary.opacity(0.6))
+                .frame(width: 16, height: 9)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Steps the minute, and says the answer back into the field.
+    private func nudge(_ minutes: Int) {
+        commitTime()
+        let base = draft.remindAt ?? Date()
+        draft.setReminder(
+            at: Calendar.current.date(byAdding: .minute, value: minutes, to: base) ?? base,
+            rule: draft.remindRule)
+    }
+
+    /// What the left of the top line says the note carries.
+    private var statusText: String {
+        if draft.remindFired { return L("Reminder arrived") }
+        if let summary { return summary }
+        return L("Not set")
+    }
+
+    /// The custom moment: what the note carries, or now while there is
+    /// nothing yet. Writing into it sets the reminder with the rule it
+    /// already has — the panel is live, so the pick is the write.
+    private var custom: Binding<Date> {
+        Binding(get: { draft.remindAt ?? Date() },
+                set: { draft.setReminder(at: $0, rule: draft.remindRule) })
+    }
+
+    /// A preset press lands and the panel closes: the press is the whole
+    /// conversation a preset needs.
+    private func applyNow(_ action: () -> Void) {
+        action()
+        dismiss()
+    }
+
+    /// The field's unfinished typing, put back to what the note says. The
+    /// writing itself happens per keystroke — a whole time lands the moment
+    /// it is typed — so blur has nothing left to commit, and that is the
+    /// point: a field that cannot write on its way out cannot resurrect a
+    /// reminder the user just removed (16:07:45: 移除 closed the panel, blur
+    /// re-wrote "now" as a past single, and reconcile rang it at once).
+    private func commitTime() {
+        guard committedTime == nil else { return }
+        timeText = Self.timeString(draft.remindAt ?? Date())
+    }
+
+    /// The typed time, taken while it is still being typed: a whole time
+    /// lands at once, a half-typed one waits. Used on every keystroke, so
+    /// no way of closing the panel — 确定, a click outside, anything — can
+    /// leave a finished answer behind in the field.
+    private func commitIfValid() {
+        guard let time = committedTime else { return }
+        draft.setReminder(at: time, rule: draft.remindRule)
+    }
+
+    var hasReminder: Bool { draft.remindAt != nil }
+
+    /// What the right of the top line says: the *next* moment this reminder
+    /// means anything, full date and all. "每天 09:00" on the left is the
+    /// rule; "下次 10月20日 09:00" here is when that rule next lands — the
+    /// 下次 is what keeps the two columns from saying one thing twice.
+    private var preview: String {
+        guard let next = draft.note.reminderOccurrence() else { return "" }
+        return "\(L("Next")) \(Note.reminderSummary(at: next, rule: nil) ?? "")"
+    }
+
+    /// The typed time, as a moment on the set day — or nil while the field
+    /// holds something the clock cannot say.
+    private var committedTime: Date? {
+        let parts = timeText.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0...23).contains(parts[0]), (0...59).contains(parts[1]) else {
+            return nil
+        }
+        return Calendar.current.date(
+            bySettingHour: parts[0], minute: parts[1], second: 0, of: draft.remindAt ?? Date())
+    }
+
+    /// The field's own spelling of a moment: 24-hour, zero-padded — a time
+    /// a text field can take back without a second reader.
+    private static func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// The day field's spelling of a day: the calendar's own words —
+    /// "10月19日", "Oct 19" — compact enough to sit beside the time.
+    private static func dateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return formatter.string(from: date)
+    }
+
+    /// The picker's floor: an anchor already behind — a repeating note's
+    /// normal state — stays reachable, but a note with nothing yet cannot
+    /// be given a moment in the past. The first test proved why: the
+    /// picker's untouched answer is "now", and a stray touch on it wrote a
+    /// reminder that was born overdue, and overdue meant silent.
+    static func floor(for anchor: Date?) -> Date {
+        min(anchor ?? Date(), Date())
+    }
+
+    /// What the header says the note carries, in the calendar's own words.
+    private var summary: String? {
+        Note.reminderSummary(at: draft.remindAt, rule: draft.remindRule)
+    }
+
+    /// The panel's quiet pill, clay when it is the answer the panel is
+    /// carrying.
+    private func pill(_ title: String, selected: Bool = false,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(selected ? CDS.label(onClayIn: scheme) : Color.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .background(
+                    Capsule().fill(selected ? CDS.clay : Color.primary.opacity(0.04))
+                )
+                .overlay(
+                    Capsule().strokeBorder(
+                        Color.primary.opacity(selected ? 0 : 0.14), lineWidth: 0.5)
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// The window the note is written in, and everything about when it is there.
 ///
 /// A singleton for the same reason the search controller is one: there is one
@@ -1046,6 +1527,10 @@ final class NoteController {
     /// and eventually removed twice.
     private var escapeMonitor: Any?
 
+    /// The same one-time installation as the escape monitor: added once,
+    /// alive as long as the controller, silent while no note is open.
+    private var ringObserver: Any?
+
     private func watchEscape() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event -> NSEvent? in
@@ -1059,6 +1544,26 @@ final class NoteController {
         }
     }
 
+    /// A reminder that rings while its own editor is open must be heard by
+    /// the draft too. The line marks its note as rung; the draft still says
+    /// "not yet" — and a save from that draft would wipe the mark, and the
+    /// next reconcile would meet a one-time reminder past its moment and
+    /// undelivered, and ring it a second time. So the ring is echoed here,
+    /// with the line's own rule: only a single one carries the mark.
+    private func watchRings() {
+        guard ringObserver == nil else { return }
+        ringObserver = NotificationCenter.default.addObserver(
+            forName: ReminderScheduler.firedNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let id = notification.userInfo?["id"] as? UUID else { return }
+            MainActor.assumeIsolated {
+                guard let self, let draft = self.draft, draft.editing == id,
+                      draft.remindRule == nil else { return }
+                draft.remindFired = true
+            }
+        }
+    }
+
     /// A note that is not on the line yet. No card, so nothing to open over:
     /// the window arrives where the pointer already is.
     func beginNew() {
@@ -1068,10 +1573,17 @@ final class NoteController {
     /// The note that is already hanging, opened over itself.
     func edit(_ item: Pegged) {
         guard case .note(let note) = item.payload else { return }
+        // The ringing card's light goes out here: the person it rang for is
+        // the person opening it. The fired mark on a one-time reminder stays
+        // until the reminder itself is removed.
+        line?.clearNoteHighlight(item.id)
         present(NoteDraft(editing: item.id,
                           anchor: line?.hitRects[item.id],
                           text: note.text,
-                          tint: note.tint))
+                          tint: note.tint,
+                          remindAt: note.remindAt,
+                          remindRule: note.remindRule,
+                          remindFired: note.remindFired))
     }
 
     var isOpen: Bool { window?.isVisible ?? false }
@@ -1082,6 +1594,18 @@ final class NoteController {
         let host = NSHostingView(rootView: NoteEditor(draft: draft) { [weak self] note in
             self?.finish(note, editing: draft.editing)
         })
+
+        // The reminder commits live, for a note that is already on the line:
+        // the scheduler builds its timers from the saved note, and a reminder
+        // that lives only in the draft is one the moment comes to and passes
+        // in silence. The editing id is taken out up front, so the closure
+        // holds no draft — a draft holding its own commit is a pair that
+        // outlives the window.
+        let editing = draft.editing
+        draft.commitLive = { [weak self] note in
+            guard let self, let editing else { return }
+            self.line?.rewrite(editing, to: note.tidied)
+        }
         host.sizingOptions = []
         let window = NoteWindow(content: host)
         window.setContentSize(NoteWindow.size)
@@ -1105,6 +1629,7 @@ final class NoteController {
         window.setFrameOrigin(origin(for: draft.anchor))
         window.makeKeyAndOrderFront(nil)
         watchEscape()
+        watchRings()
 
         // The caret is asked for once more after the activation settles. The
         // window does this for itself when it takes the key and that is often

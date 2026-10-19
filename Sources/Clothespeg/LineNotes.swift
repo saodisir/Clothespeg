@@ -53,8 +53,11 @@ extension Line {
         guard let i = notes.firstIndex(where: { $0.id == id }), !notes[i].falling else { return }
         notes[i].falling = true
         hitRects[id] = nil
+        // A lit card going down takes its light with it, and the system's
+        // pending reminder goes with the save that follows.
+        if highlightedNoteID == id { highlightedNoteID = nil }
         saveNotes()
-        if !quietly { play("Pop", volume: 0.25) }
+        if !quietly { play(.remove) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             self?.notes.removeAll { $0.id == id }
         }
@@ -70,7 +73,42 @@ extension Line {
         // when the note is made, because for a note that line is about the
         // writing rather than about the arrival.
         notes[i].origin.at = Date()
+        // A reminder taken off the note puts its own light out: the card was
+        // lit to say "this one rang", and the person who just removed the
+        // reminder is the person it rang for.
+        if note.remindAt == nil, highlightedNoteID == id {
+            highlightedNoteID = nil
+        }
         saveNotes()
+    }
+
+    // MARK: A reminder ringing
+
+    /// A reminder rang for one of the notes on this line.
+    ///
+    /// The one-time kind takes its mark here: it has rung, and the card
+    /// keeps the trace until the reminder is removed. The repeating kind
+    /// has no "after" to mark — it will ring again on its own. Either way
+    /// the card is lit, and the rope was already on its way down.
+    func noteReminderArrived(_ id: UUID) {
+        guard let i = notes.firstIndex(where: { $0.id == id }),
+              case .note(var note) = notes[i].payload else { return }
+        if note.remindRule == nil {
+            note.remindFired = true
+            notes[i].payload = .note(note)
+        }
+        highlightedNoteID = id
+        // A bell, because a reminder that arrives in silence is easy to
+        // miss and easy to have missed. Hero over Ping: the one-second
+        // chime survived the first test where the quarter-second tick did
+        // not — a sound too short to hear is a sound that did not ring.
+        play(.reminder)
+        saveNotes()
+    }
+
+    /// The ringing card was opened, and the person it rang for has seen it.
+    func clearNoteHighlight(_ id: UUID) {
+        if highlightedNoteID == id { highlightedNoteID = nil }
     }
 
     // MARK: Ticking one off
@@ -105,8 +143,18 @@ extension Line {
     /// of writing a small file again, and there is no version of this that is
     /// worth being clever about.
     func saveNotes() {
-        NoteStore.shared.save(notes.filter { !$0.falling }
-            .map { NoteStore.Entry(payload: $0.payload, origin: $0.origin, id: $0.id) })
+        let entries = notes.filter { !$0.falling }
+            .map { NoteStore.Entry(payload: $0.payload, origin: $0.origin, id: $0.id) }
+        NoteStore.shared.save(entries)
+        // The pending notifications agree with the file, through the same
+        // door: a reminder set, rewritten or taken away has just walked
+        // through it, and the system's list follows the notes rather than
+        // the paths that changed them.
+        let reminders = entries.compactMap { entry -> (id: UUID, note: Note)? in
+            guard case .note(let note) = entry.payload else { return nil }
+            return (entry.id, note)
+        }
+        ReminderScheduler.shared.reconcile(with: reminders)
     }
 
     /// The notes come back as they were, newest first.
@@ -120,5 +168,20 @@ extension Line {
         for entry in NoteStore.shared.load() {
             notes.append(Pegged(id: entry.id, payload: entry.payload, origin: entry.origin))
         }
+        // A one-time reminder that rang while no one was watching keeps its
+        // word as a mark rather than a ring: the banner has been and gone
+        // by now, so what is left to say is "this rang", on the card, until
+        // it is cleared.
+        var missed = false
+        let now = Date()
+        for i in notes.indices {
+            guard case .note(var note) = notes[i].payload,
+                  !note.remindFired, note.remindRule == nil,
+                  let at = note.remindAt, at <= now else { continue }
+            note.remindFired = true
+            notes[i].payload = .note(note)
+            missed = true
+        }
+        if missed { saveNotes() }
     }
 }

@@ -16,14 +16,23 @@ if [ "$LITE" = "1" ]; then
   BUNDLE_NAME="Clothespeg 苹果专版"
 else
   APP="build/Clothespeg.app"
-  BUNDLE_ID="com.vizwise.clothespeg"
+  # A fresh identity on purpose. macOS 26 keeps a per-app "allow in the menu
+  # bar" authorization keyed by bundle id, and the one held for the old id
+  # (com.vizwise.clothespeg) went bad: AppKit built a valid, visible status
+  # item and the WindowServer still refused to commit it, so the icon never
+  # showed. The new id starts with a clean authorization — the same fix
+  # Flyring shipped for the same symptom. Settings are carried over once by
+  # migrateSettingsToNewIdentity in main.swift.
+  BUNDLE_ID="com.vizwise.clothespeg.app"
   BUNDLE_NAME="Clothespeg"
 fi
-# 1.8.0 is a minor: the note cards answer the same gestures as the
-# clipboard cards — a double click pastes, a long press opens the editor,
-# space looks — and the fixes those revealed (the deck lookup that sent
-# a note's paste nowhere, the save that died before its own fix ran).
-VERSION="1.8.0"
+# 1.9.0 is a minor: notes can now carry a reminder — once, or every day,
+# week or month — and the settings window took on the design tokens the
+# cards already used. It also fixes the menu-bar icon that stopped showing
+# on macOS 26: the system's per-app "allow in the menu bar" authorization
+# for the old bundle id was poisoned, so the app moves to a fresh identity
+# (com.vizwise.clothespeg.app) and carries the saved settings across once.
+VERSION="1.9.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -107,7 +116,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleVersion</key><string>6</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

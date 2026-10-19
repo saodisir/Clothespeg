@@ -40,6 +40,15 @@ Every note picks its own background colour, which makes them easier to find.
   <img src="website/shots/line-notes.png" width="720" alt="The notes line: to-dos, ideas, a schedule and a shopping list on the same line">
 </p>
 
+## Notes that keep time
+
+A note can keep time too. Click the bell in its footer and pick a moment — in
+fifteen minutes, in an hour, or one of your own — and a banner arrives when it
+comes, with *Next* and the time left at the foot of the card. Have it repeat
+daily, weekly or monthly and it comes round again. Once a one-off has rung the
+card reads *Reminder arrived*; **Got it** takes the dot away. You can set one
+while you write, without saving first.
+
 ## How it comes down
 
 - **Notch dwell**: rest the pointer on the left half of the notch and the
@@ -73,6 +82,7 @@ settings to find them — here is the whole list.
 | Top-left **✕** | Takes the card down: pictures inside the app's own folder go to the Trash, outside files just leave the line, the original untouched. **A pinned card keeps its ✕** — but asks first, and the card only goes when you say so |
 | Top-right **magnifier** | Opens the preview window: pictures full size, text scrollable and selectable, documents like PDFs through Quick Look, a list when a card holds several files. On a link it opens the browser instead; on a folder, Finder |
 | The note's **pencil** | Opens the note editor |
+| The note's **bell**, in its footer | Opens the reminder panel: pick a time, decide whether it repeats |
 | The note's **tick boxes** | Click to strike a line through; when everything is ticked the note fades but stays on the line |
 
 ### The right-click menu
@@ -163,6 +173,11 @@ things at once and they hang as one card; drag it out and they all copy.
 2. The app is signed with a Developer ID but not notarized by Apple. On first
    launch macOS will step in: open **System Settings → Privacy & Security**
    and click **Open Anyway**.
+
+Coming from 1.8.0 or earlier: 1.9.0 ships under a new app identity. Your
+settings and the cards on the line come across on first launch, but
+Accessibility has to be granted once more (double-click paste needs it). Delete
+the old copy first — one Clothespeg on a Mac is enough.
 
 ## Build from source
 

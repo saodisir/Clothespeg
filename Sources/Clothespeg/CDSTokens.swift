@@ -21,16 +21,20 @@ enum CDS {
 
     /// The ground the settings pages sit on, in both appearances.
     ///
-    /// Light is CDS surface 0, `#f5f5f3`: the warm grey that lets the
-    /// grouped cards' near-white read as cards. The same reasoning the white
-    /// ground answered before, warmed to match the paper the rest of the app
-    /// wears. Dark is CDS surface 1, `#1c1b1a`: a warm charcoal rather than
-    /// the system's neutral grey, for the same reason the paper in dark mode
-    /// is a warm grey and not a black.
+    /// Light is the warm paper `#f5f5f3` — the same tone the cards on the
+    /// rope wear, one calm step away from white so the grouped-form cards
+    /// keep their edges. Dark is CDS surface 1, `#151515`.
+    ///
+    /// Note: macOS's grouped `Form` paints its own scroll background with a
+    /// material that samples the desktop behind the window, so this colour is
+    /// the *settings window's* ground (title bar and the strip above the
+    /// tabs) rather than the in-form page area, which the form's material
+    /// governs. The two are meant to read as one ground, which is why the
+    /// window background now uses the same material as the form.
     static let ground = Color(nsColor: NSColor(name: nil) { appearance in
         switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
         case .darkAqua:
-            NSColor(srgbRed: 0.110, green: 0.106, blue: 0.102, alpha: 1)   // #1c1b1a
+            NSColor(srgbRed: 0.082, green: 0.082, blue: 0.082, alpha: 1)   // #151515
         default:
             NSColor(srgbRed: 0.961, green: 0.961, blue: 0.953, alpha: 1)   // #f5f5f3
         }

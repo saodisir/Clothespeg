@@ -264,7 +264,11 @@ struct PeggedView: View {
         // did not. The colour is the whole of what there is to pick now —
         // every sheet is a plain one.
         let tint = note.tint
-        return cardContent(noteScroll: $noteScroll) {
+        // A ringing reminder lights its card: the clay stroke is the one
+        // emphasis colour, and it stays until the person it rang for opens
+        // the note or clears the reminder.
+        let ringing = line.highlightedNoteID == item.id
+        return cardContent(noteScroll: $noteScroll, ringing: ringing) {
             VStack(spacing: 0) {
                 // The card's own top, before the first line. The two corners
                 // above belong to the cross and the corner mark, and a line
@@ -311,7 +315,7 @@ struct PeggedView: View {
                 .animation(.easeOut(duration: 0.18), value: offset > 0.5)
                 .animation(.easeOut(duration: 0.18), value: offset < scrollMax - 0.5)
 
-                noteFooter(tint)
+                noteFooter(note)
                 // The card's own bottom, after the caption. The window above
                 // is a fixed height and the footer is a fixed height, so what
                 // is left of the card is exactly the layout's bottom pad — the
@@ -479,25 +483,64 @@ struct PeggedView: View {
         NoteTint.ink(for: tint, in: scheme)
     }
 
-    /// When the note was last written in, along the bottom.
+    /// When the note was last written in, along the bottom — and, when the
+    /// note carries a reminder, that reminder on the right.
     ///
     /// The same place and the same rule as a snippet's caption, and only the
     /// time in it. A copy's caption names the app it came from and a note came
     /// from nowhere, so what is left is the one thing about a note's history
-    /// that cannot be worked out by reading the note.
-    private func noteFooter(_ tint: NoteTint?) -> some View {
-        VStack(spacing: 0) {
+    /// that cannot be worked out by reading the note. The reminder shares the
+    /// line rather than taking a second one: the caption's height is counted
+    /// into the card's layout, and a footer that grew would push a row of
+    /// words off the bottom.
+    private func noteFooter(_ note: Note) -> some View {
+        let tint = note.tint
+        return VStack(spacing: 0) {
             Rectangle()
                 .fill(noteInk(tint).opacity(0.12))
                 .frame(height: 0.5)
                 .padding(.horizontal, 9)
 
-            Text(item.origin.noteCaption())
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(noteInk(tint).opacity(0.5))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
+            HStack(spacing: 3) {
+                Text(item.origin.noteCaption())
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(noteInk(tint).opacity(0.5))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if line.highlightedNoteID == item.id {
+                    // The ringing card's answer, drawn where the press is:
+                    // one word on clay, and the card goes quiet. The press
+                    // region lives in GrabArea, the drawing here, and the
+                    // two are sized to the same half of the caption row.
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 6.5, weight: .bold))
+                        Text(L("Got it"))
+                            .font(.system(size: 9, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(CDS.label(onClayIn: scheme))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(CDS.clay))
+                } else if note.remindAt != nil {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(CDS.clay)
+                    Text(note.remindFired ? L("Reminder arrived") : (note.reminderCaption ?? ""))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(noteInk(tint).opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        // The reminder says more than the caption beside it,
+                        // and the next date is the part worth reading: when
+                        // the row runs out of room, the history is what
+                        // gives way first.
+                        .layoutPriority(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
         }
         // A fixed height, and the number belongs to the layout rather than to
         // this view. `NoteCardLayout` counts the caption when it works out how
@@ -761,6 +804,7 @@ struct PeggedView: View {
     /// hears everything else on a card, because the overlay is on top and a
     /// scroll view underneath it would never be touched.
     private func cardContent(noteScroll: Binding<CGFloat> = .constant(0),
+                             ringing: Bool = false,
                              @ViewBuilder _ content: () -> some View) -> some View {
         content()
             .background {
@@ -775,6 +819,15 @@ struct PeggedView: View {
                 RoundedRectangle(cornerRadius: Frame.radius, style: .continuous)
                     .stroke(Edge.rim, lineWidth: 0.5).padding(-0.5)
             )
+            // A reminder that has rung, wearing the clay over the glass's own
+            // edges. Drawn always and faded in, so the light going out is the
+            // same kind of change as the light going on.
+            .overlay(
+                RoundedRectangle(cornerRadius: Frame.radius, style: .continuous)
+                    .strokeBorder(CDS.clay, lineWidth: 2)
+                    .opacity(ringing ? 1 : 0)
+            )
+            .animation(.easeOut(duration: 0.3), value: ringing)
             .shadow(color: .black.opacity(hovering ? 0.26 : 0.18), radius: hovering ? 14 : 10, y: hovering ? 8 : 5)
             // Holding presses the card in slowly, so a long press feels like
             // it is building up to something.
