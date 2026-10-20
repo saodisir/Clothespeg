@@ -32,7 +32,12 @@ fi
 # on macOS 26: the system's per-app "allow in the menu bar" authorization
 # for the old bundle id was poisoned, so the app moves to a fresh identity
 # (com.vizwise.clothespeg.app) and carries the saved settings across once.
-VERSION="1.9.0"
+#
+# 1.9.1 is a patch: the app now asks for Accessibility before it types a
+# ⌘V into another process, so the Accessibility toggle in System Settings
+# actually switches on (it would not for an app that never asked), and the
+# build is notarized with the company Developer ID.
+VERSION="1.9.1"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -116,7 +121,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleVersion</key><string>7</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

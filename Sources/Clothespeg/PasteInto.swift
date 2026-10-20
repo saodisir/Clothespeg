@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 
 /// Putting text where the user is working, without a drag.
 ///
@@ -83,6 +84,12 @@ final class PasteInto {
         return false
 #else
         guard Self.target != nil else { return false }
+        // The keystroke below crosses into another process, which macOS only
+        // allows for an app the user has let into Accessibility. Asking here is
+        // what puts this app in that list at all: an entry added by hand, for an
+        // app that never asked, is the one that refuses to switch on. Asking
+        // also turns a silent failure into a pane macOS opens by itself.
+        guard Self.mayType() else { return false }
 
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -135,6 +142,20 @@ final class PasteInto {
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
         return rep.representation(using: .png, properties: [:])
     }
+
+#if !APPSTORE_LITE
+    /// Whether this app may type into others, asking the first time it may not.
+    ///
+    /// Prompting is the point of the call, not a side effect: the request is
+    /// what makes the app known to the Accessibility pane, and it is what makes
+    /// macOS offer to open that pane. Without it the user is left to find the
+    /// pane and add the app by hand, and a hand-added entry that no request
+    /// ever backed will not switch on.
+    private static func mayType() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+#endif
 
 #if !APPSTORE_LITE
     /// ⌘V, synthesised. The key code of V with the command flag down.

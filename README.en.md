@@ -170,9 +170,9 @@ things at once and they hang as one card; drag it out and they all copy.
 
 1. Grab the DMG from [Releases](https://github.com/saodisir/Clothespeg/releases/latest),
    open it, drag Clothespeg into Applications.
-2. The app is signed with a Developer ID but not notarized by Apple. On first
-   launch macOS will step in: open **System Settings → Privacy & Security**
-   and click **Open Anyway**.
+2. Notarized with a Developer ID — open it and it runs. If Gatekeeper ever
+   objects, open **System Settings → Privacy & Security** and click
+   **Open Anyway**.
 
 Coming from 1.8.0 or earlier: 1.9.0 ships under a new app identity. Your
 settings and the cards on the line come across on first launch, but
