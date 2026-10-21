@@ -177,7 +177,13 @@ final class NoteDraft: ObservableObject {
         // rung.
         if remindAt == minute && remindRule == rule { return }
         remindRule = rule
-        remindFired = false
+        // A one-time reminder set into the past rings the moment it is
+        // committed. A note that has already rung is the exception: moving
+        // its time around inside the past must not ring it a second time, so
+        // the fired mark stays until the reminder itself is removed.
+        if !(rule == nil && minute <= Date() && remindFired) {
+            remindFired = false
+        }
         if let rule, minute <= Date() {
             let probe = Note(text: "", tint: nil, remindAt: minute, remindRule: rule)
             remindAt = probe.reminderOccurrence() ?? minute
@@ -1226,25 +1232,12 @@ private struct ReminderPicker: View {
                 }
             }
 
-            // The pair. 确定 closes the panel; 移除 drops the reminder whole.
-            // Equal in size because they are equal in rank — the two endings
-            // this panel offers — and different in weight so the eye knows
-            // which one keeps the work.
+            // The pair. 移除 drops the reminder whole and sits on the left;
+            // 确定 keeps the work and sits on the right, where macOS puts the
+            // confirming button. Equal in size because they are equal in rank
+            // — the two endings this panel offers — and different in weight so
+            // the eye knows which one keeps the work.
             HStack(spacing: 8) {
-                Button {
-                    commitTime()
-                    dismiss()
-                } label: {
-                    Text(L("Done"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(CDS.label(onClayIn: scheme))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(CDS.clay))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-
                 Button {
                     draft.clearReminder()
                     dismiss()
@@ -1262,6 +1255,20 @@ private struct ReminderPicker: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!hasReminder)
+
+                Button {
+                    commitTime()
+                    dismiss()
+                } label: {
+                    Text(L("Done"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(CDS.label(onClayIn: scheme))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(CDS.clay))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
         // The field reads the note, not the other way only: a change made

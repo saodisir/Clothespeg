@@ -3,6 +3,7 @@ import Carbon
 import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
+import UserNotifications
 
 /// Which way the app dresses.
 ///
@@ -1136,6 +1137,7 @@ struct PermissionsPage: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     permissionRow(granted: trusted)
+                    NotificationPermissionRow()
                 }
 
                 // The bug-judging corner, in the Flyring house shape: the
@@ -1192,12 +1194,7 @@ struct PermissionsPage: View {
                         .font(.caption)
                         .foregroundColor(granted ? .green : .orange)
                 }
-                Text(L("It is used for one thing: pressing ⌘V in the app you came from, so a click on a card lands where you were typing. Nothing is read and nothing is recorded."))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(granted
-                     ? L("Granted. Clicking a card puts it where you are working.")
-                     : L("Not granted. Clicking a card still copies it, but you have to paste it yourself."))
+                Text(L("Once it is allowed, double-clicking a card copies the content and pastes it into the field your pointer is in. Without it, double-clicking only copies, and you have to press ⌘V yourself. macOS does not let an app control another app freely, which is why this needs its own permission. Nothing is read and nothing is recorded."))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 // Worth saying exactly once, and only when it can still
@@ -1234,6 +1231,83 @@ struct PermissionsPage: View {
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
             }
+        }
+    }
+}
+
+/// The notification row: the one permission that is an extra layer rather
+/// than the reminder itself.
+///
+/// The bell and the rope coming down are the app's own and need nothing from
+/// the system. What this asks for is the banner and the system chime when
+/// Clothespeg is not the window in front — so "not granted" is said plainly
+/// rather than as a fault, and the reminder is still promised.
+private struct NotificationPermissionRow: View {
+    @State private var status: UNAuthorizationStatus = .notDetermined
+    @State private var busy = false
+
+    /// Provisional and ephemeral are ways of being allowed too; only a
+    /// refusal or an unanswered question reads as "not granted" here.
+    private var granted: Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral: return true
+        default: return false
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "bell.badge")
+                .foregroundColor(granted ? .green : .orange)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(L("Notifications"))
+                        .font(.callout)
+                        .fontWeight(.medium)
+                    Label(granted ? L("Granted") : L("Not granted"),
+                          systemImage: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(granted ? .green : .orange)
+                }
+                Text(L("Once it is allowed, the system shows a reminder notification even when the app is closed. Without it, a closed app has no reminder."))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if status == .denied {
+                    Text(L("Denied. macOS will not ask again from inside the app; open it in System Settings."))
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                if status == .notDetermined {
+                    Button(L("Allow Notifications")) { ask() }
+                        .buttonStyle(CDSPillButtonStyle())
+                        .disabled(busy)
+                } else {
+                    Button(L("Open System Settings")) {
+                        NotificationPermission.openSettings()
+                    }
+                    .buttonStyle(CDSPillButtonStyle())
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        // Granting happens in System Settings, another app, so nothing in
+        // this window announces it. Keep asking while the row is on screen,
+        // the same way the page re-checks Accessibility every second.
+        .task {
+            while !Task.isCancelled {
+                status = await NotificationPermission.status()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func ask() {
+        busy = true
+        Task {
+            _ = await NotificationPermission.request()
+            status = await NotificationPermission.status()
+            busy = false
         }
     }
 }

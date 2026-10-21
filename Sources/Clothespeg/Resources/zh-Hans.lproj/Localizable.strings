@@ -234,3 +234,16 @@
 "Next" = "下次";
 "Day" = "天";
 "Got it" = "知道了";
+"Notifications" = "通知";
+"Allow Notifications" = "允许通知";
+"Not asked yet. Allow it so a reminder reaches you even when Clothespeg is behind another window." = "尚未请求。允许后，即使 Clothespeg 被别的窗口挡住，提醒也能找到你。";
+"Not granted. macOS will not ask again from inside the app — allow it in System Settings." = "未授权。macOS 不会在应用内再次询问——请在系统设置里允许。";
+"It is used for one thing: the system banner and chime when a reminder lands. The card still lights up and the line still comes down without it." = "只用在一件事上：提醒到点时弹出系统横幅、响提示音。没有它，卡片照样亮起、绳子照样落下。";
+"Double-clicking a card presses ⌘V for you in the app you were just using, so the content lands where you are typing. macOS treats that as controlling another app, which is why it needs its own permission. Nothing is read and nothing is recorded." = "双击卡片时，它要替你在别的 App 里按一下 ⌘V，把内容粘到你正在用的地方。系统把「操作其他 App」算作敏感权限，所以要单独开。它不读取、也不记录任何内容。";
+"Granted. Double-click a card and it lands where you are working." = "已授权。双击卡片，内容就落到你在用的地方。";
+"Not granted. Double-clicking still copies, but you have to press ⌘V yourself." = "未授权。双击卡片还会复制，但你得自己按 ⌘V 粘贴。";
+"It works as a second safety net. With the app open, a reminder rings and brings the note in front of you; with the app closed, the system still shows the notification for you. Turn it off and a reminder is lost the moment Clothespeg is closed." = "等于多一道保险。App 开着时，到点响铃、把便签拉到眼前；App 关着时，系统也会替你弹出通知。不开的话，App 一关，这个提醒就没了。";
+"Denied. macOS will not ask again from inside the app; open it in System Settings." = "已拒绝。macOS 不会在应用内再问，得去系统设置里打开。";
+"Not asked yet. Allow it so a reminder still reaches you when Clothespeg is closed." = "还没开。开了以后，就算 App 关着，系统也会提醒你。";
+"Once it is allowed, double-clicking a card copies the content and pastes it into the field your pointer is in. Without it, double-clicking only copies, and you have to press ⌘V yourself. macOS does not let an app control another app freely, which is why this needs its own permission. Nothing is read and nothing is recorded." = "授权后，双击卡片就能直接复制并粘贴到鼠标所在的输入框。若未授权，双击卡片只会复制，还需要你自己按 ⌘V 粘贴。macOS 不允许 App 随便操作别的 App，所以这一项要单独授权。它不读取、也不记录任何内容。";
+"Once it is allowed, the system shows a reminder notification even when the app is closed. Without it, a closed app has no reminder." = "授权后，App关闭，系统也会弹出提醒通知。若未授权，App关闭无提醒功能。";

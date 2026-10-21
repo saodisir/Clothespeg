@@ -315,13 +315,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ReminderScheduler.shared.activate()
         // The in-app ring reads the notes from here on: the rope comes down
         // for a due reminder whether or not the system ever draws a banner.
-        ReminderScheduler.shared.noteProvider = { [weak self] in
+        let readNotes: () -> [(id: UUID, note: Note)] = { [weak self] in
             guard let self else { return [] }
             return self.line.notes.filter { !$0.falling }.compactMap { item -> (id: UUID, note: Note)? in
                 guard case .note(let note) = item.payload else { return nil }
                 return (item.id, note)
             }
         }
+        ReminderScheduler.shared.noteProvider = readNotes
         NotificationCenter.default.addObserver(forName: ReminderScheduler.firedNotification, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let id = note.userInfo?["id"] as? UUID else { return }
@@ -330,6 +331,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.line.noteReminderArrived(id)
             }
         }
+        // The notes came back from disk before this ran, but nothing had
+        // rebuilt their timers: `reconcile` used to walk through `saveNotes`
+        // only, so after a relaunch a reminder that was already set stayed
+        // silent — no rope, no bell — until the note was edited again. That
+        // is how a daily reminder could sit through a whole morning unseen.
+        // Agreeing once here hands every live reminder its timer back, and
+        // the system's pending list follows the notes as it always does.
+        ReminderScheduler.shared.reconcile(with: readNotes())
         // Photos kept from last time show themselves for a moment.
         if line.liveCount > 0 { comeDown(on: nil) }
 

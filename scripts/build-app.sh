@@ -37,7 +37,13 @@ fi
 # ⌘V into another process, so the Accessibility toggle in System Settings
 # actually switches on (it would not for an app that never asked), and the
 # build is notarized with the company Developer ID.
-VERSION="1.9.1"
+#
+# 1.9.2 is a patch: reminders keep working after a relaunch (the in-app timer
+# is rebuilt at launch, not only on save), a one-time reminder that has
+# already rung no longer rings a second time when its time is moved around in
+# the past, and the Permissions page gains a Notifications row — its status, a
+# way to ask, and the System Settings door.
+VERSION="1.9.2"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -121,7 +127,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleVersion</key><string>8</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import UserNotifications
 
 /// The licence, in full, as it has to be shown.
 ///
@@ -279,6 +280,34 @@ enum AccessibilityPermission {
     /// the user left to find it. The list is long and this is one row of it.
     static func openSettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// Whether this app may draw a banner for a reminder, and how to ask for it.
+///
+/// The banner is the system's own; the bell and the rope coming down are the
+/// app's own and work without this. So a refusal is not a broken reminder —
+/// it is one that does not reach past the app's window, which the settings
+/// row says out loud rather than hiding behind a green tick.
+enum NotificationPermission {
+    static func status() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    /// Asks the system once. After a refusal macOS will not ask again from
+    /// inside the app, so the row offers the settings pane instead.
+    @discardableResult
+    static func request() async -> Bool {
+        (try? await UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound])) ?? false
+    }
+
+    /// Straight to the notifications pane, with this app's row selected
+    /// where the system honours it.
+    static func openSettings() {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")!
         NSWorkspace.shared.open(url)
     }
 }
