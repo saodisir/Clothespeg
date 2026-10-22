@@ -21,6 +21,10 @@ struct ZoomPreview {
     var origin: Origin
     /// Below the card that opened it, in that card's own coordinates.
     var anchor: NSPoint
+    /// What a code in the picture says, when it holds one. Nil for every
+    /// card that is not a picture holding a code, which is nearly all of
+    /// them.
+    var qrcodes: [String]?
 
     /// One size for every kind of card.
     ///
@@ -92,12 +96,23 @@ private struct ZoomCard: View {
                 // way — filling to the width and scrolling for the height —
                 // so the aspect fit is the one that never distorts, and the
                 // window is the size the picture needs up to a limit.
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                //
+                // A picture holding a code gets a strip under it saying what
+                // the code says. Under rather than over: the picture is still
+                // the thing being looked at, and the code is what it turned
+                // out to hold. A picture holding nothing keeps the whole
+                // window, exactly as it had before any of this existed.
+                VStack(spacing: 0) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if let text = preview.qrcodes?.first {
+                        CodeReading(text: text, isLink: QRCodes.link(in: text) != nil)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if preview.payload.files.count > 1 {
                 // Several files are not a document, so there is nothing to
                 // render. They are listed: the point of looking is to see
@@ -158,6 +173,60 @@ private struct ZoomCard: View {
     }
 }
 
+/// The strip under a picture that held a code: what it says, and where to go
+/// to do something with it.
+///
+/// No button, and not for want of trying. The zoom window does not take the
+/// mouse at all — any click dismisses it — so a button drawn here would be a
+/// control that cannot be pressed, which is worse than no control. The card's
+/// right-click menu is where a code is copied or followed; this is where it is
+/// read, and the hint says so rather than leaving the user to guess.
+private struct CodeReading: View {
+    let text: String
+    let isLink: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "qrcode")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(text)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    // Not selectable, though it is reading matter. The zoom
+                    // window takes no mouse events at all — every click
+                    // dismisses it — so a selection here would be a
+                    // decoration: the pointer never reaches the text. Copying
+                    // is the right-click menu's job, and the hint below says
+                    // where it is.
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(isLink ? L("Right-click the card to open the link")
+                            : L("Right-click the card to copy the contents"))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // A wash rather than a panel: it is part of the picture's window, not
+        // a thing laid on top of it. Resolved from `primary` so it darkens in
+        // the light and lightens in the dark, which is the same relationship
+        // the paper and the glass already have.
+        .background(Color.primary.opacity(0.055))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.10))
+                .frame(height: 1)
+        }
+    }
+}
+
 /// The reading half of a text or note zoom: the whole thing, scrolling
 /// rather than truncating — the reason to open this is that the card cut the
 /// text off, and a zoom that cut it off too would have solved nothing.
@@ -191,6 +260,9 @@ final class ZoomController {
     /// Every card on the line, so a press on a card can be answered without
     /// asking where the pointer is.
     private var registry: [UUID: Pegged] = [:]
+    /// Where the zoom was last put, so a card whose contents change under it
+    /// can be shown again in the place the user is already reading.
+    private var lastAnchor: NSPoint?
     /// Keys is monitored rather than handled by the panel: the panel cannot
     /// become key, so it never receives a key event at all.
     private var keyMonitor: Any?
@@ -272,6 +344,19 @@ final class ZoomController {
     }
     private func lookup(_ id: UUID) -> Pegged? { registry[id] }
 
+    /// The card the zoom is showing has changed since it was opened — a code
+    /// in it was read, and the window was already drawn.
+    ///
+    /// Shown again, in the same place, and only when it is the card already on
+    /// screen: a code read for some other picture on the line has nothing to
+    /// do with what the user is reading. This is the half-second between a
+    /// card hanging and its code being known, where a space pressed in that
+    /// half second would otherwise open a window that never learns.
+    func refresh(_ item: Pegged) {
+        guard showing == item.id, let anchor = lastAnchor else { return }
+        present(item, at: anchor, on: anchorScreen(anchor))
+    }
+
     /// The screen an anchor point is on, which is where the window goes.
     private func anchorScreen(_ anchor: NSPoint) -> NSScreen? {
         NSScreen.screens.first { NSMouseInRect(anchor, $0.frame, false) } ?? NSScreen.main
@@ -286,7 +371,8 @@ final class ZoomController {
     }
 
     private func present(_ item: Pegged, at anchor: NSPoint, on screen: NSScreen?) {
-        let preview = ZoomPreview(payload: item.payload, origin: item.origin, anchor: anchor)
+        let preview = ZoomPreview(payload: item.payload, origin: item.origin,
+                                  anchor: anchor, qrcodes: item.qrcodes)
         let host = NSHostingView(rootView: ZoomCard(preview: preview))
         host.wantsLayer = true
         host.layer?.backgroundColor = .clear
@@ -301,6 +387,7 @@ final class ZoomController {
         panel.place(under: anchor, on: screen ?? panel.screen, content: panel.frame.size)
         panel.orderFrontRegardless()
         showing = item.id
+        lastAnchor = anchor
         watchForDismiss()
     }
 

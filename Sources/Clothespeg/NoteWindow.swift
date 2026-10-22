@@ -119,6 +119,13 @@ final class NoteDraft: ObservableObject {
     /// through the edit so that opening and saving a ringing note does not
     /// quietly clear its trace — only removing the reminder does that.
     @Published var remindFired: Bool
+    /// The turn of a repeated reminder that has already been answered.
+    ///
+    /// Carried through the edit for the same reason as `remindFired`, and
+    /// one worse thing happens without it: the draft is what gets written
+    /// back on save, so a draft that had lost the answer would return the
+    /// card lit after the person had just put it out.
+    var remindAcked: Date?
 
     /// Where a reminder change goes the moment it is made, when there is a
     /// note on the line to carry it. The controller sets this as the editor
@@ -140,7 +147,8 @@ final class NoteDraft: ObservableObject {
 
     init(editing: UUID? = nil, anchor: CGRect? = nil, text: String = "",
          tint: NoteTint? = nil, remindAt: Date? = nil,
-         remindRule: Note.RepeatRule? = nil, remindFired: Bool = false) {
+         remindRule: Note.RepeatRule? = nil, remindFired: Bool = false,
+         remindAcked: Date? = nil) {
         self.editing = editing
         self.anchor = anchor
         self.text = text
@@ -148,13 +156,15 @@ final class NoteDraft: ObservableObject {
         self.remindAt = remindAt
         self.remindRule = remindRule
         self.remindFired = remindFired
+        self.remindAcked = remindAcked
     }
 
     static func fresh() -> NoteDraft { NoteDraft() }
 
     var note: Note {
         Note(text: text, tint: tint, remindAt: remindAt,
-             remindRule: remindRule, remindFired: remindFired)
+             remindRule: remindRule, remindFired: remindFired,
+             remindAcked: remindAcked)
     }
 
     // MARK: The reminder, as the picker shapes it
@@ -184,6 +194,9 @@ final class NoteDraft: ObservableObject {
         if !(rule == nil && minute <= Date() && remindFired) {
             remindFired = false
         }
+        // A different moment is a different promise: whatever turn was
+        // answered before belongs to the reminder that has just been moved.
+        remindAcked = nil
         if let rule, minute <= Date() {
             let probe = Note(text: "", tint: nil, remindAt: minute, remindRule: rule)
             remindAt = probe.reminderOccurrence() ?? minute
@@ -218,6 +231,7 @@ final class NoteDraft: ObservableObject {
         remindAt = nil
         remindRule = nil
         remindFired = false
+        remindAcked = nil
         commitLive?(note)
     }
 
@@ -1583,14 +1597,19 @@ final class NoteController {
         // The ringing card's light goes out here: the person it rang for is
         // the person opening it. The fired mark on a one-time reminder stays
         // until the reminder itself is removed.
-        line?.clearNoteHighlight(item.id)
+        line?.acknowledgeReminder(item.id)
+        // Read back after the answer, so the draft carries the turn that was
+        // just answered instead of handing the old value back on the next
+        // save — which would light the card again the moment it closed.
+        let current = line?.notes.first { $0.id == item.id }?.payload.note ?? note
         present(NoteDraft(editing: item.id,
                           anchor: line?.hitRects[item.id],
-                          text: note.text,
-                          tint: note.tint,
-                          remindAt: note.remindAt,
-                          remindRule: note.remindRule,
-                          remindFired: note.remindFired))
+                          text: current.text,
+                          tint: current.tint,
+                          remindAt: current.remindAt,
+                          remindRule: current.remindRule,
+                          remindFired: current.remindFired,
+                          remindAcked: current.remindAcked))
     }
 
     var isOpen: Bool { window?.isVisible ?? false }

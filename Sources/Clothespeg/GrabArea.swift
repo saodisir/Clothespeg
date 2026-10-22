@@ -73,16 +73,21 @@ struct GrabArea: NSViewRepresentable {
         // the press region sits under the drawing. A repeated reminder never
         // carries the fired mark, but both kinds ring, so the test is the
         // highlight itself rather than the mark.
-        if line.highlightedNoteID == id, let arrangement {
-            view.ackRect = CGRect(
-                x: NoteCardLayout.width * 0.45,
-                y: arrangement.height - NoteCardLayout.bottomPad - NoteCardLayout.captionHeight,
-                width: NoteCardLayout.width * 0.55 - NoteCardLayout.sidePad,
-                height: NoteCardLayout.captionHeight)
-            view.onAcknowledge = {
-                diagLog("Reminder acknowledged: \(id)")
-                line.clearNoteHighlight(id)
-            }
+        //
+        // Wired on every pass, not only while ringing, and asking the line at
+        // the moment of the press rather than trusting what was true when
+        // this ran. `ringingNoteIDs` is read here, inside `configure`,
+        // where SwiftUI cannot see that this view depends on it: the card
+        // could be redrawn with 知道了 on it while `updateNSView` never ran,
+        // leaving the press region nil — a button drawn but unpressable until
+        // the panel was put away and brought down again (the 2026-10-21
+        // report). The paper's height is layout and follows the note, so it
+        // is safe to carry; the highlight is state and is asked for.
+        view.paperHeight = arrangement?.height ?? 0
+        view.isRinging = { line.ringingNoteIDs.contains(id) }
+        view.onAcknowledge = {
+            diagLog("Reminder acknowledged: \(id)")
+            line.acknowledgeReminder(id)
         }
         // The two decks answer one set of gestures, whatever they hold (the
         // 2026-10-17 unification): a press copies, a double click pastes to
@@ -142,6 +147,36 @@ struct GrabArea: NSViewRepresentable {
                 }
             } else {
                 menu.addItem(ClosureMenuItem(L("Copy")) { line.copy(id) })
+                // What a code in this picture says — the two things that can
+                // be done with it, and not the contents themselves.
+                //
+                // The contents were shown here as a greyed-out line for one
+                // round, and taken out: a menu is a list of things to do, and
+                // forty characters of URL sitting in one is not a thing to do.
+                // Reading it is what the space bar is for, and the picture is
+                // the reason to press it.
+                //
+                // Only when there is something to say: a picture holding no
+                // code keeps exactly the menu it has always had, which is
+                // what makes this invisible to anyone who never copies one.
+                //
+                // Asked of the line rather than read off `item`: the menu is
+                // built by a closure that was written when this card was
+                // configured, and the read finishes a tenth of a second after
+                // that. A code read in the meantime would be a code this
+                // closure had never heard of.
+                if let text = line.qrText(for: id) {
+                    menu.addItem(.separator())
+                    menu.addItem(ClosureMenuItem(L("Copy QR code contents")) { line.copyQRCode(id) })
+                    // A code is only worth following when it points
+                    // somewhere, and only for the schemes a link card already
+                    // follows: a code from a stranger should not get to pick
+                    // its own handler.
+                    if let link = QRCodes.link(in: text) {
+                        menu.addItem(ClosureMenuItem(L("Open Link")) { NSWorkspace.shared.open(link) })
+                    }
+                    menu.addItem(.separator())
+                }
             }
             // The pin, asked for by right click and answered for the card as
             // it stands: a pin on a pinned card would be a lie, so the state
@@ -273,9 +308,40 @@ final class GrabView: NSView, NSDraggingSource {
     /// Where the ringing card says "知道了", and what that press does. The
     /// caption's right end of a note whose reminder has rung: the one place
     /// on the card that answers "I have seen it" without opening anything.
-    /// Nil when the card is not ringing.
-    var ackRect: CGRect? = nil
+    ///
+    /// The height of the paper this card draws. Layout rather than state: it
+    /// changes when the note changes, and a note that changed is a card
+    /// SwiftUI has already asked this view to update for — which is why the
+    /// press region can be worked out from it here instead of being pushed in
+    /// as a rect, the way it used to be.
+    var paperHeight: CGFloat = 0
+
+    /// Whether this card is the ringing one, asked at the moment of the press.
+    ///
+    /// A reminder starts ringing without any of the values this view was
+    /// configured with changing, so a press region that only followed those
+    /// values was a button that did nothing until the card was built a second
+    /// time. Asking the line itself costs one property read and cannot go
+    /// stale.
+    var isRinging: () -> Bool = { false }
+
+    /// What a press on 知道了 does. Wired once per card; the region is only
+    /// live while `isRinging` says so.
     var onAcknowledge: () -> Void = {}
+
+    /// Where 知道了 is, in paper coordinates.
+    ///
+    /// The caption row sits at the card's fixed bottom, below the scroll — a
+    /// scrolled note moves its rows, not its footer, so the offset stays out
+    /// of the arithmetic here.
+    private var ackRect: CGRect? {
+        guard paperHeight > 0 else { return nil }
+        return CGRect(
+            x: NoteCardLayout.width * 0.45,
+            y: paperHeight - NoteCardLayout.bottomPad - NoteCardLayout.captionHeight,
+            width: NoteCardLayout.width * 0.55 - NoteCardLayout.sidePad,
+            height: NoteCardLayout.captionHeight)
+    }
 
     /// How far the note's paper can scroll — the distance between the paper
     /// at full length and the window it is seen through. Zero means there is
@@ -388,11 +454,11 @@ final class GrabView: NSView, NSDraggingSource {
 
     /// Whether this press landed on the ringing card's 知道了.
     ///
-    /// The caption row sits at the card's fixed bottom, below the scroll —
-    /// a scrolled note moves its rows, not its footer, so the offset stays
-    /// out of the arithmetic here.
+    /// Asked live, both halves: whether the card is ringing now, and where on
+    /// the paper the word is. Nothing here is cached from configuration time,
+    /// which is what makes the first ring pressable.
     private func isAck(_ event: NSEvent) -> Bool {
-        guard let rect = ackRect else { return false }
+        guard isRinging(), let rect = ackRect else { return false }
         let p = convert(event.locationInWindow, from: nil)
         let inPaper = CGPoint(x: p.x - Frame.inset,
                               y: (bounds.height - p.y) - Frame.inset)

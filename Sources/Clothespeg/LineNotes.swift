@@ -55,7 +55,7 @@ extension Line {
         hitRects[id] = nil
         // A lit card going down takes its light with it, and the system's
         // pending reminder goes with the save that follows.
-        if highlightedNoteID == id { highlightedNoteID = nil }
+        ringingNoteIDs.remove(id)
         saveNotes()
         if !quietly { play(.remove) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -76,8 +76,8 @@ extension Line {
         // A reminder taken off the note puts its own light out: the card was
         // lit to say "this one rang", and the person who just removed the
         // reminder is the person it rang for.
-        if note.remindAt == nil, highlightedNoteID == id {
-            highlightedNoteID = nil
+        if note.remindAt == nil {
+            ringingNoteIDs.remove(id)
         }
         saveNotes()
     }
@@ -88,8 +88,10 @@ extension Line {
     ///
     /// The one-time kind takes its mark here: it has rung, and the card
     /// keeps the trace until the reminder is removed. The repeating kind
-    /// has no "after" to mark — it will ring again on its own. Either way
-    /// the card is lit, and the rope was already on its way down.
+    /// has no "after" to mark — it will ring again on its own — so its
+    /// light comes from the clock rather than from this moment; both end up
+    /// in the same set. Either way the card is lit, and the rope was
+    /// already on its way down.
     func noteReminderArrived(_ id: UUID) {
         guard let i = notes.firstIndex(where: { $0.id == id }),
               case .note(var note) = notes[i].payload else { return }
@@ -97,7 +99,7 @@ extension Line {
             note.remindFired = true
             notes[i].payload = .note(note)
         }
-        highlightedNoteID = id
+        ringingNoteIDs.insert(id)
         // A bell, because a reminder that arrives in silence is easy to
         // miss and easy to have missed. Hero over Ping: the one-second
         // chime survived the first test where the quarter-second tick did
@@ -106,9 +108,49 @@ extension Line {
         saveNotes()
     }
 
-    /// The ringing card was opened, and the person it rang for has seen it.
-    func clearNoteHighlight(_ id: UUID) {
-        if highlightedNoteID == id { highlightedNoteID = nil }
+    /// The ringing card was answered: its 知道了 pressed, or the note opened
+    /// by the person it rang for.
+    ///
+    /// The answer is written into the note rather than only taken out of the
+    /// light, so that quitting between the ring and the answer does not
+    /// bring the card back lit in the morning with no way to tell whether it
+    /// had been seen.
+    func acknowledgeReminder(_ id: UUID) {
+        ringingNoteIDs.remove(id)
+        guard let i = notes.firstIndex(where: { $0.id == id }),
+              case .note(var note) = notes[i].payload,
+              // Only a repeated reminder has a turn to answer. A one-time
+              // one is marked as fired when it rings, and that mark is its
+              // own answer — its card says 提醒已到, not 知道了.
+              note.remindRule != nil,
+              let turn = note.lastOccurrence() else { return }
+        if let acked = note.remindAcked, acked >= turn { return }
+        note.remindAcked = turn
+        notes[i].payload = .note(note)
+        diagLog("Reminder answered: \(id.uuidString) for \(turn)")
+        saveNotes()
+    }
+
+    /// Re-reads which cards owe a 知道了.
+    ///
+    /// The answer can change without anyone touching the app, because the
+    /// clock moves on its own: a reminder that rings while the Mac sleeps
+    /// or the app is shut is heard by no one, and the card still has to say
+    /// so when the person comes back. So this asks the notes, and is asked
+    /// at launch, on every wake, on every save, and when a ring lands.
+    ///
+    /// It only adds what the clock calls unanswered, and lets go of cards
+    /// whose note is gone or whose reminder has been taken off. A live
+    /// ring's light is not taken away by anything but an answer.
+    func refreshRinging(_ now: Date = Date()) {
+        let carried = Set(notes.filter { !$0.falling && $0.payload.note?.remindAt != nil }.map(\.id))
+        var next = ringingNoteIDs.intersection(carried)
+        for item in notes where !item.falling {
+            if item.payload.note?.isRinging(at: now) == true { next.insert(item.id) }
+        }
+        guard next != ringingNoteIDs else { return }
+        ringingNoteIDs = next
+        diagLog("Reminders ringing: \(next.count)")
     }
 
     // MARK: Ticking one off
@@ -155,6 +197,9 @@ extension Line {
             return (entry.id, note)
         }
         ReminderScheduler.shared.reconcile(with: reminders)
+        // The clock is what lights a card, so a save that does not look at
+        // it leaves a reminder that has just gone by unannounced.
+        refreshRinging()
     }
 
     /// The notes come back as they were, newest first.
@@ -182,6 +227,34 @@ extension Line {
             notes[i].payload = .note(note)
             missed = true
         }
-        if missed { saveNotes() }
+        // The answer to a repeated reminder used to live only in memory, so
+        // the notes on disk carry no record of the turns answered before this
+        // version. Read literally, every turn ever would be an unanswered one
+        // and every card would light up at once — yesterday's 15:00 included.
+        //
+        // The first launch after the change settles the history it cannot
+        // know: a turn from an earlier day is taken as answered (its card was
+        // quiet then, so it is quiet now), while today's turn is left alone —
+        // a reminder that rang this morning with nobody at the desk is exactly
+        // the one the light is for.
+        let settled = "reminderAnswersSettled"
+        var history = false
+        if !UserDefaults.standard.bool(forKey: settled) {
+            let calendar = Calendar.current
+            for i in notes.indices {
+                guard case .note(var note) = notes[i].payload,
+                      note.remindRule != nil, note.remindAcked == nil,
+                      let turn = note.lastOccurrence(before: now),
+                      !calendar.isDate(turn, inSameDayAs: now) else { continue }
+                note.remindAcked = turn
+                notes[i].payload = .note(note)
+                history = true
+            }
+            if history { diagLog("Reminder history settled: older turns taken as answered") }
+        }
+        if missed || history { saveNotes() }
+        if !UserDefaults.standard.bool(forKey: settled) {
+            UserDefaults.standard.set(true, forKey: settled)
+        }
     }
 }

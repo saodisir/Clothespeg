@@ -35,6 +35,10 @@
 "Show in Finder" = "在访达中显示";
 "Save to Desktop" = "存储到桌面";
 "Discard" = "丢弃";
+"Copy QR code contents" = "复制二维码内容";
+"Open Link" = "打开链接";
+"Right-click the card to open the link" = "右键卡片可打开链接";
+"Right-click the card to copy the contents" = "右键卡片可复制内容";
 
 /* LineView */
 "Copy something and it will hang here" = "复制点什么，就会挂到这里";
@@ -144,9 +148,8 @@
 "Click one, then press the new combination. Esc cancels." = "点击后按下新的组合，esc 取消。";
 "Show the new note button" = "显示新建便签按钮";
 "Show the lock button" = "显示锁住按钮";
-"The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown." = "这两个按钮在绳子上、卡片上方的凹陷处。无论是否显示按钮，对应的快捷键都可用。";
+"The two buttons sit on the rope, in the dip above the cards. A propped line is put away with Esc from anywhere." = "这两个按钮在绳子上、卡片上方的凹陷处。锁住的绳子在任何位置按 Esc 都能收起。";
 "While the line is down" = "绳子放下时";
-"These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere." = "这两个快捷键在绳子放下时生效，鼠标在哪儿都可以。Clothespeg 自己在前台时会暂停，免得吃掉你输进它的字母；无论按钮是否显示都可以使用；锁住的绳子在任何位置按 Esc 都能收起。";
 "Already used by another shortcut." = "与另一个快捷键重复。";
 "Clear" = "清除";
 

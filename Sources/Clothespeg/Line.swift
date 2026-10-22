@@ -46,6 +46,21 @@ struct Pegged: Identifiable, Equatable {
     /// to "how long should this be kept", which is otherwise the settings'
     /// question to answer for everybody at once.
     var pinned = false
+    /// What the QR code in this picture says, when it holds one.
+    ///
+    /// `nil` is "not read yet" and `[]` is "read, and there is nothing in it".
+    /// The two are kept apart so a picture with no code is read once in its
+    /// life rather than once per launch; the read is a hundred milliseconds
+    /// and the history can be two hundred pictures deep.
+    ///
+    /// Everything a card does is unchanged by this. A picture holding a code
+    /// is a picture: it copies, drags and pastes as itself. This only adds
+    /// what the code says, in two places that are about reading one thing
+    /// closely.
+    var qrcodes: [String]?
+
+    /// The first code's contents, for the places that show one line.
+    var qrText: String? { qrcodes?.first }
 
     /// The file this card is, if it is one. A picture is a file too, so
     /// dragging works for both without caring which it is.
@@ -56,19 +71,20 @@ struct Pegged: Identifiable, Equatable {
     /// whole difference.
     var isFile: Bool { !payload.files.isEmpty && payload.imageURL == nil }
 
-    init(id: UUID = UUID(), payload: Payload, origin: Origin = Origin(), thumb: NSImage? = nil, rich: RichText? = nil, pinned: Bool = false) {
+    init(id: UUID = UUID(), payload: Payload, origin: Origin = Origin(), thumb: NSImage? = nil, rich: RichText? = nil, pinned: Bool = false, qrcodes: [String]? = nil) {
         self.id = id
         self.payload = payload
         self.origin = origin
         self.thumb = thumb
         self.rich = rich
         self.pinned = pinned
+        self.qrcodes = qrcodes
     }
 
     static func == (a: Pegged, b: Pegged) -> Bool {
         a.id == b.id && a.falling == b.falling && a.flying == b.flying
             && a.payload == b.payload && a.origin == b.origin && a.thumb === b.thumb
-            && a.rich == b.rich && a.pinned == b.pinned
+            && a.rich == b.rich && a.pinned == b.pinned && a.qrcodes == b.qrcodes
     }
 
     /// Whether this card has anything to say about what is being looked for.
@@ -125,6 +141,11 @@ struct Pegged: Identifiable, Equatable {
             // named "final" is the one being looked for.
             parts.append(fold(url.path))
         }
+        // What a code in the picture says. This is the only way such a card
+        // can be found at all: the pixels cannot be matched against a word,
+        // and the card has no text of its own. Somebody who copied a QR code
+        // six days ago remembers what it was for, not that it was a picture.
+        for text in item.qrcodes ?? [] { parts.append(fold(text)) }
         return parts
     }
 }
@@ -215,6 +236,9 @@ final class Line: ObservableObject {
     /// Card frames in window coordinates, reported by the views. The panel
     /// uses them to only catch clicks over photos and let the rest through.
     var hitRects: [UUID: CGRect] = [:]
+    /// Whether a write of the history is already waiting. See `scheduleSave`:
+    /// a batch of code reads is one write, not one each.
+    private var qrSavePending = false
     /// Where the page counter is on screen, told by the pill itself rather
     /// than worked out from its width: it grows when the filter opens and it
     /// is not always in the middle, so any arithmetic about it is a guess that
@@ -268,10 +292,16 @@ final class Line: ObservableObject {
     /// to the thing standing on the other side of it.
     @Published var notes: [Pegged] = []
 
-    /// The note card a ringing reminder has lit. Set when the reminder
-    /// arrives, cleared when the note is opened or its reminder removed —
-    /// a light that only the person it rang for can put out.
-    @Published var highlightedNoteID: UUID?
+    /// The note cards a ringing reminder has lit. Cleared when the note is
+    /// opened or its reminder removed — a light that only the person it rang
+    /// for can put out.
+    ///
+    /// A set rather than one id: two notes can both be owed a 知道了, and a
+    /// single slot would silently keep the answer for the second one. Which
+    /// cards belong here is worked out from the notes and the clock (`refreshRinging`),
+    /// never only from having heard the ring, for the reason in
+    /// `Note.isRinging`.
+    @Published var ringingNoteIDs: Set<UUID> = []
 
     /// Which of the two is on the line. They share the panel, the rope, the
     /// glass and every gesture, and share nothing else.
@@ -643,6 +673,12 @@ final class Line: ObservableObject {
         // line shows what fits and the rest is panned to.
         save()
         if !quietly { play(.hang) }
+        // A picture that holds a code is read now, while the card is new and
+        // the user is looking at it. Nothing waits for this: the card hangs
+        // first and learns what the code says a tenth of a second later.
+        if let url = item.payload.imageURL {
+            requestQRCodes(for: item.id, url: url, urgent: true)
+        }
         return item.id
     }
 
@@ -826,6 +862,39 @@ final class Line: ObservableObject {
         // Marked as ours so the watcher knows this change is this app's and
         // does not hang a card of something already on the line.
         entry.setString("1", forType: ClipboardWatcher.ourWrite)
+        pb.writeObjects([entry])
+
+        copiedID = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            if self?.copiedID == id { self?.copiedID = nil }
+        }
+    }
+
+    /// What the code on a card says, asked at the moment of asking.
+    ///
+    /// The menu is built from a closure, and a closure written while a card
+    /// was configured holds the card as it was then. A code is read a tenth of
+    /// a second after the card hangs, so the copy in that closure can be a
+    /// picture that did not know it held anything. Asking here is the same
+    /// lesson the ringing note taught: what a press finds has to be looked up
+    /// when the press happens, not carried in from when the view was built.
+    func qrText(for id: UUID) -> String? {
+        onLine.first(where: { $0.id == id })?.qrText
+    }
+
+    /// Puts a QR code's contents on the pasteboard instead of the picture.
+    ///
+    /// The other copy a picture card has: same card, same pasteboard, one
+    /// layer in — the code rather than the pixels. Marked as this app's write
+    /// like every other copy, so what lands does not come straight back as a
+    /// text card.
+    func copyQRCode(_ id: UUID) {
+        guard let item = onLine.first(where: { $0.id == id }), let text = item.qrText else { return }
+        let entry = NSPasteboardItem()
+        entry.setString(text, forType: .string)
+        entry.setString("1", forType: ClipboardWatcher.ourWrite)
+        let pb = NSPasteboard.general
+        pb.clearContents()
         pb.writeObjects([entry])
 
         copiedID = id
@@ -1085,7 +1154,7 @@ final class Line: ObservableObject {
         // for now: two copies of the same snippet at two different minutes
         // are two things that happened.
         var entries = items.filter { !$0.falling }
-            .map { Attic.Entry(payload: $0.payload, origin: $0.origin, id: $0.id, rich: $0.rich, pinned: $0.pinned) }
+            .map { Attic.Entry(payload: $0.payload, origin: $0.origin, id: $0.id, rich: $0.rich, pinned: $0.pinned, qrcodes: $0.qrcodes) }
         // Anything panned out of sight is still hung, and still comes back.
         let known = Set(entries.map(\.id))
         for entry in attic.entries where !known.contains(entry.id) {
@@ -1116,7 +1185,70 @@ final class Line: ObservableObject {
             // every launch: 164, then 328, then 656.
             items.append(Pegged(id: entry.id, payload: entry.payload,
                                 origin: entry.origin, thumb: thumb(for: entry.payload),
-                                rich: entry.rich, pinned: entry.pinned ?? false))
+                                rich: entry.rich, pinned: entry.pinned ?? false,
+                                qrcodes: entry.qrcodes))
+        }
+        // Everything stored before codes were read at all comes back with
+        // nothing in `qrcodes`, which is the one state that means "never
+        // looked at". Those are read once, on the queue that never hurries,
+        // and from then on the answer — even an empty one — is part of the
+        // card and travels with it through every launch.
+        for item in items {
+            guard let url = item.payload.imageURL, item.qrcodes == nil else { continue }
+            requestQRCodes(for: item.id, url: url, urgent: false)
+        }
+    }
+
+    /// Reads a card's picture for a QR code, and writes what it says back.
+    ///
+    /// Split from `hang` because the two callers are the two moments a card
+    /// arrives: hung now, or restored from the history. The card itself is
+    /// untouched by any of this — it is a picture, and it behaves like one.
+    private func requestQRCodes(for id: UUID, url: URL, urgent: Bool) {
+        QRScanner.shared.scan(url, urgent: urgent) { [weak self] texts in
+            MainActor.assumeIsolated {
+                self?.setQRCodes(texts, for: id)
+            }
+        }
+    }
+
+    /// What the read found, put on the card.
+    ///
+    /// Ignored when the card has gone — a picture can be dragged out of the
+    /// app or thrown away while its code is being read, and writing to a card
+    /// that is no longer there must not resurrect it.
+    ///
+    /// The zoom is told again as well. It keeps its own copy of every card, so
+    /// a code read after the copy was taken would otherwise be a card whose
+    /// menu has contents and whose zoom does not.
+    private func setQRCodes(_ texts: [String], for id: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == id }), items[i].qrcodes == nil else { return }
+        items[i].qrcodes = texts
+        // The zoom keeps its own copy of every card, and the window may
+        // already be open on this one — a space pressed in the second between
+        // the card hanging and the read finishing. Both are told.
+        ZoomController.shared.register(contentsOf: items)
+        ZoomController.shared.refresh(items[i])
+        scheduleSave()
+    }
+
+    /// The history is written a while after a batch of reads rather than
+    /// after each one.
+    ///
+    /// `save` rewrites the whole file, and the first launch after this ships
+    /// reads the entire history: two hundred pictures at a hundred
+    /// milliseconds each, one write apiece, would be two hundred rewrites of a
+    /// file that already holds every picture path and every formatted copy.
+    /// Five seconds is long enough that the batch costs four writes, and short
+    /// enough that nothing is lost by quitting shortly afterwards — a read
+    /// that is lost costs a hundred milliseconds to repeat.
+    private func scheduleSave() {
+        guard !qrSavePending else { return }
+        qrSavePending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self else { return }
+            self.qrSavePending = false
+            self.save()
         }
     }
 

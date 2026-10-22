@@ -267,7 +267,7 @@ struct PeggedView: View {
         // A ringing reminder lights its card: the clay stroke is the one
         // emphasis colour, and it stays until the person it rang for opens
         // the note or clears the reminder.
-        let ringing = line.highlightedNoteID == item.id
+        let ringing = line.ringingNoteIDs.contains(item.id)
         return cardContent(noteScroll: $noteScroll, ringing: ringing) {
             VStack(spacing: 0) {
                 // The card's own top, before the first line. The two corners
@@ -507,7 +507,7 @@ struct PeggedView: View {
                     .foregroundStyle(noteInk(tint).opacity(0.5))
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                if line.highlightedNoteID == item.id {
+                if line.ringingNoteIDs.contains(item.id) {
                     // The ringing card's answer, drawn where the press is:
                     // one word on clay, and the card goes quiet. The press
                     // region lives in GrabArea, the drawing here, and the

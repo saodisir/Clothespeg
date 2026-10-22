@@ -770,34 +770,38 @@ struct InvocationPage: View {
                     .foregroundStyle(.secondary)
             }
 
-            // The two that act on a line already down. A separate card because
-            // they answer under a different rule: these work only while the
-            // line is down — and only while Clothespeg is not frontmost — so a
-            // plain letter is safe here in a way it never is for the two
-            // above. The button on the rope and the key that does the same
-            // thing from the keyboard are grouped, because they are one action
-            // reached two ways.
+            // The buttons that act on a line already down, and no keys for
+            // them (2026-10-22). Their shortcuts were bare letters answered
+            // for as long as the line was down — which is also true while
+            // somebody types into another app, and the n being typed became a
+            // new note. Until a key can tell a hand on the rope from a hand on
+            // a keyboard, the line holds no letters at all (see
+            // `Door.panelDoors`), so there is nothing to record here.
             Section {
                 Text(L("While the line is down"))
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // New note: the button on the rope and its key, together.
+                // New note: the button on the rope is the whole of the door.
                 Toggle(L("Show the new note button"), isOn: $showNoteMark)
-                LabeledContent(L("New note shortcut")) {
-                    HotkeyRecorder(door: .note, requiresModifier: false)
-                }
+                // Restored together with the key: uncomment this row. Its
+                // label is still in both .strings files.
+                // LabeledContent(L("New note shortcut")) {
+                //     HotkeyRecorder(door: .note, requiresModifier: false)
+                // }
 
-                // Keep-down: the prop button on the rope and its key, together.
+                // Keep-down: the button on the rope, which locks the rope the
+                // line is showing.
                 Toggle(L("Show the lock button"), isOn: $showPropMark)
-                LabeledContent(L("Lock the rope shortcut")) {
-                    HotkeyRecorder(door: .prop, requiresModifier: false)
-                }
+                // Restored together with the key, as above.
+                // LabeledContent(L("Lock the rope shortcut")) {
+                //     HotkeyRecorder(door: .prop, requiresModifier: false)
+                // }
 
-                // One paragraph, small and grey: what these keys are for, the
-                // one place they stand down, and that Esc dismisses a propped
-                // line from anywhere.
-                Text(L("These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere."))
+                // One paragraph, small and grey: where the two buttons are,
+                // and the one key that still answers here. The sentence about
+                // the letter keys is kept with them, in `Door.panelDoors`.
+                Text(L("The two buttons sit on the rope, in the dip above the cards. A propped line is put away with Esc from anywhere."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

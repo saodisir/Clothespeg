@@ -37,6 +37,66 @@ extension Note {
         return calendar.nextDate(after: start, matching: parts, matchingPolicy: .nextTime)
     }
 
+    /// The last turn of a reminder that is already behind us.
+    ///
+    /// The mirror of `reminderOccurrence`: same arithmetic, walked
+    /// backwards. For a one-time reminder there is only the one moment, and
+    /// it is in the past or it is not.
+    ///
+    /// The anchor is the floor. A reminder set this morning for tomorrow
+    /// has no turn behind it however the clock reads, and a reminder freshly
+    /// moved to a new time has not rung at the old one.
+    func lastOccurrence(before now: Date = Date()) -> Date? {
+        guard let at = remindAt else { return nil }
+        guard let rule = remindRule else { return at <= now ? at : nil }
+        let calendar = Calendar.current
+        var parts = DateComponents()
+        parts.hour = calendar.component(.hour, from: at)
+        parts.minute = calendar.component(.minute, from: at)
+        switch rule {
+        case .daily:
+            break
+        case .weekly:
+            parts.weekday = calendar.component(.weekday, from: at)
+        case .monthly:
+            parts.day = calendar.component(.day, from: at)
+        }
+        // A second past now, so that the turn landing on this very minute
+        // counts as behind us rather than a minute away.
+        guard let turn = calendar.nextDate(after: now.addingTimeInterval(1),
+                                           matching: parts,
+                                           matchingPolicy: .nextTime,
+                                           repeatedTimePolicy: .first,
+                                           direction: .backward),
+              turn >= at else { return nil }
+        return turn
+    }
+
+    /// Whether the card is waiting for its 知道了.
+    ///
+    /// Worked out from the dates rather than remembered from the moment of
+    /// ringing, because nobody is there to remember it: the turn arrives on
+    /// a clock, and the clock runs while the Mac sleeps or the app is shut.
+    /// On the morning of 2026-10-22 the reminder rang with the machine in
+    /// maintenance sleep, the banner was drawn by the system on its own,
+    /// and the card could only say 下次 — the ring had happened, and the app
+    /// had never heard it.
+    ///
+    /// No window on it, on purpose: an unanswered turn is unanswered
+    /// however long the answer takes, and a card that shows the next turn
+    /// before this one has been put out is answering a question nobody
+    /// asked (the user's own reading, 2026-10-22).
+    ///
+    /// A one-time reminder is deliberately not in here: it rang or it did
+    /// not, and `remindFired` already says which. Its trace is the word on
+    /// the card, not a button to press.
+    func isRinging(at now: Date = Date()) -> Bool {
+        guard remindRule != nil,
+              let turn = lastOccurrence(before: now) else { return false }
+        guard let acked = remindAcked else { return true }
+        return acked < turn
+    }
+
     /// What the picker's header and the card's footer call the reminder,
     /// in the calendar's own words — "每周三 09:00", not ours to translate.
     /// Nil when there is no reminder to name.

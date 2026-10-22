@@ -242,6 +242,17 @@ struct Note: Equatable {
     /// repeated one never carries this: it has no "after" to be in.
     var remindFired: Bool = false
 
+    /// The turn of a repeated reminder that has been answered — the one the
+    /// card's 知道了 was pressed for, or the note was opened on. Nil until
+    /// the first answer.
+    ///
+    /// Written down because a ring is not always heard: the turn arrives on
+    /// a clock, and the clock keeps going while the machine sleeps or the
+    /// app is shut. Without this the card has no way of saying "this one
+    /// rang and nobody put it out" once the moment has gone by — which is
+    /// exactly the state the person comes back to.
+    var remindAcked: Date? = nil
+
     enum RepeatRule: String, Codable, CaseIterable, Identifiable {
         case daily, weekly, monthly
 
@@ -308,9 +319,11 @@ struct Note: Equatable {
             return trimmed
         }
         // The reminder rides along: tidying the words is not the user asking
-        // to be unreminded.
+        // to be unreminded. So does the answer already given to it — losing
+        // that would bring a card back lit in the middle of a save.
         return Note(text: kept.joined(separator: "\n"), tint: tint,
-                    remindAt: remindAt, remindRule: remindRule, remindFired: remindFired)
+                    remindAt: remindAt, remindRule: remindRule,
+                    remindFired: remindFired, remindAcked: remindAcked)
     }
 
     /// The note with the tick on one line flipped, or nil when that line has
@@ -324,9 +337,11 @@ struct Note: Equatable {
         guard lines.indices.contains(index),
               let flipped = NoteMark.flipped(lines[index]) else { return nil }
         lines[index] = flipped
-        // A tick is a change to the words, not to the reminder: it rides along.
+        // A tick is a change to the words, not to the reminder: it rides
+        // along, and so does the answer the reminder has already been given.
         return Note(text: lines.joined(separator: "\n"), tint: tint,
-                    remindAt: remindAt, remindRule: remindRule, remindFired: remindFired)
+                    remindAt: remindAt, remindRule: remindRule,
+                    remindFired: remindFired, remindAcked: remindAcked)
     }
 }
 
@@ -365,7 +380,7 @@ extension Note: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, tint, remindAt, remindRule, remindFired
+        case text, tint, remindAt, remindRule, remindFired, remindAcked
     }
 
     init(from decoder: Decoder) throws {
@@ -386,6 +401,7 @@ extension Note: Codable {
         self.remindAt = try? container.decodeIfPresent(Date.self, forKey: .remindAt)
         self.remindRule = (try? container.decodeIfPresent(RepeatRule.self, forKey: .remindRule)) ?? nil
         self.remindFired = (try? container.decodeIfPresent(Bool.self, forKey: .remindFired)) ?? false
+        self.remindAcked = try? container.decodeIfPresent(Date.self, forKey: .remindAcked)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -401,6 +417,9 @@ extension Note: Codable {
         if remindFired {
             try container.encode(true, forKey: .remindFired)
         }
+        // The answered turn, only when there is one — the same rule as the
+        // rest of the reminder: a note that has nothing to say writes nothing.
+        try container.encodeIfPresent(remindAcked, forKey: .remindAcked)
     }
 
     /// The old list of lines, as one string.

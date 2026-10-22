@@ -43,7 +43,20 @@ fi
 # already rung no longer rings a second time when its time is moved around in
 # the past, and the Permissions page gains a Notifications row — its status, a
 # way to ask, and the System Settings door.
-VERSION="1.9.2"
+# 1.10.0 is a minor: a picture that holds a QR code now says what the code
+# says — right-click to copy the contents or to follow a link, the space bar
+# to read it under the picture. Nothing else about a picture changes: it is
+# still a picture, and copies and drags as itself. The reading happens once,
+# in the background, a tenth of a second after the card hangs.
+#
+# It also carries one fix that was written as 1.9.3 and never released: a
+# repeated reminder that rings while the Mac is asleep or the app is shut now
+# shows its 知道了 when the person comes back. The lit card used to be a memory
+# of having heard the ring, and a sleeping machine hears nothing — the banner
+# arrived on its own and the card could only say 下次. The light is now worked
+# out from the reminder's last turn and the turn that was answered, so waking
+# up (or opening the app) is enough to see it.
+VERSION="1.10.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -127,7 +140,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>8</string>
+  <key>CFBundleVersion</key><string>10</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

@@ -96,12 +96,17 @@ final class HotKey {
 /// and `notes` bring the line down from anywhere, so they are registered as
 /// real global hot keys through Carbon — the right tool, because it needs no
 /// Accessibility permission and it answers whether or not this app is front.
-/// `note` and `prop` act on a line that is already down. They are bare
-/// letters, and a bare letter registered for good would eat that letter in
-/// whatever app the user was typing in, so they are registered as real hot
-/// keys only while the line is down and this app is not the frontmost one,
-/// and unregistered again the moment either stops being true — see
-/// `AppDelegate.updatePanelKeys`.
+/// `note` and `prop` act on a line that is already down, on a bare letter
+/// registered only while that line is down and this app is not the frontmost
+/// one — see `AppDelegate.updatePanelKeys`.
+///
+/// Neither of those two is answered at the moment (2026-10-22). The rule above
+/// was not narrow enough: "the line is down and this app is not front" is also
+/// true while somebody types into another app, and the n or d being typed was
+/// taken by the rope — an n became a new note in the middle of a sentence. The
+/// doors and their keys are kept whole so that turning one back on is a small
+/// edit, but the line holds no bare letters until a key can tell a hand on the
+/// rope from a hand on a keyboard.
 enum Door: String, CaseIterable {
     case clipboard, notes, note, prop
 
@@ -112,9 +117,19 @@ enum Door: String, CaseIterable {
     /// The doors a Carbon registration covers.
     static var summonDoors: [Door] { [.clipboard, .notes] }
 
-    /// The doors the panel answers while it is down, in the order the settings
-    /// offer them.
-    static var panelDoors: [Door] { [.note, .prop] }
+    /// The doors the panel answers while it is down.
+    ///
+    /// Empty on purpose (2026-10-22). Both of them were bare letters, and a
+    /// bare letter is answered for as long as the line is down — the n being
+    /// typed into another app became a new note, the d locked the rope. Until
+    /// a panel key can tell "the hand is on the rope" from "somebody is
+    /// typing", the line holds no letters at all.
+    ///
+    /// The two doors and their keys are kept whole below, and
+    /// `AppDelegate.updatePanelKeys` still has its branch for each: turning
+    /// one back on is naming it here, and uncommenting its recorder and its
+    /// sentence in the settings.
+    static var panelDoors: [Door] { [] }
 
     var keyCode: Int {
         get { UserDefaults.standard.object(forKey: "hotkey.\(rawValue).code") as? Int ?? defaultCode }

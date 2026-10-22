@@ -58,6 +58,23 @@ final class Attic {
         /// reason `rich` is: a history written before pins existed decodes
         /// with nothing here, which reads as unpinned.
         var pinned: Bool?
+        /// What the QR code in this picture says, when it holds one.
+        ///
+        /// Three states in one optional, and all three mean something
+        /// different:
+        ///
+        /// - `nil` — never looked at. Every card stored before this existed,
+        ///   and every picture from the moment it is hung until the read
+        ///   finishes.
+        /// - `[]` — looked at, and there is no code in it.
+        /// - `["…"]` — looked at, and this is what it says.
+        ///
+        /// The difference between the first two is the whole reason this is
+        /// not a plain array. Without it a picture with no code and a picture
+        /// nobody had checked would read the same, and every launch would go
+        /// through the whole history again — twenty seconds of work for two
+        /// hundred screenshots, to learn what it already knew.
+        var qrcodes: [String]?
     }
 
     /// What a load found, kept apart from what it is done with.

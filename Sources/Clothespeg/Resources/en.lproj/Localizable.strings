@@ -35,6 +35,10 @@
 "Show in Finder" = "Show in Finder";
 "Save to Desktop" = "Save to Desktop";
 "Discard" = "Discard";
+"Copy QR code contents" = "Copy QR code contents";
+"Open Link" = "Open Link";
+"Right-click the card to open the link" = "Right-click the card to open the link";
+"Right-click the card to copy the contents" = "Right-click the card to copy the contents";
 
 /* LineView */
 "Copy something and it will hang here" = "Copy something and it will hang here";
@@ -144,9 +148,8 @@
 "Click one, then press the new combination. Esc cancels." = "Click one, then press the new combination. Esc cancels.";
 "Show the new note button" = "Show the new note button";
 "Show the lock button" = "Show the lock button";
-"The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown." = "The buttons on the rope, in the dip above the cards. Their shortcuts work whether or not the buttons are shown.";
+"The two buttons sit on the rope, in the dip above the cards. A propped line is put away with Esc from anywhere." = "The two buttons sit on the rope, in the dip above the cards. A propped line is put away with Esc from anywhere.";
 "While the line is down" = "While the line is down";
-"These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere." = "These keys work while the line is down, wherever the pointer is. They stand down while Clothespeg itself is frontmost, so they cannot eat what you type into it; they work whether or not the buttons are shown, and a propped line is put away with Esc from anywhere.";
 "Already used by another shortcut." = "Already used by another shortcut.";
 "Clear" = "Clear";
 
@@ -187,7 +190,7 @@
 "Original file deleted" = "Original file deleted";
 "Some files deleted" = "Some files deleted";
 "Discard missing files" = "Discard missing files";
-"Cards whose file has been deleted or moved away are cleared" = "Cards whose file has been deleted or moved away are cleared";
+"Cards whose file has been deleted or moved away come down at once" = "Cards whose file has been deleted or moved away come down at once";
 "Open folder" = "Open folder";
 "Delete this pinned card?" = "Delete this pinned card?";
 "The card is pinned — you asked to keep it. Its copy in the app's folder goes to the Trash with it." = "The card is pinned — you asked to keep it. Its copy in the app's folder goes to the Trash with it.";

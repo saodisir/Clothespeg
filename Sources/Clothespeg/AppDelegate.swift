@@ -339,8 +339,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Agreeing once here hands every live reminder its timer back, and
         // the system's pending list follows the notes as it always does.
         ReminderScheduler.shared.reconcile(with: readNotes())
+        // A reminder that rang while the app was shut is already in the past,
+        // and the light on its card is worked out from that date rather than
+        // remembered — so the asking is what puts it there.
+        line.refreshRinging()
         // Photos kept from last time show themselves for a moment.
         if line.liveCount > 0 { comeDown(on: nil) }
+
+        // Waking from sleep is the case the two halves of a reminder cannot
+        // cover on their own: the timer does not run while the Mac is asleep,
+        // and the system's banner is drawn without telling the app (this
+        // morning's 08:42, 2026-10-22 — the banner appeared, the card said
+        // 下次, and no log line said the reminder had ever rung). So on every
+        // wake the notes are read again: the overdue turns light their cards,
+        // and the timers are rebuilt for the ones still ahead.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                diagLog("Woke: reminders read again")
+                self.line.refreshRinging()
+                ReminderScheduler.shared.reconcile(with: readNotes())
+            }
+        }
 
         // Entering or leaving full screen switches Space. Check again once the
         // switch animation has settled.
@@ -480,7 +502,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let watcher = FolderWatcher(entry: entry) { [weak self] url in
                 // A copy, not a reference: the card owns its file the way
                 // every copied picture does, and outlives the watch.
-                guard let copy = Inbox.copyImage(from: url) else { return }
+                guard let copy = Inbox.copyImage(from: url) else {
+                    diagLog("Folder watch: could not take in \(url.lastPathComponent)")
+                    return
+                }
                 self?.hang(.image(copy))
             }
             watcher.start()
@@ -1515,6 +1540,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         updateSpaceKey()
+        // Empty for now — see `Door.panelDoors`. The branch is kept whole
+        // rather than deleted, so that returning a door to that list is the
+        // only edit needed; nothing here runs until then.
         for door in Door.panelDoors {
             guard door.isSet else { panelKeys[door] = nil; continue }
             guard panelKeys[door] == nil else { continue }
