@@ -155,6 +155,10 @@ things at once and they hang as one card; drag it out and they all copy.
 - **The pill**: filter by kind (all / text / link / colour / image / file),
   search, watch only what is pinned, and flip back through earlier days — all
   inside one small pill.
+- **Search what a picture says**: the words on a picture are searchable too.
+  Hang a screenshot of a report and a week later the words in its title still
+  find it. The reading happens once in the background, the result stays on
+  this Mac, and nothing is added to the download.
 - **Right-click menu**: Open; system Markup (pictures and image PDFs go to the
   system editor, and the thumbnail updates when you save); Show in Finder;
   Save to Desktop (files are copied, text and links become .txt); links open

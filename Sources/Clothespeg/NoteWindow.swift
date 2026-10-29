@@ -1382,12 +1382,32 @@ private struct ReminderPicker: View {
     }
 
     /// Steps the minute, and says the answer back into the field.
+    ///
+    /// The field is written from here rather than left to the sync above, and
+    /// that is the whole of a bug worth recording: the sync refuses to run
+    /// while the field has focus — it has to, or every keystroke would be
+    /// written over — and the field has focus exactly when someone has just
+    /// clicked into it and then reached for these two arrows. The press moved
+    /// the reminder and the field went on showing the old time, which reads
+    /// as buttons that do nothing at all, and the only way left to set a time
+    /// is to type one.
+    ///
+    /// So the press gives the focus up first — a step is the program's
+    /// answer, not a half-typed word — takes the step, and writes the answer
+    /// out itself.
     private func nudge(_ minutes: Int) {
+        timeFocused = false
         commitTime()
         let base = draft.remindAt ?? Date()
         draft.setReminder(
             at: Calendar.current.date(byAdding: .minute, value: minutes, to: base) ?? base,
             rule: draft.remindRule)
+        // Read back off the note rather than off the arithmetic: a repeating
+        // reminder stepped into the past is anchored at its next turn, so what
+        // the field has to say is what the note now says, not what was asked
+        // for.
+        timeText = Self.timeString(draft.remindAt ?? Date())
+        diagLog("Minute stepped by \(minutes): \(timeText)")
     }
 
     /// What the left of the top line says the note carries.

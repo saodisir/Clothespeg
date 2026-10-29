@@ -47,7 +47,26 @@ struct ZoomPreview {
 /// clicking anywhere, dismisses it, and the app the user was in never
 /// changes. A reader that stole the key window would need a second click
 /// to get back to work, which is worse than the small card was.
+///
+/// It does take the mouse, and that is a change worth recording. The first
+/// version took nothing at all — `ignoresMouseEvents = true` — which made
+/// every click here a dismiss and looked like the simplest possible reader.
+/// What it also did was hand the wheel to the app underneath: scroll events
+/// are delivered by hit testing, and a window that refuses the mouse is not
+/// in the hit test, so a long snippet opened at size could not be scrolled
+/// by a trackpad or by the scroll bar that was drawn down its right side.
+/// Reading a long thing is the whole reason this window exists, so it takes
+/// the mouse and pays for it by telling a click from a drag: a press that
+/// moved is a scroll bar being dragged or a selection being made, and a press
+/// that did not is still a click, which still dismisses.
 final class ZoomWindow: NSPanel {
+    /// What a press means once it is known to have been a press rather than
+    /// the beginning of a drag.
+    var onPress: (() -> Void)?
+    /// Where the current press started, in window coordinates. Nil between
+    /// presses, and the distance from here is what tells the two apart.
+    private var pressedAt: NSPoint?
+
     init(content: NSView) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
@@ -59,12 +78,42 @@ final class ZoomWindow: NSPanel {
         hidesOnDeactivate = false
         isMovable = false
         becomesKeyOnlyIfNeeded = false
-        ignoresMouseEvents = true
+        ignoresMouseEvents = false
         contentView = content
     }
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// Whether a release is a click, decided by how far the press travelled.
+    ///
+    /// Three points, which is the same order as the slop AppKit uses to call
+    /// a press a drag: enough that a hand resting on a trackpad while it
+    /// rolls does not turn a scroll into a dismiss, and small enough that a
+    /// deliberate click never reads as a drag.
+    private static let clickSlop: CGFloat = 3
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            pressedAt = event.locationInWindow
+        case .leftMouseUp:
+            let origin = pressedAt
+            pressedAt = nil
+            if let origin,
+               hypot(event.locationInWindow.x - origin.x,
+                     event.locationInWindow.y - origin.y) < Self.clickSlop {
+                // Out of this call rather than inside it: the press and the
+                // release are still being delivered to the scroll view, and
+                // taking the window away mid-delivery is the sort of thing
+                // that works until the day it does not.
+                DispatchQueue.main.async { [weak self] in self?.onPress?() }
+            }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 
     /// Placed under the card that opened it, kept on screen rather than
     /// allowed to hang off the edge of it.
@@ -274,6 +323,15 @@ final class ZoomController {
     /// Whether the zoom is showing this card, so the card can say so.
     func isShowing(_ id: UUID) -> Bool { showing == id }
 
+    /// Whether the zoom is showing anything at all.
+    ///
+    /// Asked by the space key, which arms itself from "is the pointer on a
+    /// card" — a question that stopped being the same one the moment this
+    /// window took the mouse. With the pointer over the window it is over no
+    /// card, and a key that disarmed there would leave a reader holding a
+    /// page it cannot put down.
+    var isShowingAny: Bool { showing != nil }
+
 
 
     /// Opens or closes a card's zoom from a press on the card itself.
@@ -384,6 +442,11 @@ final class ZoomController {
         // A second zoom reuses the window rather than making another, so
         // there is never more than one thing floating over the line.
         if panel.contentView !== host { panel.contentView = host }
+        // The press that dismisses arrives at the window rather than at a
+        // monitor: the window takes the mouse now, so a click inside it never
+        // reaches `globalClick` below — that one only ever hears the events
+        // going to *other* applications.
+        panel.onPress = { [weak self] in self?.dismiss() }
         panel.place(under: anchor, on: screen ?? panel.screen, content: panel.frame.size)
         panel.orderFrontRegardless()
         showing = item.id

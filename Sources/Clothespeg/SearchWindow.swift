@@ -353,6 +353,22 @@ final class SearchController {
         model.close()
     }
 
+    /// Enter: the search is finished, not abandoned.
+    ///
+    /// The same thing losing the key does — the field goes, the word stays and
+    /// the cards on the line are still filtered by it — said by the person
+    /// rather than by a click landing somewhere else. That is what makes it
+    /// worth a key of its own: returning to the cards with the mouse is one
+    /// motion, and the press that starts it belongs where the typing ended.
+    ///
+    /// The other two ways out of the field clear the word as well, and they
+    /// should: a cross and an Escape both mean "never mind". Enter is the one
+    /// that means "that is what I was looking for", so the word is the whole
+    /// of what it keeps.
+    func resign() {
+        model.resign()
+    }
+
     /// The line tucked away. The word stays — the line will come back, and the
     /// cards on it are still filtered — but the field closes, because a field
     /// over an app with no line under it is a search for nothing.
@@ -613,6 +629,11 @@ struct SearchInput: View {
             // because the first press has nothing to clear and still
             // has to mean "leave".
             .onExitCommand { SearchController.shared.close() }
+            // Enter is the way out that keeps the word. An input method
+            // takes the key first while it is composing — Enter there
+            // chooses a candidate — so this only fires on a press that
+            // commits the search rather than one that commits a character.
+            .onSubmit { SearchController.shared.resign() }
             .frame(width: SearchField.width, height: SearchField.height)
 
             // How to leave, said once and then never again.

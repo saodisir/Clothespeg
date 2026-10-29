@@ -154,6 +154,13 @@ final class ReminderScheduler: NSObject {
 
     private override init() { super.init() }
 
+    /// How far past its moment a timer fire may be and still count as the
+    /// real ring rather than a catch-up from sleep. The run loop fires a
+    /// timer within a fraction of a second of its date while the Mac is
+    /// awake, so anything beyond this can only be the machine having slept
+    /// through the turn — or a leftover timer from an old reminder time.
+    private static let catchUpGrace: TimeInterval = 120
+
     /// Hands the delegate over, once, at launch. The app is always running
     /// — it is the rope — so delivery arrives here in person, and a banner
     /// draws only because `willPresent` asks for it.
@@ -210,6 +217,12 @@ final class ReminderScheduler: NSObject {
     /// between timers — a reminder has nothing to say until its second.
     private var timers: [UUID: Timer] = [:]
 
+    /// Turns already put in front of the person this session, keyed by note
+    /// id and the exact moment of the turn. A missed reminder is delivered
+    /// once — whether by an on-time `ring` or by `deliverMissed` on the wake
+    /// that finds it — and never a second time for the same turn.
+    private var deliveredMissed: [UUID: Date] = [:]
+
     /// Rebuilds the timers from the notes. Called from `reconcile` — the
     /// same door every change walks through — so a reminder set, rewritten
     /// or taken away always leaves exactly one timer behind: its own.
@@ -245,8 +258,49 @@ final class ReminderScheduler: NSObject {
     }
 
     private func ring(_ id: UUID, occurrence: Date) {
+        // A fire this far behind its moment can only be the run loop catching
+        // up after the Mac slept, or a leftover timer from an old reminder
+        // time. The wake/launch path delivers missed turns on purpose; a
+        // stray late fire must not drop the rope or sound a second time, so
+        // it is skipped and the next turn rescheduled by the caller.
+        let staleness = Date().timeIntervalSince(occurrence)
+        guard staleness <= Self.catchUpGrace else {
+            diagLog("Reminder fire skipped (stale \(Int(staleness))s, delivered on wake): \(id.uuidString)")
+            return
+        }
         diagLog("Reminder ringing in-app for \(occurrence): \(id.uuidString)")
+        deliveredMissed[id] = occurrence
         NotificationCenter.default.post(name: Self.firedNotification, object: nil, userInfo: ["id": id])
+    }
+
+    /// Puts any reminder that rang while the Mac was asleep or the app was
+    /// shut in front of the person, once per turn.
+    ///
+    /// Called from the wake and launch paths so a missed ring is not left to
+    /// the run loop's catch-up, which lands at an arbitrary moment and can
+    /// fire twice for one turn (an old anchor and the current one). Only a
+    /// repeated reminder is in here: a one-time one is already put in front
+    /// of the person by `reconcile`'s overdue path, and `isRinging` is false
+    /// for it.
+    func deliverMissed() {
+        guard let notes = noteProvider?() else { return }
+        let now = Date()
+        for (id, note) in notes where note.isRinging(at: now) {
+            guard let turn = note.lastOccurrence(before: now),
+                  !alreadyDelivered(id, turn: turn) else { continue }
+            deliveredMissed[id] = turn
+            diagLog("Reminder delivered (missed turn \(turn)): \(id.uuidString)")
+            NotificationCenter.default.post(name: Self.firedNotification, object: nil, userInfo: ["id": id])
+        }
+    }
+
+    /// Whether this turn of this note has already been put in front of the
+    /// person this session. Compared with a second of slack because the
+    /// on-time fire records the timer's exact date while `lastOccurrence`
+    /// works the turn to the minute.
+    private func alreadyDelivered(_ id: UUID, turn: Date) -> Bool {
+        guard let delivered = deliveredMissed[id] else { return false }
+        return abs(delivered.timeIntervalSince(turn)) < 1
     }
 
     /// Makes the pending list agree with the notes.
@@ -281,16 +335,26 @@ final class ReminderScheduler: NSObject {
         // notes and the timers cannot disagree either.
         retime(with: notes)
         Task {
-            let pending = await center.pendingNotificationRequests().map(\.identifier)
-            let stale = pending.filter { wanted[$0] == nil }
+            let pending = await center.pendingNotificationRequests()
+            let pendingById = Dictionary(pending.map { ($0.identifier, $0) },
+                                         uniquingKeysWith: { first, _ in first })
+            let stale = pending.map(\.identifier).filter { wanted[$0] == nil }
             if !stale.isEmpty {
                 center.removePendingNotificationRequests(withIdentifiers: stale)
                 diagLog("Reminders dropped: \(stale.count)")
             }
-            for (identifier, request) in wanted where !pending.contains(identifier) {
+            // A request already queued is not necessarily the right request:
+            // the identifier spells only the schedule, so a note whose words
+            // were rewritten keeps its identifier and would otherwise ring
+            // with what it said the first time it was set. So the queue is
+            // compared by what it will say, not just by who it is — adding a
+            // request under an identifier that exists replaces it.
+            for (identifier, request) in wanted {
+                let queued = pendingById[identifier]
+                if let queued, Self.sameSpeech(queued.content, request.content) { continue }
                 do {
                     try await center.add(request)
-                    diagLog("Reminder scheduled: \(identifier)")
+                    diagLog("\(queued == nil ? "Reminder scheduled" : "Reminder updated"): \(identifier)")
                 } catch {
                     diagLog("Reminder schedule failed: \(error.localizedDescription)")
                     log.error("Could not schedule a reminder: \(error.localizedDescription, privacy: .public)")
@@ -300,10 +364,26 @@ final class ReminderScheduler: NSObject {
     }
 
     /// The schedule lives in the identifier: a changed reminder spells a
-    /// different request, so the old one is dropped and the new one added
-    /// and no comparison of contents is ever needed.
+    /// different request, so a moved time drops its old request and adds a
+    /// new one without any comparison.
+    ///
+    /// The words are deliberately not in here. An identifier that changed
+    /// whenever a character did would churn the queue on every keystroke
+    /// that reached a save, and the identifier is also how a delivered
+    /// notification finds its note again — that half must stay put. Which
+    /// leaves the content to be compared separately, in `reconcile`.
     private static func identifier(_ id: UUID, for note: Note) -> String {
         "note.\(id.uuidString.replacingOccurrences(of: "-", with: "")).\(Self.signature(note))"
+    }
+
+    /// Whether two requests would say the same thing when they rang.
+    ///
+    /// Only the words: the sound is the default on both sides, and the
+    /// trigger is already settled by the identifier. This is the comparison
+    /// that decides whether the queued request needs rewriting at all.
+    private static func sameSpeech(_ a: UNNotificationContent,
+                                   _ b: UNNotificationContent) -> Bool {
+        a.title == b.title && a.body == b.body
     }
 
     /// The stable spelling of a schedule, for the identifier above.

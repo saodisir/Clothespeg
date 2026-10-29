@@ -56,7 +56,28 @@ fi
 # arrived on its own and the card could only say 下次. The light is now worked
 # out from the reminder's last turn and the turn that was answered, so waking
 # up (or opening the app) is enough to see it.
-VERSION="1.10.0"
+#
+# 1.11.0 is a minor: the search field now finds a picture by the words on it.
+# A screenshot of a report used to be findable only by the name it was saved
+# under — `SCR-20261029-0912.png`, which is not what anybody remembers about
+# it. Each picture is now read once, in the background, and what it says joins
+# everything else a card is searched by: its words, its file's path, the app it
+# came from, and the code in it. Nothing on the card changes, the reading
+# happens once in a picture's life rather than once per launch, and no model is
+# bundled — the reader ships with macOS, so the download stays under 4 MB.
+#
+# Two more, gathered while that was being built. Editing a picture by
+# long-press now opens it in Preview rather than the system Markup sheet: that
+# sheet is a fixed-size overlay drawn by another process, with no title bar to
+# drag and no size to change, and a picture nobody can zoom is a picture nobody
+# edits comfortably. And a line that has to be flipped to reach a ringing note
+# now flips there by itself and centres it — the bell was easy to miss on the
+# second page.
+#
+# Reminders also catch up after sleep. A turn that passed while the Mac was
+# asleep used to be skipped for being late; it is now delivered once, on waking,
+# and a duplicate that the system already showed is not shown twice.
+VERSION="1.11.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -140,7 +161,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>10</string>
+  <key>CFBundleVersion</key><string>11</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

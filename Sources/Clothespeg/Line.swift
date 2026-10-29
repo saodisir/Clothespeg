@@ -59,6 +59,20 @@ struct Pegged: Identifiable, Equatable {
     /// closely.
     var qrcodes: [String]?
 
+    /// The words the picture shows, when it shows any.
+    ///
+    /// The three states are `qrcodes`' three states, for the same reason:
+    /// `nil` is "not read yet", "" is "read, and there is nothing in it", and
+    /// anything else is what it says. A picture of a cat must be read once in
+    /// its life rather than once per launch, and only the middle state can
+    /// tell those apart.
+    ///
+    /// This is what lets the search field find a screenshot by what was on it.
+    /// Nothing on the card changes: a picture copies, drags and pastes as
+    /// itself and shows itself rather than a line of its text, because the
+    /// words are for looking things up and not for reading off a card.
+    var ocr: String?
+
     /// The first code's contents, for the places that show one line.
     var qrText: String? { qrcodes?.first }
 
@@ -71,7 +85,7 @@ struct Pegged: Identifiable, Equatable {
     /// whole difference.
     var isFile: Bool { !payload.files.isEmpty && payload.imageURL == nil }
 
-    init(id: UUID = UUID(), payload: Payload, origin: Origin = Origin(), thumb: NSImage? = nil, rich: RichText? = nil, pinned: Bool = false, qrcodes: [String]? = nil) {
+    init(id: UUID = UUID(), payload: Payload, origin: Origin = Origin(), thumb: NSImage? = nil, rich: RichText? = nil, pinned: Bool = false, qrcodes: [String]? = nil, ocr: String? = nil) {
         self.id = id
         self.payload = payload
         self.origin = origin
@@ -79,12 +93,14 @@ struct Pegged: Identifiable, Equatable {
         self.rich = rich
         self.pinned = pinned
         self.qrcodes = qrcodes
+        self.ocr = ocr
     }
 
     static func == (a: Pegged, b: Pegged) -> Bool {
         a.id == b.id && a.falling == b.falling && a.flying == b.flying
             && a.payload == b.payload && a.origin == b.origin && a.thumb === b.thumb
             && a.rich == b.rich && a.pinned == b.pinned && a.qrcodes == b.qrcodes
+            && a.ocr == b.ocr
     }
 
     /// Whether this card has anything to say about what is being looked for.
@@ -93,7 +109,7 @@ struct Pegged: Identifiable, Equatable {
     /// read the words on the card would not find a screenshot named
     /// `q3-report.png` or a snippet copied out of Safari, and those are the
     /// two things people remember about a line — not the pixels, which cannot
-    /// be matched against a word at all.
+    /// be matched against a word at all, whatever is read out of them.
     ///
     /// The text of a snippet is matched in full rather than in the part that
     /// fits on the card: a word cut off by `lineLimit` is still in the
@@ -146,6 +162,15 @@ struct Pegged: Identifiable, Equatable {
         // and the card has no text of its own. Somebody who copied a QR code
         // six days ago remembers what it was for, not that it was a picture.
         for text in item.qrcodes ?? [] { parts.append(fold(text)) }
+        // What the picture shows, in words. A screenshot has nothing else to
+        // be found by: its name is a timestamp and its pixels are pictures of
+        // letters. The card keeps showing the picture and never this text —
+        // it is here to be looked things up in, not to be read.
+        //
+        // Skipped when empty rather than folded anyway: "" matches every
+        // search there has ever been, which would put every unreadable
+        // picture on the line for every word typed.
+        if let ocr = item.ocr, !ocr.isEmpty { parts.append(fold(ocr)) }
         return parts
     }
 }
@@ -237,8 +262,8 @@ final class Line: ObservableObject {
     /// uses them to only catch clicks over photos and let the rest through.
     var hitRects: [UUID: CGRect] = [:]
     /// Whether a write of the history is already waiting. See `scheduleSave`:
-    /// a batch of code reads is one write, not one each.
-    private var qrSavePending = false
+    /// a batch of picture reads is one write, not one each.
+    private var readSavePending = false
     /// Where the page counter is on screen, told by the pill itself rather
     /// than worked out from its width: it grows when the filter opens and it
     /// is not always in the middle, so any arithmetic about it is a guess that
@@ -613,6 +638,40 @@ final class Line: ObservableObject {
         panOffset = 0
     }
 
+    /// Brings one card into the middle of the line, if it is not already
+    /// somewhere on it.
+    ///
+    /// The case this exists for is a reminder: the rope comes down to say a
+    /// note wants an answer, and the note is on the second page because the
+    /// screen holds five cards and it is the seventh. Coming down to the
+    /// first page and leaving the person to pan until they find the lit card
+    /// is a rope that announces a thing it then hides — the notification
+    /// would have said as much on its own.
+    ///
+    /// Only when the card is out of sight. A line that jumped every time the
+    /// rope came down would be a line that cannot be panned: whatever was
+    /// being looked at would be taken away by the next pass of the pointer
+    /// over the notch.
+    ///
+    /// Returns whether the line moved, so a caller with nothing to say about
+    /// the pan is not made to publish one.
+    @discardableResult
+    func centre(_ id: UUID, fits: Int) -> Bool {
+        let live = matching
+        guard let index = live.firstIndex(where: { $0.id == id }) else { return false }
+        let count = max(fits, 1)
+        // The same clamp `visibleItems` and `pan` apply, so the card is
+        // judged against where it would actually be showing.
+        let last = max(0, live.count - count)
+        let start = min(max(panOffset, 0), last)
+        guard index < start || index >= start + count else { return false }
+        // Half a screen either side, as far as the ends of the line allow: a
+        // card near the newest end cannot have four cards to its left, and
+        // the arithmetic has to stop there rather than scroll into nothing.
+        panOffset = min(max(index - (count - 1) / 2, 0), last)
+        return true
+    }
+
     init() {
         showing = Self.restoreFilter()
         dateRange = Self.restoreDateRange()
@@ -673,11 +732,14 @@ final class Line: ObservableObject {
         // line shows what fits and the rest is panned to.
         save()
         if !quietly { play(.hang) }
-        // A picture that holds a code is read now, while the card is new and
-        // the user is looking at it. Nothing waits for this: the card hangs
-        // first and learns what the code says a tenth of a second later.
+        // A picture is read now, while the card is new and the user is looking
+        // at it: for the code in it, whose menu items are supposed to be there
+        // on the next right click, and for the words in it, which are how the
+        // card will be found tomorrow. Nothing waits for either — the card
+        // hangs first and learns both a moment later, on queues of their own.
         if let url = item.payload.imageURL {
             requestQRCodes(for: item.id, url: url, urgent: true)
+            requestText(for: item.id, url: url, urgent: true)
         }
         return item.id
     }
@@ -1154,7 +1216,7 @@ final class Line: ObservableObject {
         // for now: two copies of the same snippet at two different minutes
         // are two things that happened.
         var entries = items.filter { !$0.falling }
-            .map { Attic.Entry(payload: $0.payload, origin: $0.origin, id: $0.id, rich: $0.rich, pinned: $0.pinned, qrcodes: $0.qrcodes) }
+            .map { Attic.Entry(payload: $0.payload, origin: $0.origin, id: $0.id, rich: $0.rich, pinned: $0.pinned, qrcodes: $0.qrcodes, ocr: $0.ocr) }
         // Anything panned out of sight is still hung, and still comes back.
         let known = Set(entries.map(\.id))
         for entry in attic.entries where !known.contains(entry.id) {
@@ -1186,16 +1248,22 @@ final class Line: ObservableObject {
             items.append(Pegged(id: entry.id, payload: entry.payload,
                                 origin: entry.origin, thumb: thumb(for: entry.payload),
                                 rich: entry.rich, pinned: entry.pinned ?? false,
-                                qrcodes: entry.qrcodes))
+                                qrcodes: entry.qrcodes, ocr: entry.ocr))
         }
-        // Everything stored before codes were read at all comes back with
-        // nothing in `qrcodes`, which is the one state that means "never
-        // looked at". Those are read once, on the queue that never hurries,
-        // and from then on the answer — even an empty one — is part of the
-        // card and travels with it through every launch.
+        // Everything stored before pictures were read at all comes back with
+        // nothing in `qrcodes` or `ocr`, which is the one state that means
+        // "never looked at". Those are read once, on the queue that never
+        // hurries, and from then on the answer — even an empty one — is part
+        // of the card and travels with it through every launch.
+        //
+        // The two are asked for separately rather than together: a picture
+        // read for a code before this existed has no words yet, and one read
+        // for words has no code, so a single test would either read both
+        // again or skip the half that was missing.
         for item in items {
-            guard let url = item.payload.imageURL, item.qrcodes == nil else { continue }
-            requestQRCodes(for: item.id, url: url, urgent: false)
+            guard let url = item.payload.imageURL else { continue }
+            if item.qrcodes == nil { requestQRCodes(for: item.id, url: url, urgent: false) }
+            if item.ocr == nil { requestText(for: item.id, url: url, urgent: false) }
         }
     }
 
@@ -1232,6 +1300,36 @@ final class Line: ObservableObject {
         scheduleSave()
     }
 
+    /// Reads a card's picture for its words, and writes back what it says.
+    ///
+    /// Split from `hang` for the reason `requestQRCodes` is: the two callers
+    /// are the two moments a picture arrives — hung now, or restored from the
+    /// history.
+    private func requestText(for id: UUID, url: URL, urgent: Bool) {
+        TextScanner.shared.scan(url, urgent: urgent) { [weak self] text in
+            MainActor.assumeIsolated {
+                self?.setText(text, for: id)
+            }
+        }
+    }
+
+    /// What the read found, put on the card.
+    ///
+    /// Ignored when the card has gone — a picture can be dragged out of the
+    /// app while it is being read, and writing to a card that is no longer
+    /// there must not resurrect it — and ignored when it has already been
+    /// answered, because a second read that finished later must not overwrite
+    /// the first, and an empty answer is an answer.
+    ///
+    /// The zoom is not told, unlike `setQRCodes`. It keeps its own copy of
+    /// every card to draw the code menu from, but no part of a card shows this
+    /// text, so telling it would be a redraw for something invisible.
+    private func setText(_ text: String, for id: UUID) {
+        guard let i = items.firstIndex(where: { $0.id == id }), items[i].ocr == nil else { return }
+        items[i].ocr = text
+        scheduleSave()
+    }
+
     /// The history is written a while after a batch of reads rather than
     /// after each one.
     ///
@@ -1243,11 +1341,11 @@ final class Line: ObservableObject {
     /// enough that nothing is lost by quitting shortly afterwards — a read
     /// that is lost costs a hundred milliseconds to repeat.
     private func scheduleSave() {
-        guard !qrSavePending else { return }
-        qrSavePending = true
+        guard !readSavePending else { return }
+        readSavePending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self else { return }
-            self.qrSavePending = false
+            self.readSavePending = false
             self.save()
         }
     }

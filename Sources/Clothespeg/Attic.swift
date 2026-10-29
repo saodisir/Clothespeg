@@ -75,6 +75,15 @@ final class Attic {
         /// through the whole history again — twenty seconds of work for two
         /// hundred screenshots, to learn what it already knew.
         var qrcodes: [String]?
+        /// The words the picture shows, as read by `PictureText`.
+        ///
+        /// The same three states as `qrcodes` and for the same reason: `nil`
+        /// is never looked at, "" is looked at and there are none, and a
+        /// string is what it says. Absent on every card stored before pictures
+        /// were read for text, which an optional decodes as nothing — so the
+        /// old file reads as it always did, and those pictures are read once
+        /// in the background after the first launch.
+        var ocr: String?
     }
 
     /// What a load found, kept apart from what it is done with.

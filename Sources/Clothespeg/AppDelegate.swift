@@ -329,6 +329,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.line.deck = .notes
                 self.openPinned()
                 self.line.noteReminderArrived(id)
+                // Asked again after the answer above: the card joined the
+                // ringing set a line later than the rope came down, so the
+                // arrangement made on the way in could only have seen the
+                // reminders that were already lit.
+                self.focusRinging()
             }
         }
         // The notes came back from disk before this ran, but nothing had
@@ -343,6 +348,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // and the light on its card is worked out from that date rather than
         // remembered — so the asking is what puts it there.
         line.refreshRinging()
+        // A reminder that rang while the app was shut is already in the past,
+        // and the light on its card is worked out from that date rather than
+        // remembered — so the asking is what puts it there, and a missed turn
+        // is delivered (rope down, chime) here rather than left to a late
+        // timer catch-up.
+        ReminderScheduler.shared.deliverMissed()
         // Photos kept from last time show themselves for a moment.
         if line.liveCount > 0 { comeDown(on: nil) }
 
@@ -360,6 +371,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let self else { return }
                 diagLog("Woke: reminders read again")
                 self.line.refreshRinging()
+                // A turn that rang while asleep is delivered here, once, on
+                // the wake that finds it — not at the random moment the
+                // run loop catches its timer up.
+                ReminderScheduler.shared.deliverMissed()
                 ReminderScheduler.shared.reconcile(with: readNotes())
             }
         }
@@ -637,6 +652,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if seconds > 0 { peekUntil = Date().addingTimeInterval(seconds) }
         awaySince = nil
         setRevealed(true)
+        // A peep is about what has just arrived: the card hung a moment ago
+        // is the reason the rope came down, and panning away from it to look
+        // for a reminder would hide the thing that was just said. So the
+        // arrangement is only made for a line that came down to be read.
+        if seconds <= 0 { focusRinging() }
+    }
+
+    /// Puts the card that owes an answer where the answer can be given.
+    ///
+    /// The screen holds a fixed number of cards and the line can be longer
+    /// than that, so a lit card can be a page away — and a rope that comes
+    /// down on the page without it has announced something it then keeps out
+    /// of reach. The person is left to work out that the answer is over there
+    /// and to pan to it, which is a step the notification already asked for
+    /// once.
+    ///
+    /// The newest lit card, when several are: the line reads newest first, so
+    /// that is the first one a person would meet, and picking by anything
+    /// cleverer would be a rule nobody could predict.
+    ///
+    /// Moves nothing when the card is already on show. Coming down twice on
+    /// the page the person left the line on is the normal case — the line
+    /// stays where it was put.
+    private func focusRinging() {
+        guard !line.ringingNoteIDs.isEmpty,
+              let id = line.matching.first(where: { line.ringingNoteIDs.contains($0.id) })?.id
+        else { return }
+        if line.centre(id, fits: pagerRoom) {
+            diagLog("Ringing card centred on the line: \(id.uuidString)")
+        }
     }
 
     private func setRevealed(_ on: Bool) {
@@ -1641,10 +1686,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// which is the reading half of the 2026-10-17 unification; the editing
     /// half belongs to the corner mark, the long press and the menu.
     private func toggleHoveredZoom() {
-        guard isRevealed,
-              let id = hoveredCardID(),
-              // Either deck: a note hovers on the notes deck, where the card
-              // is in `notes` and an `items` lookup made space say nothing.
+        guard isRevealed else { return }
+        // The pointer can be on the zoom window rather than on a card, since
+        // that window takes the mouse, and a reader who has scrolled into a
+        // long snippet is over the window by definition. The key that opened
+        // it closes it from there too, or the only way out is a click that
+        // the reader has no reason to know about.
+        let hovered = hoveredCardID()
+        if hovered == nil, ZoomController.shared.isShowingAny {
+            ZoomController.shared.dismiss()
+            return
+        }
+        // Either deck: a note hovers on the notes deck, where the card
+        // is in `notes` and an `items` lookup made space say nothing.
+        guard let id = hovered,
               let item = line.onLine.first(where: { $0.id == id }) else { return }
         // A file has nothing to enlarge: it is read by the system.
         if case .file(let urls) = item.payload {
@@ -1705,8 +1760,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // arrives as an `NSTextView`.
                 if let first = NSApp.keyWindow?.firstResponder,
                    first is NSTextView || first is NSTextField { return }
-                guard let id = self.hoveredCardID(),
-                      let item = self.line.items.first(where: { $0.id == id })
+                guard self.hoveredCardID() != nil || ZoomController.shared.isShowingAny
                 else { return }
                 self.toggleHoveredZoom()
                 swallow = true
@@ -1726,7 +1780,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateSpaceKey() {
         // Any hovered card qualifies: notes read in the zoom as their plain
         // text, files open, everything else presents.
-        let eligible = isRevealed && !NSApp.isActive && hoveredCardID() != nil
+        //
+        // A zoom already showing qualifies on its own. The window takes the
+        // mouse, so the pointer that is reading a long snippet is over the
+        // window and no longer over the card that opened it — and a key that
+        // disarmed on the way there would let the space through to the app
+        // behind while looking, from the reader's side, exactly like a bug.
+        let eligible = isRevealed && !NSApp.isActive
+            && (hoveredCardID() != nil || ZoomController.shared.isShowingAny)
         if eligible {
             guard spaceHotKey == nil else { return }
             let key = HotKey(keyCode: 49, modifiers: 0, id: 5) { [weak self] in

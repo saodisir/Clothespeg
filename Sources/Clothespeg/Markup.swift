@@ -20,6 +20,22 @@ final class Markup: NSObject, NSSharingServiceDelegate {
     private var editing: URL?
     private static let serviceName = NSSharingService.Name("com.apple.MarkupUI.Markup")
 
+    /// Which window the edit gesture lands in.
+    ///
+    /// Not the system Markup extension, for now. Measured on 2026-10-26: it
+    /// arrives as a `SHKRemoteWindow` with styleMask 0, sitting over three
+    /// full-screen dim/blur windows, its content an `NSRemoteView` drawn by
+    /// the extension's own process. No title bar, so nothing to drag; the
+    /// `.resizable` bit cannot be inserted (the mask reads back without it);
+    /// the size is whatever the extension computed — 867 wide on a 1710 point
+    /// screen, height following the picture's aspect. A focused overlay, not
+    /// a document window, and the dock would not give it back.
+    ///
+    /// Preview shows the same file in an ordinary document window: resizable,
+    /// movable, with the markup tools on its toolbar. False hands the file
+    /// back to MarkupUI, whose own mark, unmoved.
+    private static let opensInPreview = true
+
     /// Whether this file is one the system Markup editor can open: pictures
     /// and PDFs, which is what the screenshot extension takes.
     static func canEdit(_ url: URL) -> Bool {
@@ -28,6 +44,10 @@ final class Markup: NSObject, NSSharingServiceDelegate {
     }
 
     func edit(_ url: URL) {
+        guard !Markup.opensInPreview else {
+            openInPreview(url)
+            return
+        }
         guard let service = NSSharingService(named: Markup.serviceName),
               service.canPerform(withItems: [url]) else {
             // Without the extension, Preview is the closest thing.
@@ -38,6 +58,64 @@ final class Markup: NSObject, NSSharingServiceDelegate {
         service.delegate = self
         NSApp.activate(ignoringOtherApps: true)
         service.perform(withItems: [url])
+    }
+
+    // MARK: Preview, and knowing when it wrote
+
+    private var watched: URL?
+    private var watchedDate: Date?
+    private var watcher: DispatchSourceFileSystemObject?
+
+    /// The file goes to whatever opens pictures — Preview, unless something
+    /// else has claimed them. Preview edits in place, so the card's thumbnail
+    /// is stale the moment the file changes, and nobody tells us: the writing
+    /// happened in another process. Hence the watcher below.
+    private func openInPreview(_ url: URL) {
+        stopWatching()
+        watched = url
+        watchedDate = Markup.modified(url)
+        NSApp.activate(ignoringOtherApps: true)
+        NSWorkspace.shared.open(url)
+        watch(url)
+        log.notice("Markup opened in Preview: \(url.lastPathComponent, privacy: .public)")
+    }
+
+    /// The folder is watched, not the file: Preview saves atomically, which
+    /// swaps the inode, and a source on the old one fires once and then goes
+    /// quiet. A folder that is busy with other writes costs one date check
+    /// per event, and the check is what decides whether to wake the line.
+    private func watch(_ url: URL) {
+        let fd = Darwin.open(url.deletingLastPathComponent().path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .attrib, .rename, .delete],
+            queue: .main)
+        source.setEventHandler { [weak self] in self?.folderChanged() }
+        source.setCancelHandler { Darwin.close(fd) }
+        source.resume()
+        watcher = source
+    }
+
+    private func folderChanged() {
+        guard let url = watched else { return }
+        let stamp = Markup.modified(url)
+        guard stamp != watchedDate else { return }
+        watchedDate = stamp
+        log.notice("Preview wrote back: \(url.lastPathComponent, privacy: .public)")
+        onSaved(url)
+    }
+
+    private func stopWatching() {
+        watcher?.cancel()
+        watcher = nil
+        watched = nil
+        watchedDate = nil
+    }
+
+    private static func modified(_ url: URL) -> Date? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return attrs[.modificationDate] as? Date
     }
 
     // MARK: NSSharingServiceDelegate
