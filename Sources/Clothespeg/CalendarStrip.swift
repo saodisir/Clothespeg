@@ -23,33 +23,30 @@ struct DayChip: View {
 
     /// How many days the row holds, today included.
     static let days = 14
-    /// The width of one day. Enough for "9/30" and for a number with room to
-    /// breathe either side of it.
+    /// The width of one day: two digits with air either side. It was sized for
+    /// `9/30`, and the month prefix that needed the width is gone — the row
+    /// keeps the spacing rather than tightening around the numbers, so it still
+    /// reads as a row of days and not as a row of digits.
     static let cellWidth: CGFloat = 28
 
     /// Today and yesterday are named rather than numbered: they are the two
-    /// days anyone looks for by name. The rest is a bare number, and the ones
-    /// in another month carry that month with them.
+    /// days anyone looks for by name. The rest is a bare number — the day of
+    /// the month and nothing else.
+    ///
+    /// The month used to ride along as a prefix on any day from the month
+    /// before (`9/30`), to tell a bare "30" following a run of numbers up to
+    /// "1" which day it was. It cost more than it bought: fourteen days back
+    /// from the second of a month are thirteen days of the previous one, so
+    /// nearly the whole row wore the same prefix, the prefix did not fit the
+    /// cell, and the row read `10/… 10/… 10/…` — a row of ellipses that says
+    /// less than a row of numbers. Day only, as agreed (2026-11-02).
     ///
     /// No weekday. It was there to be an anchor — the eye finds "Friday"
     /// before it reads a number — but these days are consecutive, so a weekday
     /// says which week a day is in when the only question is which day it is.
-    ///
-    /// The month is a different matter, and it is written as a prefix rather
-    /// than as a separate word: fourteen days back from the eleventh of a
-    /// month crosses into the one before it, and a bare "30" following a run
-    /// of numbers up to "1" is not that day. `9/30` says it in five characters
-    /// where "9月30日" says it in four that do not fit a twenty-eight point
-    /// cell.
     private var label: String {
         let calendar = Calendar.current
-        let day = Self.day(offset)
-        let dayOfMonth = calendar.component(.day, from: day)
-        guard calendar.component(.month, from: day)
-                != calendar.component(.month, from: Date()) else {
-            return "\(dayOfMonth)"
-        }
-        return "\(calendar.component(.month, from: day))/\(dayOfMonth)"
+        return "\(calendar.component(.day, from: Self.day(offset)))"
     }
 
     var body: some View {
@@ -61,7 +58,7 @@ struct DayChip: View {
                 // well would be saying it twice, and from across the screen a
                 // lit word next to a filled block reads as one thing rather
                 // than as a set.
-                .foregroundStyle(isLit ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isLit ? CDS.clay : Color.secondary)
                 .frame(width: Self.cellWidth, height: 18)
                 .contentShape(Rectangle())
         }
@@ -185,7 +182,7 @@ struct DateButton: View {
                         .transition(.opacity)
                 }
             }
-            .foregroundStyle(line.dateRange == nil ? Color.secondary : Color.accentColor)
+            .foregroundStyle(line.dateRange == nil ? Color.secondary : CDS.clay)
             .frame(height: 18)
             .contentShape(Rectangle())
         }
@@ -256,7 +253,7 @@ struct DateButton: View {
                 } label: {
                     Text(L("Earlier"))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(line.dateRange == earlier ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(line.dateRange == earlier ? CDS.clay : Color.secondary)
                         .padding(.horizontal, 7)
                         .frame(height: 18)
                         .contentShape(Rectangle())
@@ -333,7 +330,7 @@ struct DateButton: View {
         } label: {
             Text(title)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                .foregroundStyle(selected ? CDS.clay : Color.secondary)
                 .padding(.horizontal, 7)
                 .frame(height: 18)
                 .contentShape(Rectangle())

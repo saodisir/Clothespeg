@@ -546,7 +546,7 @@ struct SearchField: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(CDS.clay)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
             }
@@ -688,7 +688,7 @@ struct SearchButton: View {
                 // range lit it: setting a date turned the search mark on with
                 // no word in the field behind it, which is a control claiming
                 // a state it is not in.
-                .foregroundStyle(!search.text.isEmpty ? Color.accentColor : Color.secondary)
+                .foregroundStyle(!search.text.isEmpty ? CDS.clay : Color.secondary)
                 // The pill's icon-button shape: content, four points of air on
                 // each side, eighteen points tall. The divider outside carries
                 // the rest of the gap, which is how every button on the pill

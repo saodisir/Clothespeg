@@ -62,6 +62,53 @@ enum Appearance: String, CaseIterable, Identifiable {
     }
 }
 
+/// Where a translation should land.
+///
+/// A setting rather than a guess, because the guess is wrong exactly half the
+/// time and silently: on a Chinese Mac, an English page and a Chinese page both
+/// plausibly "want" Chinese, and the system's own engine answers a
+/// Chinese-to-Chinese request with an error rather than with the same words.
+/// Following the system stays the default — it is right for the common case —
+/// and the other three are there for the case it cannot serve.
+enum TranslationTarget: String, CaseIterable, Identifiable {
+    case system, english, simplifiedChinese, traditionalChinese
+
+    var id: String { rawValue }
+
+    /// Language names are written in the language they name, for the same
+    /// reason the interface language's are: a reader who cannot read the
+    /// current language still has to be able to find their own.
+    var label: String {
+        switch self {
+        case .system: L("Same as the system")
+        case .english: "English"
+        case .simplifiedChinese: "简体中文"
+        case .traditionalChinese: "繁體中文"
+        }
+    }
+
+    var language: Locale.Language? {
+        switch self {
+        case .system:
+            return Locale.preferredLanguages.first.map { Locale.Language(identifier: $0) }
+        case .english: return Locale.Language(identifier: "en")
+        case .simplifiedChinese: return Locale.Language(identifier: "zh-Hans")
+        case .traditionalChinese: return Locale.Language(identifier: "zh-Hant")
+        }
+    }
+
+    static let defaultsKey = "translationTarget"
+
+    static var current: TranslationTarget {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: defaultsKey),
+                  let stored = TranslationTarget(rawValue: raw) else { return .system }
+            return stored
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+    }
+}
+
 /// The settings window: one window, six pages, and nothing else.
 ///
 /// A window rather than more of the menu, because the menu is a list of
@@ -127,6 +174,15 @@ struct SettingsView: View {
     /// The line, handed down to the page that changes what it draws.
     let line: Line?
 
+    /// Which page to open on. Only the layout harness passes anything: every
+    /// other way in opens on the first one, and a settings window that
+    /// remembered the last page would be a window with a memory nobody asked it
+    /// to keep.
+    init(line: Line?, section: Section = .general) {
+        self.line = line
+        _section = State(initialValue: section)
+    }
+
     /// Read for the window's ground: white in light mode, the system grey in
     /// dark, where light's answer would glow.
     @Environment(\.colorScheme) private var colorScheme
@@ -139,7 +195,7 @@ struct SettingsView: View {
     @State private var languageToken = 0
 
     enum Section: String, CaseIterable, Identifiable {
-        case general, invocation, clipboard, keeping, permissions, about
+        case general, invocation, capture, clipboard, keeping, permissions, about
         var id: String { rawValue }
 
         var label: String {
@@ -147,6 +203,7 @@ struct SettingsView: View {
             case .general: L("General")
             case .clipboard: L("Clipboard")
             case .invocation: L("Invocation")
+            case .capture: L("Capture")
             case .keeping: L("Keeping")
             case .permissions: L("Permissions")
             case .about: L("About")
@@ -158,6 +215,7 @@ struct SettingsView: View {
             case .general: "gearshape"
             case .clipboard: "doc.on.clipboard"
             case .invocation: "arrow.down.to.line"
+            case .capture: "viewfinder"
             case .keeping: "clock.arrow.circlepath"
             case .permissions: "lock.shield"
             case .about: "info.circle"
@@ -202,6 +260,7 @@ struct SettingsView: View {
                 case .general: GeneralPage(line: line)
                 case .clipboard: ClipboardPage(line: line)
                 case .invocation: InvocationPage()
+                case .capture: CapturePage()
                 case .keeping: KeepingPage()
                 case .permissions: PermissionsPage()
                 case .about: AboutPage()
@@ -276,9 +335,11 @@ struct GeneralPage: View {
 
     @State private var chosen: Appearance = Appearance.current
     @State private var language: Localization.Language = Localization.language
+    @State private var translationTarget: TranslationTarget = TranslationTarget.current
     @State private var atLogin = SMAppService.mainApp.status == .enabled
     @State private var panReversed = AppDelegate.panReversed
     @State private var sideButtonPaging = AppDelegate.sideButtonPaging
+    @State private var shortcutHints = ShortcutHints.isEnabled
     @State private var soundOn: Bool
 
     init(line: Line?) {
@@ -323,6 +384,23 @@ struct GeneralPage: View {
             }
 
             Section {
+                // The same shape as the language picker above, and beside it on
+                // purpose: both are about which language the app speaks, and the
+                // second is only ever a subset of what the first implies.
+                Picker(L("Translate into"), selection: $translationTarget) {
+                    ForEach(TranslationTarget.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                Text(L("The capture's 译 button uses this. The system's own translator does the work, on this Mac."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: translationTarget) { _, picked in
+                TranslationTarget.current = picked
+            }
+
+            Section {
                 Toggle(L("Open at login"), isOn: $atLogin)
             }
 
@@ -342,6 +420,17 @@ struct GeneralPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section {
+                Toggle(L("Show shortcuts on the buttons"), isOn: $shortcutHints)
+                // What it does and what it leaves out, said together: a switch
+                // that promises "shortcuts" and then shows letters on eleven
+                // buttons but not on the four that use ⌘ reads as half done,
+                // unless it says why first.
+                Text(L("Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -377,6 +466,12 @@ struct GeneralPage: View {
         }
         .onChange(of: sideButtonPaging) { _, on in
             AppDelegate.sideButtonPaging = on
+        }
+        .onChange(of: shortcutHints) { _, on in
+            // The setter posts the notification the open editor windows are
+            // listening for, so the corners change while the switch is still
+            // under the pointer.
+            ShortcutHints.isEnabled = on
         }
         .onChange(of: soundOn) { _, on in
             line?.soundOn = on
@@ -500,6 +595,12 @@ struct ClipboardPage: View {
         // tab strip above wears the same ground, so strip and page read as
         // one continuous background.
         .scrollContentBackground(.hidden)
+        // The menu bar carries this same switch, and this window is kept alive
+        // rather than rebuilt, so reading the answer on the way in would leave
+        // the tick here showing the one it had then — see `SettingsAnswers`.
+        .onReceive(NotificationCenter.default.publisher(for: .settingsAnswerChanged)) { _ in
+            copyFormatted = FormatCopy.isEnabled
+        }
     }
 
     // MARK: Watched folders
@@ -765,6 +866,11 @@ struct InvocationPage: View {
                 LabeledContent(L("Open the notes")) {
                     HotkeyRecorder(door: .notes)
                 }
+                // The capture's key is not here. It opens no line, so it is the
+                // one shortcut that is not a way of reaching the rope — and a
+                // row about it would be the only one on this page whose key led
+                // somewhere else. It is recorded on the Capture page, beside
+                // everything else about capturing.
                 Text(L("Click one, then press the new combination. Esc cancels."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -838,6 +944,85 @@ struct InvocationPage: View {
         }
         .onChange(of: rest) { _, speed in
             DropDeck.rest = speed
+        }
+    }
+}
+
+// MARK: - Capture
+
+/// Everything about taking a picture of the screen: the key that starts it,
+/// what happens to the picture, and the folder macOS's own captures land in.
+///
+/// A page of its own rather than rows on the Invocation page, for two reasons.
+/// The capture is the one door that opens no line — its key leads somewhere
+/// else, and a shortcut row about it would be the only one on that page that
+/// did. And the questions are not "how does the rope come to me" but "what
+/// becomes of a capture", which is a different subject with its own answers.
+///
+/// Controls only, and no explanatory paragraphs (2026-11-02, user). The other
+/// pages explain themselves because each switch there has a consequence that
+/// is not obvious from its name; these three do not, and a row of grey text
+/// under each one was reading as a manual rather than as a page of settings.
+/// What needs saying about the permission is said on the Permissions page,
+/// where it can be acted on.
+struct CapturePage: View {
+    /// Whether something new shows itself for a moment. The same switch the
+    /// menu carries as "Peek at new cards": a capture is one of the things
+    /// that arrives, so it belongs beside the rest of the capture's answers.
+    @State private var peeks = AppDelegate.peeksAtNew
+    @State private var inbox = Inbox.screenshotInboxEnabled
+
+    var body: some View {
+        Form {
+            Section {
+                Text(L("Shortcuts"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                LabeledContent(L("Capture the screen")) {
+                    HotkeyRecorder(door: .capture)
+                }
+            }
+
+            Section {
+                Text(L("After a capture"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(L("Show the line when something new arrives"), isOn: $peeks)
+            }
+
+            Section {
+                Text(L("The screenshot folder"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+#if !APPSTORE_LITE
+                Toggle(L("Hang new screenshots"), isOn: $inbox)
+#endif
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .onAppear {
+            // The menu can move either of these while this window is open.
+            // Read again on the way in, so the page never shows an answer that
+            // was true when the window was built.
+            peeks = AppDelegate.peeksAtNew
+            inbox = Inbox.screenshotInboxEnabled
+        }
+        // And while it is open, follow: the window outlives every visit (it is
+        // kept rather than released when closed), so reading on the way in is
+        // only half the job — the menu bar's copy of these same two switches
+        // moves them behind this page's back. Every setter announces, and stays
+        // quiet when nothing changed, so the echo these cause dies here instead
+        // of ping-ponging.
+        .onReceive(NotificationCenter.default.publisher(for: .settingsAnswerChanged)) { _ in
+            peeks = AppDelegate.peeksAtNew
+            inbox = Inbox.screenshotInboxEnabled
+        }
+        .onChange(of: peeks) { _, on in
+            AppDelegate.peeksAtNew = on
+        }
+        .onChange(of: inbox) { _, on in
+            AppDelegate.setScreenshotInboxFromSettings(on)
         }
     }
 }
@@ -1141,6 +1326,7 @@ struct PermissionsPage: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     permissionRow(granted: trusted)
+                    ScreenRecordingPermissionRow()
                     NotificationPermissionRow()
                 }
 
@@ -1236,6 +1422,94 @@ struct PermissionsPage: View {
                 alert.runModal()
             }
         }
+    }
+}
+
+/// The screen recording row: the one permission that guards a whole feature
+/// rather than a convenience.
+///
+/// Accessibility turns a double-click's paste into a plain copy, Notifications
+/// turns a closed-app reminder into none at all — both are a layer taken off
+/// something that still works. This one is different in kind: without it the
+/// capture shortcut does nothing whatsoever, so "not granted" is not a quieter
+/// version of the feature, it is the absence of it.
+///
+/// Two silences, two buttons. macOS shows its own prompt exactly once; after a
+/// refusal it will not show it again from inside the app, and asking again
+/// simply returns "no" without asking anything. `hasAsked` is what tells the
+/// two apart, so the row can offer the question where a question is still
+/// possible and the settings pane where it is not.
+private struct ScreenRecordingPermissionRow: View {
+    @State private var granted = ScreenRecordingPermission.isGranted
+    @State private var asked = ScreenRecordingPermission.hasAsked
+    @State private var busy = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "viewfinder")
+                .foregroundColor(granted ? .green : .orange)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(L("Screen recording"))
+                        .font(.callout)
+                        .fontWeight(.medium)
+                    Label(granted ? L("Granted") : L("Not granted"),
+                          systemImage: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(granted ? .green : .orange)
+                }
+                Text(L("Clothespeg uses it for one thing: taking the picture when you press the capture shortcut. Without it that shortcut does nothing at all. Nothing is recorded, and nothing leaves this Mac."))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                // Worth saying exactly once, and only after asking: a grant
+                // that has not been taken up looks identical to a refusal from
+                // inside the running app, and the fix is the one thing the
+                // user would not guess.
+                if !granted && asked {
+                    Text(L("After granting it, macOS asks you to open Clothespeg again — a permission only reaches a process that started after it was given."))
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                if !granted {
+                    if asked {
+                        Button(L("Open System Settings")) {
+                            ScreenRecordingPermission.openSettings()
+                        }
+                        .buttonStyle(CDSPillButtonStyle())
+                    } else {
+                        Button(L("Allow Screen Recording")) { ask() }
+                            .buttonStyle(CDSPillButtonStyle())
+                            .disabled(busy)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        // The granting happens in System Settings, another app, so nothing in
+        // this window announces it. Keep asking while the row is on screen,
+        // the same way the page re-checks Accessibility every second.
+        .task {
+            while !Task.isCancelled {
+                granted = ScreenRecordingPermission.isGranted
+                asked = ScreenRecordingPermission.hasAsked
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    /// The question, put once.
+    ///
+    /// `CGRequestScreenCaptureAccess` blocks while the system's own prompt is
+    /// up, and answers false in the case that matters most — granted, but not
+    /// yet taken up by this process. So the answer is read back rather than
+    /// assumed, and the row then says what to do about a false that is not a
+    /// refusal.
+    private func ask() {
+        busy = true
+        granted = ScreenRecordingPermission.request()
+        asked = true
+        busy = false
     }
 }
 

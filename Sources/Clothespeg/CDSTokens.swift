@@ -17,7 +17,30 @@ enum CDS {
     /// The clay accent, `#d97757`. An emphasis colour only — selected states,
     /// switches, primary actions — never a text colour and never a ground:
     /// clay on paper is a shout, and a page of shouts is a page of nothing.
+    ///
+    /// Every "this one is on" state in the app wears this, and none of them
+    /// wears the system accent any more (2026-11-02): a lock, a pin, a lit date,
+    /// a chosen filter all used to light up in whatever blue macOS was set to,
+    /// which is the one colour in the app that was not chosen. The user's own
+    /// words for the fix were "这样我们所有的颜色都统一了".
     static let clay = Color(red: 0.851, green: 0.467, blue: 0.341)
+
+    /// The same clay, one step lighter: `#e9a88f`.
+    ///
+    /// For the one place the accent has to sit on top of somebody else's
+    /// pixels — the capture overlay's frame and size badge. At full strength
+    /// the frame reads as part of the picture it is drawing around, and the
+    /// badge reads as a caption the app did not write. Same hue, so it is still
+    /// the same colour family; lighter, so it stays a frame.
+    static let claySoft = Color(red: 0.914, green: 0.659, blue: 0.561)
+
+    /// The same colour for the AppKit drawing the capture overlay does by hand,
+    /// where there is no `Color` to hand to a `CGContext`.
+    static let claySoftInk = NSColor(srgbRed: 0.914, green: 0.659, blue: 0.561, alpha: 1)
+
+    /// `clay` as an `NSColor`, for the same reason: the capture bar is drawn by
+    /// hand, and a `Color` cannot be handed to `setFill()`.
+    static let clayInk = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
 
     /// The ground the settings pages sit on, in both appearances.
     ///

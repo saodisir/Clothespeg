@@ -108,13 +108,23 @@ final class HotKey {
 /// edit, but the line holds no bare letters until a key can tell a hand on the
 /// rope from a hand on a keyboard.
 enum Door: String, CaseIterable {
-    case clipboard, notes, note, prop
+    case clipboard, notes, capture, note, prop
 
     /// Whether this door brings the line down (a real global hot key) or acts
     /// on a line that is already down (answered only while the line is down).
-    var isSummon: Bool { self == .clipboard || self == .notes }
+    ///
+    /// The capture is a third kind of answer — it opens no line at all — but it
+    /// is registered exactly like a summon: everywhere, with a modifier, for
+    /// the life of the app. The question this enum asks is where the key is
+    /// *heard*, not what it then does, and the answer here is "everywhere".
+    var isSummon: Bool { self != .note && self != .prop }
 
     /// The doors a Carbon registration covers.
+    ///
+    /// The capture is not in this list because no loop registers from here:
+    /// each summon has its own `if` in `AppDelegate.registerHotkeys`, looking
+    /// at its own stored key. This is the list of doors that *open the line*,
+    /// which the capture does not.
     static var summonDoors: [Door] { [.clipboard, .notes] }
 
     /// The doors the panel answers while it is down.
@@ -165,6 +175,10 @@ enum Door: String, CaseIterable {
         switch self {
         case .clipboard: kVK_ANSI_C
         case .notes: kVK_ANSI_N
+        // S for screen. Taken rather than chosen from what was left over: ⌃⌥C
+        // and ⌃⌥N were already in use, and S is the letter every capture tool
+        // puts this on.
+        case .capture: kVK_ANSI_S
         case .note: kVK_ANSI_N
         case .prop: kVK_ANSI_D
         }
@@ -174,6 +188,7 @@ enum Door: String, CaseIterable {
         switch self {
         case .clipboard: "C"
         case .notes: "N"
+        case .capture: "S"
         case .note: "N"
         case .prop: "D"
         }

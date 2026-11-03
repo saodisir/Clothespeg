@@ -284,6 +284,79 @@ enum AccessibilityPermission {
     }
 }
 
+/// The answers that live in more than one place.
+///
+/// Three of them are reachable from the menu bar and from the settings window at
+/// the same time — the screenshot inbox, "peek at new cards" and "copy with
+/// formatting" — and all three are stored as a plain `UserDefaults` answer that
+/// either place can write. UserDefaults notifies nobody in its own process, and
+/// the settings window is kept alive after it closes rather than rebuilt — so a
+/// page that read the answer once would go on showing it for ever, while the
+/// menu went on showing the truth. That is exactly the report from 2026-11-02:
+/// the same switch said two things in two places.
+///
+/// So each setter is the one place its answer changes, and it says so. One name
+/// for all of them rather than one each: a page re-reads its own three or four
+/// booleans for nothing, and a name per answer is a table to keep in step — the
+/// table being the very thing that went out of date. The `object` is the
+/// `UserDefaults` key, which costs nothing and makes the log readable.
+extension Notification.Name {
+    static let settingsAnswerChanged = Notification.Name("app.clothespeg.settingsAnswerChanged")
+}
+
+enum SettingsAnswers {
+    /// Says that one answer moved. Same-value writes never reach here: every
+    /// setter guards against them first, which is what stops a page that is
+    /// echoing a value it was just told about from starting a loop.
+    static func announce(_ key: String) {
+        NotificationCenter.default.post(name: .settingsAnswerChanged, object: key)
+    }
+}
+
+/// Whether this app may look at the screen, and how to ask for it.
+///
+/// The third permission, and the only one that guards a feature rather than a
+/// convenience: without it the capture shortcut does nothing at all, where
+/// Accessibility merely turns a double-click's paste into a plain copy and
+/// Notifications merely stops the banner. A refusal here is a feature that is
+/// not there, which is why the row says so instead of leaving a green tick to
+/// be guessed at.
+///
+/// `hasAsked` exists because the two silences are not the same silence. macOS
+/// shows its own prompt once; after a refusal it will not show it again from
+/// inside the app, and calling the request again just returns "no" without
+/// asking. The row has to know which of the two it is looking at to offer the
+/// right button — ask, or go to System Settings.
+enum ScreenRecordingPermission {
+    /// Whether permission is already in place. Read rather than requested, so
+    /// it can be asked every second by the page without a prompt.
+    static var isGranted: Bool { CGPreflightScreenCaptureAccess() }
+
+    private static let askedKey = "askedForScreenRecording"
+
+    /// Whether this app has ever put the question to macOS.
+    static var hasAsked: Bool { UserDefaults.standard.bool(forKey: askedKey) }
+
+    /// Puts the question, once.
+    ///
+    /// False does not mean "refused": the case that matters most here is a
+    /// grant that has been recorded but not yet taken effect, because the
+    /// running process is the one that was already told no. The window server
+    /// only hears the new answer after a restart, which the row says out loud.
+    @discardableResult
+    static func request() -> Bool {
+        UserDefaults.standard.set(true, forKey: askedKey)
+        return CGRequestScreenCaptureAccess()
+    }
+
+    /// Straight to the screen recording pane, rather than the top of System
+    /// Settings with the user left to find the right list.
+    static func openSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+        NSWorkspace.shared.open(url)
+    }
+}
+
 /// Whether this app may draw a banner for a reminder, and how to ask for it.
 ///
 /// The banner is the system's own; the bell and the rope coming down are the

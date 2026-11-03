@@ -32,7 +32,91 @@ private func migrateSettingsToNewIdentity() {
 
 MainActor.assumeIsolated {
     migrateSettingsToNewIdentity()
+    // Layout harness: render one editor window to a PNG and quit. Point
+    // `CLOTHESPEG_EDITOR_PREVIEW` at a picture and `CLOTHESPEG_EDITOR_SHOT` at
+    // where the PNG should go. Nothing in ordinary use sets either.
+    if let picture = ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW"] {
+        let shot = ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_SHOT"] ?? "/tmp/editor-preview.png"
+        let width = Double(ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_WIDTH"] ?? "") ?? 980
+        EditorPreview.render(picture: picture, to: shot, size: NSSize(width: width, height: 700))
+        exit(0)
+    }
+    // Layout harness: render the settings window to a PNG and quit. The page is
+    // SwiftUI, so nothing else in this repo can look at it — and the one failure
+    // it has is silent: a row added to a page pushes the last one past the
+    // bottom edge, where it is still there and still unreachable.
+    if let shot = ProcessInfo.processInfo.environment["CLOTHESPEG_SETTINGS_SHOT"] {
+        let page = ProcessInfo.processInfo.environment["CLOTHESPEG_SETTINGS_PAGE"]
+        EditorPreview.renderSettings(to: shot, page: page)
+        exit(0)
+    }
+    // Layout harness: render the space-preview window to a PNG and quit, at
+    // whatever size it is given. `CLOTHESPEG_ZOOM_PIN` renders it pinned open
+    // and `CLOTHESPEG_ZOOM_DARK` in the dark appearance.
+    if let shot = ProcessInfo.processInfo.environment["CLOTHESPEG_ZOOM_SHOT"] {
+        let env = ProcessInfo.processInfo.environment
+        let width = Double(env["CLOTHESPEG_ZOOM_WIDTH"] ?? "") ?? ZoomPreview.size.width
+        let height = Double(env["CLOTHESPEG_ZOOM_HEIGHT"] ?? "") ?? ZoomPreview.size.height
+        EditorPreview.renderZoom(to: shot, size: CGSize(width: width, height: height),
+                                 pinned: env["CLOTHESPEG_ZOOM_PIN"] != nil,
+                                 dark: env["CLOTHESPEG_ZOOM_DARK"] != nil,
+                                 hovering: env["CLOTHESPEG_ZOOM_HOVER"] != nil,
+                                 opacity: Double(env["CLOTHESPEG_ZOOM_OPACITY"] ?? "") ?? 1)
+        exit(0)
+    }
     let app = NSApplication.shared
+    // Translation probe: whether the system's engine is reachable from this
+    // app at all, which pair is installed here, and how long a translation
+    // takes. The one-point SwiftUI view it needs is the one part of P5 that
+    // cannot be reasoned about from the SDK's headers.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_TRANSLATE_PROBE"] {
+        let report: String
+        if #available(macOS 15.0, *) {
+            report = TranslateProbe.run()
+        } else {
+            report = "translate probe: this macOS has no Translation framework"
+        }
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Capture harness: everything the capture can be wrong about without a
+    // pointer in the way — permission, window picking, the size of the grab,
+    // and whether the crop lands where the rectangle said. Writes its lines to
+    // the path given and quits.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_CAPTURE_SELFTEST"] {
+        let report = CaptureSelfTest.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Layout harness: draw the capture overlay to a PNG without showing it.
+    // `CLOTHESPEG_CAPTURE_HOVER` lights a window-sized rectangle,
+    // `CLOTHESPEG_CAPTURE_SELECT` a dragged one, `CLOTHESPEG_CAPTURE_RATIO=16:9`
+    // locks the shape the way `R` does (any `CropAspect.title`, `free` included),
+    // and `CLOTHESPEG_CAPTURE_PANEL` opens the ratio panel.
+    // `CLOTHESPEG_CAPTURE_LONG=1240` shows the bar as it is while a long
+    // capture is running, with that height in it, and
+    // `CLOTHESPEG_CAPTURE_NOTE=1` puts the wrong-way-up note on its line — the
+    // one thing that must not move the Done pill.
+    if let shot = ProcessInfo.processInfo.environment["CLOTHESPEG_CAPTURE_PREVIEW"] {
+        let env = ProcessInfo.processInfo.environment
+        let aspect = env["CLOTHESPEG_CAPTURE_RATIO"]
+            .flatMap { title in CropAspect.allCases.first { $0.title == title } } ?? .free
+        print(CaptureSelfTest.render(to: shot,
+                                     hovered: env["CLOTHESPEG_CAPTURE_HOVER"] != nil,
+                                     selected: env["CLOTHESPEG_CAPTURE_SELECT"] != nil
+                                        || env["CLOTHESPEG_CAPTURE_READ"] != nil,
+                                     aspect: aspect,
+                                     panel: env["CLOTHESPEG_CAPTURE_PANEL"] != nil,
+                                     long: env["CLOTHESPEG_CAPTURE_LONG"].flatMap(Int.init),
+                                     read: env["CLOTHESPEG_CAPTURE_READ"],
+                                     note: env["CLOTHESPEG_CAPTURE_NOTE"]
+                                        .map { $0 == "1" ? CaptureSurface.surfaceNote : $0 },
+                                     translated: env["CLOTHESPEG_CAPTURE_TRANSLATED"],
+                                     armed: env["CLOTHESPEG_CAPTURE_ARM"]))
+        exit(0)
+    }
     let delegate = AppDelegate()
     app.delegate = delegate
     app.setActivationPolicy(.accessory)

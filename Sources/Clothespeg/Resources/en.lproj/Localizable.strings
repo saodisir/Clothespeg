@@ -39,6 +39,8 @@
 "Open Link" = "Open Link";
 "Right-click the card to open the link" = "Right-click the card to open the link";
 "Right-click the card to copy the contents" = "Right-click the card to copy the contents";
+"Keep this open" = "Keep this open";
+"Let it close" = "Let it close";
 
 /* LineView */
 "Copy something and it will hang here" = "Copy something and it will hang here";
@@ -116,7 +118,6 @@
 
 "days" = "days";
 "Cards" = "Cards";
-"Pictures" = "Pictures";
 "On disk" = "On disk";
 "Clipboard pictures" = "Clipboard pictures";
 "Clean up clipboard pictures?" = "Clean up clipboard pictures?";
@@ -141,6 +142,8 @@
 "Invocation" = "Invocation";
 "Language" = "Language";
 "Changes apply at once." = "Changes apply at once.";
+"Translate into" = "Translate into";
+"The capture's 译 button uses this. The system's own translator does the work, on this Mac." = "The capture's 译 button uses this. The system's own translator does the work, on this Mac.";
 "Clean up" = "Clean up";
 "Clipboard cards" = "Clipboard cards";
 "Clear the clipboard?" = "Clear the clipboard?";
@@ -231,7 +234,6 @@
 "Every day %@" = "Every day %@";
 "Every week %@" = "Every week %@";
 "Every month %@" = "Every month %@";
-"Done" = "Done";
 "In 30 minutes" = "In 30 minutes";
 "Not set" = "Not set";
 "Next" = "Next";
@@ -250,3 +252,98 @@
 "Not asked yet. Allow it so a reminder still reaches you when Clothespeg is closed." = "Not asked yet. Allow it so a reminder still reaches you when Clothespeg is closed.";
 "Once it is allowed, double-clicking a card copies the content and pastes it into the field your pointer is in. Without it, double-clicking only copies, and you have to press ⌘V yourself. macOS does not let an app control another app freely, which is why this needs its own permission. Nothing is read and nothing is recorded." = "Once it is allowed, double-clicking a card copies the content and pastes it into the field your pointer is in. Without it, double-clicking only copies, and you have to press ⌘V yourself. macOS does not let an app control another app freely, which is why this needs its own permission. Nothing is read and nothing is recorded.";
 "Once it is allowed, the system shows a reminder notification even when the app is closed. Without it, a closed app has no reminder." = "Once it is allowed, the system shows a reminder notification even when the app is closed. Without it, a closed app has no reminder.";
+
+/* The picture editor. English is the source, so key and value agree. */
+"Select" = "Select";
+"Crop" = "Crop";
+"Move" = "Move";
+"Rectangle" = "Rectangle";
+"Ellipse" = "Ellipse";
+"Arrow" = "Arrow";
+"Pen" = "Pen";
+"Highlighter" = "Highlighter";
+"Mosaic" = "Mosaic";
+"Number" = "Number";
+"Undo" = "Undo";
+"Redo" = "Redo";
+"Cancel" = "Cancel";
+"Overwrite" = "Overwrite";
+"Copy this version" = "Copy this version";
+"Replace the original file with this version" = "Replace the original file with this version";
+"Fill" = "Fill";
+"Width" = "Width";
+"Size" = "Size";
+"Font Size" = "Font Size";
+"Block" = "Block";
+"Opacity" = "Opacity";
+"Free" = "Free";
+"Italic" = "Italic";
+"Crop proportions" = "Crop proportions";
+"More Colours" = "More Colours";
+"This picture could not be opened" = "This picture could not be opened";
+"Could not write" = "Could not write";
+"Write the changes back to this picture?" = "Write the changes back to this picture?";
+"Closing now keeps the file as it was. The picture is copied aside before the first write." = "Closing now keeps the file as it was. The picture is copied aside before the first write.";
+"Click a mark on the picture to change it" = "Click a mark on the picture to change it";
+"Drag a frame on the picture, then double-click to crop" = "Drag a frame on the picture, then double-click to crop";
+"Zoom" = "Zoom";
+"Zoom In" = "Zoom In";
+"Zoom Out" = "Zoom Out";
+"Zoom to Fit" = "Zoom to Fit";
+"Show shortcuts on the buttons" = "Show shortcuts on the buttons";
+"Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain.";
+
+"Capture the screen" = "Capture the screen";
+"Takes a picture of a window, an area or the whole screen. It goes to the clipboard and hangs on the line" = "Takes a picture of a window, an area or the whole screen. It goes to the clipboard and hangs on the line";
+"The screen could not be captured" = "The screen could not be captured";
+"Clothespeg may not look at your screen yet. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then open Clothespeg again." = "Clothespeg may not look at your screen yet. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then open Clothespeg again.";
+"That screen could not be captured." = "That screen could not be captured.";
+"That window had closed before the picture was taken." = "That window had closed before the picture was taken.";
+"That area could not be read back from the screen." = "That area could not be read back from the screen.";
+"The picture could not be encoded." = "The picture could not be encoded.";
+"OK" = "OK";
+
+
+
+"Capture" = "Capture";
+"Screen recording" = "Screen recording";
+"Clothespeg uses it for one thing: taking the picture when you press the capture shortcut. Without it that shortcut does nothing at all. Nothing is recorded, and nothing leaves this Mac." = "Clothespeg uses it for one thing: taking the picture when you press the capture shortcut. Without it that shortcut does nothing at all. Nothing is recorded, and nothing leaves this Mac.";
+"After granting it, macOS asks you to open Clothespeg again — a permission only reaches a process that started after it was given." = "After granting it, macOS asks you to open Clothespeg again — a permission only reaches a process that started after it was given.";
+"Allow Screen Recording" = "Allow Screen Recording";
+"After a capture" = "After a capture";
+"Show the line when something new arrives" = "Show the line when something new arrives";
+"The screenshot folder" = "The screenshot folder";
+"Drag out an area · click a window · Space for the whole screen" = "Drag out an area · click a window · Space for the whole screen";
+"Drag an edge to adjust · Return to capture" = "Drag an edge to adjust · Return to capture";
+"Whole screen · Return to capture" = "Whole screen · Return to capture";
+"Window · Return to capture" = "Window · Return to capture";
+/* Capture · the bar's chips are symbols now, so the words they used to wear
+   live in tool tips. Each one names the chip and says what pressing it does. */
+"Ratio · the shape of the frame" = "Ratio · the shape of the frame";
+"Long · scroll down, Return when done" = "Long · scroll down, Return when done";
+"Text · the words in the area" = "Text · the words in the area";
+"Translate · the same words, another language" = "Translate · the same words, another language";
+"Edit · take it and open the editor" = "Edit · take it and open the editor";
+"Again · put the last frame back" = "Again · put the last frame back";
+"Scroll down · Return when done" = "Scroll down · Return when done";
+"Drag the area that should keep growing" = "Drag the area that should keep growing";
+"That went upwards — this one only grows downwards" = "That went upwards — this one only grows downwards";
+"That scroll was too fast to follow — go a little slower." = "Too fast to follow · slower, with an overlap";
+"That is as long as one picture can be." = "That is as long as one picture can be.";
+"The area changed size while it was being captured." = "The area changed size while it was being captured.";
+
+/* Capture · text (P4): the words in an area, hung as a text card rather than
+   as a picture. The button reuses the existing "Text" key. */
+"Reading…" = "Reading…";
+"No text found" = "No text found";
+"Confirm" = "Confirm";
+"characters" = "characters";
+"Drag the area whose words you want" = "Drag the area whose words you want";
+"The words in this area" = "The words in this area";
+"Drag the area to translate" = "Drag the area to translate";
+"Translating…" = "Translating…";
+"The words, in the other language" = "The words, in the other language";
+"Those words could not be translated" = "Those words could not be translated";
+"Cannot tell which language these words are in" = "Cannot tell which language these words are in";
+"This Mac cannot translate between those two languages" = "This Mac cannot translate between those two languages";
+"Those words are already in this language" = "Already in this language · change it in Settings";

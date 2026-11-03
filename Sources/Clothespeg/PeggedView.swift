@@ -41,7 +41,9 @@ struct PeggedView: View {
             } else {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    // The clay the recoloured pushpin art wears, so the fallback
+                    // and the real mark are the same colour.
+                    .foregroundStyle(CDS.clay)
                     .frame(width: 20, height: item.payload.isNote ? 36 : 26)
             }
         }

@@ -1145,7 +1145,7 @@ private struct TintSwatches: View {
                 }
             }
             .overlay(
-                Circle().strokeBorder(chosen ? Color.accentColor : Color.primary.opacity(0.25),
+                Circle().strokeBorder(chosen ? CDS.clay : Color.primary.opacity(0.25),
                                       lineWidth: chosen ? 2 : 0.75)
             )
             .frame(width: 20, height: 20)

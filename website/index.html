@@ -81,13 +81,15 @@
   .btn-alt:hover{border-color:var(--peg);background:rgba(176,122,63,.05);transform:translateY(-2px);box-shadow:0 8px 24px rgba(176,122,63,.14)}
 
   /* 首屏入口的层级（口径与 Flyring 一致）：
-     前两个是同一条路（GitHub 直发：下载 / 看源码），
-     第三个是另一个产品（苹果专版）。中间一条竖线把断层画出来，
+     前四个是同一条路（GitHub 直发 + 同一份包的备用源），
+     最后一个是另一个产品（苹果专版）。中间一条竖线把断层画出来，
      不必读文字就知道「右边那个不是同一种东西」。
        下载·开源   暖色实心 —— 唯一主入口
+       备用下载    白底暖边 —— 同一份包的另一个源（GitHub 打不开时走它）
        操作手册    白底暖边 —— 同一条路
+       查看源码    白底暖边 —— 同一条路
        苹果专版   灰调描边 —— 另一个渠道，主动退后
-     三个 padding/字号统一，避免一个胖一个瘦。 */
+     padding/字号统一，避免一个胖一个瘦。 */
   .btn-store{
     color:var(--ink-2);background:#fff;
     border:1px solid rgba(60,48,30,.16);
@@ -488,6 +490,11 @@
     <p class="sub-en zh-only">One line strings together a clipboard and a notebook. Yours when you need them, gone when you don't.</p>
     <div class="hero-cta">
       <a class="btn btn-primary" data-i18n="hero.cta.download" href="https://github.com/saodisir/Clothespeg/releases/latest" target="_blank" rel="noopener">免费下载 · 开源</a>
+      <!-- 备用通道（Cloudflare R2）：GitHub 在国内时通时不通，而「下不到包」是最伤的失败方式。
+           指向固定的 latest 键 —— **发版只需跑 scripts/upload_dl.sh，这里一次都不用改**
+           （Flyring 那边把版本号写进 JS 常量，每次发版都得记着改，迟早漏）。
+           R2 出网流量永久免费，这条通道不产生流量成本。 -->
+      <a class="btn btn-alt" data-i18n="hero.cta.backup" href="https://pub-070a6d9e2e7d442bafe01c46def094b2.r2.dev/Clothespeg-latest.dmg" target="_blank" rel="noopener">备用下载</a>
       <a class="btn btn-alt" data-i18n="hero.cta.manual" href="manual.html">操作手册</a>
       <a class="btn btn-alt" data-i18n="hero.cta.source" href="https://github.com/saodisir/Clothespeg" target="_blank" rel="noopener">查看源码</a>
       <!-- 苹果专版：尚未上架，点击给提示，不给坏链接。
@@ -705,6 +712,8 @@
         <a href="licence.html" data-i18n="foot.licence">许可证</a>
         <a href="#coffee" data-i18n="foot.coffee">请喝咖啡</a>
         <a href="https://github.com/saodisir/Clothespeg" target="_blank" rel="noopener">GitHub</a>
+        <!-- 备用下载（Cloudflare R2）：比首屏那枚弱一档，只做「GitHub 打不开时的兜底」 -->
+        <a href="https://pub-070a6d9e2e7d442bafe01c46def094b2.r2.dev/Clothespeg-latest.dmg" target="_blank" rel="noopener" data-i18n="foot.backup">备用下载</a>
       </p>
       <p data-i18n="meta.slogan">一根晾衣绳，穿起剪贴板和便签簿</p>
     </div>
@@ -757,6 +766,7 @@
       "hero.title":"一根晾衣绳，<span class=\"bloom\">穿起剪贴板和便签簿</span>",
       "hero.sub":"Clothespeg的灵感来自 Tendedero，西班牙语里的“晾衣绳”。用一根晾衣绳穿起了一个剪贴板，一个便签簿。复制过的截图、文字、文件夹都晾在上面，随用随取；便签也可以晾在绳上，写灵感、记待办，抬眼就在。",
       "hero.cta.download":"免费下载 · 开源",
+      "hero.cta.backup":"备用下载",
       "hero.cta.manual":"操作手册",
       "hero.cta.source":"查看源码",
       "hero.cta.store":"苹果专版（免费）",
@@ -803,6 +813,7 @@
       "foot.flyring":"Flyring 主页 ↗",
       "foot.licence":"许可证",
       "foot.coffee":"请喝咖啡",
+      "foot.backup":"备用下载",
       "meta.slogan":"一根晾衣绳，穿起剪贴板和便签簿",
       "sec.ver.eyebrow":"VERSIONS · 版本",
       "sec.ver.h2":"两个版本，同一根绳",
@@ -871,6 +882,7 @@
       "hero.title":"One clothesline for <span class=\"bloom\">your clipboard and your notes</span>",
       "hero.sub":"Clothespeg takes its name — and its idea — from Tendedero, Spanish for clothesline. One line holds a clipboard and a notebook: screenshots, text and folders you copy hang on it, ready when you are; notes hang there too, for ideas and to-dos, in view the moment you look up.",
       "hero.cta.download":"Download free · open source",
+      "hero.cta.backup":"Mirror download",
       "hero.cta.manual":"Manual",
       "hero.cta.source":"Source code",
       "hero.cta.store":"Apple Edition (free)",
@@ -917,6 +929,7 @@
       "foot.flyring":"Flyring home ↗",
       "foot.licence":"Licence",
       "foot.coffee":"Buy me a coffee",
+      "foot.backup":"Mirror download",
       "meta.slogan":"One clothesline for your clipboard and notes",
       "sec.ver.eyebrow":"VERSIONS",
       "sec.ver.h2":"Two builds, one line",

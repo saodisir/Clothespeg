@@ -426,10 +426,14 @@ private struct RopeMarks: View {
     /// the pinned cards", and one glyph carrying two meanings would make the
     /// rope lie about one of them. The shut/open pair is the symbol's own two
     /// states, so the answer needs no invention.
+    ///
+    /// The accent is the app's own clay, not `Color.accentColor`: the system
+    /// accent is whatever blue macOS is set to, which is the one colour here
+    /// nobody chose (2026-11-02).
     private var propMark: some View {
         RopeMarkButton(help: line.propped ? L("Unlock") : L("Lock"),
                        symbol: line.propped ? "lock.fill" : "lock.open",
-                       tint: line.propped ? .accentColor : .secondary,
+                       tint: line.propped ? CDS.clay : .secondary,
                        action: { line.onPropToggle?() })
     }
 }
@@ -742,7 +746,7 @@ private struct Pager: View {
                                     // so the one being chosen slides out from under
                                     // the finger.
                                     .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(filter == option ? Color.accentColor : Color.secondary)
+                                    .foregroundStyle(filter == option ? CDS.clay : Color.secondary)
                                     // Seven between neighbours, four at the row's
                                     // two ends — the same air the icon buttons
                                     // carry, so a divider sits evenly between
@@ -783,7 +787,7 @@ private struct Pager: View {
                                     .font(.system(size: 10, weight: .medium))
                             }
                         }
-                        .foregroundStyle(filterIsHiding ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(filterIsHiding ? CDS.clay : Color.secondary)
                         // The one shape every icon button on the pill wears:
                         // content, four points of air on each side, eighteen
                         // points tall. The divider outside carries the rest of
@@ -838,7 +842,7 @@ private struct Pager: View {
                 } label: {
                     Image(systemName: line.showingPinned ? "pin.fill" : "pin")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(line.showingPinned ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(line.showingPinned ? CDS.clay : Color.secondary)
                         .padding(.horizontal, 4)
                         .frame(height: 18)
                         .contentShape(Rectangle())

@@ -65,6 +65,22 @@ enum PictureText {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return ""
         }
+        return recognize(in: image)
+    }
+
+    /// The same read, from a picture that is not on disk.
+    ///
+    /// A capture has its pixels before it has a file — the region is cut out of
+    /// the frozen backdrop and read while the overlay is still up, so the person
+    /// can be asked whether the reading is worth keeping before anything is
+    /// written. Blocking, like its file twin, and for the same reason: accurate
+    /// recognition takes hundreds of milliseconds, which is a visible stutter in
+    /// front of a question and invisible behind one.
+    ///
+    /// No thumbnail step: a region dragged out of a screen is already small
+    /// enough for Vision, and one that is not is still cheaper to read whole
+    /// than to resample twice.
+    static func recognize(in image: CGImage) -> String {
         let request = VNRecognizeTextRequest()
         // Accurate rather than fast. Fast is several times quicker and reads
         // Latin type at a glance, but it drops small type and mangles Han
@@ -76,9 +92,10 @@ enum PictureText {
         request.usesLanguageCorrection = true
         request.recognitionLanguages = languages
         do {
-            try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+            try VNImageRequestHandler(cgImage: fitted(image, within: maxPixel), options: [:])
+                .perform([request])
         } catch {
-            log.error("Text read failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            log.error("Text read failed: \(error.localizedDescription, privacy: .public)")
             return ""
         }
         // Top candidate per line, in the order Vision found them — reading
@@ -88,6 +105,28 @@ enum PictureText {
         let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         guard !lines.isEmpty else { return "" }
         return clip(lines.joined(separator: "\n"))
+    }
+
+    /// The picture, shrunk until its longest side fits in `limit`.
+    ///
+    /// The same ceiling the file path reaches through a thumbnail, for the same
+    /// reason: a whole screen on a large display is 6016 points wide, and a read
+    /// that takes four seconds behind a question is a question nobody waits for.
+    /// A region dragged out of a screen is usually smaller than this and is left
+    /// alone — resampling a picture that already fits only costs sharpness.
+    private static func fitted(_ image: CGImage, within limit: Int) -> CGImage {
+        let longest = max(image.width, image.height)
+        guard longest > limit, let space = image.colorSpace else { return image }
+        let scale = CGFloat(limit) / CGFloat(longest)
+        let width = max(1, Int((CGFloat(image.width) * scale).rounded()))
+        let height = max(1, Int((CGFloat(image.height) * scale).rounded()))
+        guard let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
 
     /// The languages asked for, in the order a screenshot is most likely to

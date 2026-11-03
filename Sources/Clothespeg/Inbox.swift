@@ -97,6 +97,25 @@ enum Inbox {
         }
     }
 
+    /// Stamps a picture this app took itself as a screen capture.
+    ///
+    /// macOS writes this attribute on every capture it makes, and `isScreenCapture`
+    /// reads it. A capture taken by this app has no macOS capture behind it, so
+    /// without the stamp the sweep would not know the file was one of its own —
+    /// it would leave it alone for ever, which is the opposite of what a sweep
+    /// is for.
+    ///
+    /// Best effort by design: the name is checked as well (see `sweep`), so a
+    /// filesystem that refuses the attribute still leaves the file recognisable
+    /// rather than orphaned.
+    static func markAsScreenCapture(_ url: URL) {
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return }
+            var yes: UInt8 = 1
+            setxattr(path, "com.apple.metadata:kMDItemIsScreenCapture", &yes, 1, 0, 0)
+        }
+    }
+
     /// Puts every picture no card is pointing at into the Trash.
     ///
     /// The folder is filled as copies are made, and emptied as cards are let
@@ -119,15 +138,23 @@ enum Inbox {
         var swept = 0
         for file in contents where !file.hasDirectoryPath {
             guard !named.contains(file.standardizedFileURL.path) else { continue }
-            // Only the files this app writes: its own copies, and — with the
-            // screenshot inbox on — captures macOS saved here. Anything else
-            // in the folder is not the app's to move, however it got there.
-            let ours = file.lastPathComponent.hasPrefix("Clipboard ") || isScreenCapture(file)
+            // Only the files this app writes: its own copies, its own
+            // captures, and — with the screenshot inbox on — captures macOS
+            // saved here. Anything else in the folder is not the app's to
+            // move, however it got there.
+            //
+            // The name is checked as well as the stamp because the stamp is
+            // written best-effort: a capture whose extended attribute failed
+            // would otherwise be a file nothing ever claims and nothing ever
+            // sweeps, which is the one outcome the stamp exists to prevent.
+            let name = file.lastPathComponent
+            let isCapture = name.hasPrefix("Screenshot ") || isScreenCapture(file)
+            let ours = name.hasPrefix("Clipboard ") || isCapture
             guard ours else { continue }
             // A capture written in the last minute may be on its way to the
             // line — the watcher is slower than a sweep that happens to run
             // beside it — so a fresh one is left for the next sweep to judge.
-            if isScreenCapture(file),
+            if isCapture,
                let created = try? file.resourceValues(forKeys: [.creationDateKey]).creationDate,
                Date().timeIntervalSince(created) < 60 { continue }
             do {
@@ -165,13 +192,27 @@ enum Inbox {
     private static let screenshotTargetKey = "target-screenshot" as CFString
     private static let recordingTargetKey = "target-screenrecording" as CFString
 
-    private static let enabledKey = "screenshotInboxEnabled"
+    /// Read by the off-screen settings render too, which has to put the real
+    /// answer back exactly as it found it after pretending the menu bar moved
+    /// it: a rehearsal on a live preference has to leave the room tidy.
+    static let enabledDefaultsKey = "screenshotInboxEnabled"
     private static let savedKey = "screenshotInboxSavedSettings"
 
     /// The user's choice, kept across launches. Off unless asked for.
+    ///
+    /// The setter is the one place this answer changes, and it is the one place
+    /// that says the answer changed — see `SettingsAnswers` for why saying so is
+    /// not optional here.
+    ///
+    /// A write of the same value announces nothing, so a page echoing the
+    /// answer back cannot start a loop.
     static var screenshotInboxEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: enabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+        get { UserDefaults.standard.bool(forKey: enabledDefaultsKey) }
+        set {
+            guard newValue != UserDefaults.standard.bool(forKey: enabledDefaultsKey) else { return }
+            UserDefaults.standard.set(newValue, forKey: enabledDefaultsKey)
+            SettingsAnswers.announce(enabledDefaultsKey)
+        }
     }
 
     /// Whether macOS is currently sending captures to this folder.

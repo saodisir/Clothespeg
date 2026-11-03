@@ -39,6 +39,8 @@
 "Open Link" = "打开链接";
 "Right-click the card to open the link" = "右键卡片可打开链接";
 "Right-click the card to copy the contents" = "右键卡片可复制内容";
+"Keep this open" = "盯住";
+"Let it close" = "松手";
 
 /* LineView */
 "Copy something and it will hang here" = "复制点什么，就会挂到这里";
@@ -116,7 +118,6 @@
 
 "days" = "天";
 "Cards" = "卡片";
-"Pictures" = "图片";
 "On disk" = "磁盘占用";
 "Clipboard pictures" = "剪贴板图片";
 "Clean up clipboard pictures?" = "清理剪贴板图片？";
@@ -141,6 +142,8 @@
 "Invocation" = "呼出";
 "Language" = "语言";
 "Changes apply at once." = "改动立即生效，不用重启。";
+"Translate into" = "译成";
+"The capture's 译 button uses this. The system's own translator does the work, on this Mac." = "截图浮条上的「译」用它。翻译由系统自己的引擎在这台 Mac 上完成，文字不出本机。";
 "Clean up" = "清理";
 "Clipboard cards" = "剪贴板文字";
 "Clear the clipboard?" = "清空剪贴板？";
@@ -231,7 +234,6 @@
 "Every day %@" = "每天 %@";
 "Every week %@" = "每周%@";
 "Every month %@" = "每月 %@";
-"Done" = "确定";
 "In 30 minutes" = "30 分钟后";
 "Not set" = "未设置";
 "Next" = "下次";
@@ -250,3 +252,110 @@
 "Not asked yet. Allow it so a reminder still reaches you when Clothespeg is closed." = "还没开。开了以后，就算 App 关着，系统也会提醒你。";
 "Once it is allowed, double-clicking a card copies the content and pastes it into the field your pointer is in. Without it, double-clicking only copies, and you have to press ⌘V yourself. macOS does not let an app control another app freely, which is why this needs its own permission. Nothing is read and nothing is recorded." = "授权后，双击卡片就能直接复制并粘贴到鼠标所在的输入框。若未授权，双击卡片只会复制，还需要你自己按 ⌘V 粘贴。macOS 不允许 App 随便操作别的 App，所以这一项要单独授权。它不读取、也不记录任何内容。";
 "Once it is allowed, the system shows a reminder notification even when the app is closed. Without it, a closed app has no reminder." = "授权后，App关闭，系统也会弹出提醒通知。若未授权，App关闭无提醒功能。";
+
+/* Image editor */
+"Select" = "选择";
+"Rectangle" = "矩形";
+"Arrow" = "箭头";
+"Pen" = "画笔";
+"Highlighter" = "荧光笔";
+"Mosaic" = "马赛克";
+"Number" = "序号";
+"Crop" = "裁剪";
+"Move" = "移动";
+"Undo" = "撤销";
+"Redo" = "重做";
+"Cancel" = "取消";
+"This picture could not be opened" = "这张图片打不开";
+"Save the changes to this picture?" = "保存对这张图片的改动吗？";
+"Closing now keeps the picture as it was." = "现在关掉，图片保持你打开时的样子。";
+"Could not write" = "无法写入";
+"Ellipse" = "椭圆";
+"Overwrite" = "覆盖";
+"Copy this version" = "把这一版放进剪贴板";
+"Replace the original file with this version" = "用这一版替换原文件";
+"Fill" = "填充";
+"Width" = "粗细";
+"Size" = "大小";
+"Font Size" = "字号";
+"Block" = "块大小";
+"Opacity" = "不透明度";
+"Free" = "自由";
+"Italic" = "斜体";
+"Crop proportions" = "裁剪比例（3:4 小红书 · 9:16 竖屏 · 2.35:1 公众号封面）";
+"Write the changes back to this picture?" = "把改动写回这张图吗？";
+"Closing now keeps the file as it was. The picture is copied aside before the first write." = "现在关掉，文件保持你打开时的样子。第一次写回前会先复制一份原图。";
+"Click a mark on the picture to change it" = "点一下图上的标记，就能改它的大小和颜色";
+"Drag a frame on the picture, then double-click to crop" = "拖出裁剪框，双击应用";
+/* 红橙黄绿蓝已有词条（便签颜色），这里只补两个新的，同一个词只准有一个定义 */
+"Cyan" = "青色";
+"Purple" = "紫色";
+"More Colours" = "更多颜色";
+"Zoom" = "缩放（⌘+ / ⌘− / ⌘0 实际大小 / ⌘1 适合窗口）";
+"Zoom In" = "放大";
+"Zoom Out" = "缩小";
+"Zoom to Fit" = "适合窗口";
+/* 这一条现在同时管编辑器和截图浮条：两处都是图标 + 角标快捷键。 */
+"Show shortcuts on the buttons" = "在按钮上显示快捷键";
+"Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "每个工具的右下角会标出它的字母键。复制、覆盖、缩放用的是通用 ⌘ 组合键，不标。";
+
+"Capture the screen" = "截取屏幕";
+"Takes a picture of a window, an area or the whole screen. It goes to the clipboard and hangs on the line" = "截一个窗口、一块区域或整块屏幕。图会进剪贴板，同时挂到绳上";
+"The screen could not be captured" = "屏幕没能截下来";
+"Clothespeg may not look at your screen yet. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then open Clothespeg again." = "Clothespeg 还没有查看屏幕的权限。到「系统设置 › 隐私与安全性 › 屏幕与系统音频录制」里允许它，然后重新打开 Clothespeg。";
+"That screen could not be captured." = "这块屏幕没能截下来。";
+"That window had closed before the picture was taken." = "那个窗口在图拍下来之前就关掉了。";
+"That area could not be read back from the screen." = "这块区域没能从屏幕上读回来。";
+"The picture could not be encoded." = "这张图没能编码。";
+"OK" = "好";
+
+"Capture" = "截图";
+"Screen recording" = "屏幕录制";
+"Clothespeg uses it for one thing: taking the picture when you press the capture shortcut. Without it that shortcut does nothing at all. Nothing is recorded, and nothing leaves this Mac." = "Clothespeg 只用它做一件事：你按截图快捷键时，把画面拍下来。没有这个权限，那个键按下去什么都不会发生。不录屏，也不上传。";
+"After granting it, macOS asks you to open Clothespeg again — a permission only reaches a process that started after it was given." = "允许之后，macOS 会要你重新打开 Clothespeg —— 权限只对在它之后启动的进程生效。";
+"Allow Screen Recording" = "允许屏幕录制";
+"After a capture" = "截图之后";
+"Show the line when something new arrives" = "有新东西时把绳放下来";
+"The screenshot folder" = "截图文件夹";
+"Drag out an area · click a window · Space for the whole screen" = "拖拽选区 · 单击窗口 · 空格选整屏";
+"Drag an edge to adjust · Return to capture" = "拖边缘调整 · 回车截取";
+/* 截图 · 选整屏之后的那一行：空格只「选」，回车才「截」——
+   这一行的全部作用就是告诉人还差哪一步。 */
+"Whole screen · Return to capture" = "整屏 · 回车截取";
+/* 选中一个窗口之后的那一行。不能说「拖边缘调整」——窗口的框就是窗口的，
+   拖不动，说能动是骗人。 */
+"Window · Return to capture" = "窗口 · 回车截取";
+/* 截图 · 浮条改成图标之后，按钮原来的那几个字搬进了悬停提示：
+   一句说这是什么，一句说按下去会怎样。 */
+"Ratio · the shape of the frame" = "比例 · 框是什么形状";
+"Long · scroll down, Return when done" = "长图 · 往下滚动，回车完成";
+"Text · the words in the area" = "识别 · 取这块区域里的字";
+"Translate · the same words, another language" = "译 · 同一段字，另一种语言";
+"Edit · take it and open the editor" = "编辑 · 截下来并打开编辑器";
+"Again · put the last frame back" = "重截 · 把上一次的框放回原位";
+"Scroll down · Return when done" = "往下滚动 · 回车完成";
+"Drag the area that should keep growing" = "拖出要一直长下去的区域";
+"That went upwards — this one only grows downwards" = "往上滚了 —— 这个只往下长";
+/* 这一句曾经是全浮条最宽的一句（233pt），而它一年出现两次：浮条的宽度钉在
+   最宽那句上，于是另外 364 天都在给这句话让位置。压到 160 出头。 */
+"That scroll was too fast to follow — go a little slower." = "滚太快了 · 慢一点，让两屏有重叠";
+"That is as long as one picture can be." = "一张图最长就这么长了";
+"The area changed size while it was being captured." = "截的过程中区域变了大小";
+
+/* 截图 · 识别（P4）：一块区域里的文字，挂成文字卡而不是图片。
+   按钮复用已有的 "Text"（=文字），这里只补状态句与计数。 */
+"Reading…" = "识别中…";
+"No text found" = "没有找到文字";
+"Confirm" = "确认";
+"characters" = "字";
+"Drag the area whose words you want" = "拖出要文字的区域";
+"The words in this area" = "这块区域里的文字";
+"Drag the area to translate" = "拖动要翻译的区域";
+"Translating…" = "翻译中…";
+"The words, in the other language" = "这块区域里的文字，另一种语言";
+"Those words could not be translated" = "这段文字没能译出来";
+"Cannot tell which language these words are in" = "读不出这段是什么语言";
+/* 这两句原来更长（「还不能在这两种语言之间翻译」/「设置里可改『译成』」），
+   而浮条的宽度钉在最长那句上：一年遇到两次的话，凭什么让另外 364 天留着空。 */
+"This Mac cannot translate between those two languages" = "这台 Mac 不支持这两种语言";
+"Those words are already in this language" = "已经是这种语言了 · 设置里可改";

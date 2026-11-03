@@ -13,11 +13,21 @@ import AppKit
 /// Top level and unisolated, because it is read from `PasteInto` and the
 /// menu as well as here, and a preference is not a piece of actor state.
 enum FormatCopy {
-    private static let key = "copyWithFormatting"
+    /// Named outside as well, because the off-screen render has to put this
+    /// answer back exactly as it found it after pretending the menu bar moved it.
+    static let defaultsKey = "copyWithFormatting"
     /// Absent means off, which `bool(forKey:)` already answers.
+    ///
+    /// The setter is the one place this answer changes, and it says so: the
+    /// menu bar's tick and the clipboard page's switch are the same answer, and
+    /// the page is kept alive rather than rebuilt — see `SettingsAnswers`.
     static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: key) }
-        set { UserDefaults.standard.set(newValue, forKey: key) }
+        get { UserDefaults.standard.bool(forKey: defaultsKey) }
+        set {
+            guard newValue != UserDefaults.standard.bool(forKey: defaultsKey) else { return }
+            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            SettingsAnswers.announce(defaultsKey)
+        }
     }
 }
 

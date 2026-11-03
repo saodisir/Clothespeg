@@ -1107,6 +1107,13 @@ final class Line: ObservableObject {
             copy(id)
             return
         }
+        // A picture opens in this app's own editor. Everything else — a PDF,
+        // which is a document rather than a picture — still goes to Preview,
+        // because a page is not something this editor knows how to hold.
+        if ImageEditor.canOpen(url) {
+            ImageEditor.shared.open(url)
+            return
+        }
         Markup.shared.edit(url)
     }
 

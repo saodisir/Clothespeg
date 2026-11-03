@@ -56,6 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// kept alive by, so one that is let go is a shortcut that stops
     /// working.
     private var notesKey: HotKey?
+    /// ⌃⌥S, the third door. It opens no line: it puts a capture overlay over
+    /// the screen and the picture it takes ends up on the line by itself.
+    /// Registered like the two above, and for the same reason — a key held
+    /// nowhere is a key that stops answering.
+    private var captureKey: HotKey?
     /// The two doors that act on a line already down — the one that writes a
     /// note and the one that keeps the rope down. Carbon hot keys after all,
     /// but registered only while they can be answered honestly: the line is
@@ -132,9 +137,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Something new hanging shows itself for a moment. Off, it hangs
     /// quietly and waits for you to bring the line down.
+    ///
+    /// The setter is the one place this answer changes, and it says so — see
+    /// `SettingsAnswers`. Same-value writes stay quiet, so a page echoing the
+    /// answer back cannot start a loop.
     static var peeksAtNew: Bool {
         get { !UserDefaults.standard.bool(forKey: "quietHang") }
-        set { UserDefaults.standard.set(!newValue, forKey: "quietHang") }
+        set {
+            guard newValue != peeksAtNew else { return }
+            UserDefaults.standard.set(!newValue, forKey: "quietHang")
+            SettingsAnswers.announce("quietHang")
+        }
     }
 
     /// One line along the top of the screen, and only one.
@@ -193,6 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let host = NSHostingView(rootView: LineView(line: line))
         host.sizingOptions = []
         panel = LinePanel(content: host)
+        // Remembered for the windows opened from a card: they are placed under
+        // the strip rather than in the middle of the screen, and this is the
+        // only thing that knows where the strip ends.
+        LinePanel.current = panel
         // As deep as whatever is on it. Asked through a closure rather than
         // set once, because the answer changes with the deck — a note is as
         // tall as its contents and the clipboard's cards are all one size —
@@ -452,6 +469,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // store's idea of an app's business. Watched folders are the way in.
         return
 #else
+        // A page echoing the answer it was just told about writes the value it
+        // already holds; applying the takeover again would re-save the
+        // preferences and restart a watcher that never stopped.
+        guard on != Inbox.screenshotInboxEnabled else { return }
         Inbox.screenshotInboxEnabled = on
         if on {
             Inbox.apply()
@@ -465,6 +486,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Inbox.restore()
         }
 #endif
+    }
+
+    /// The settings window's way in, the same arrangement as
+    /// `reregisterHotkeys`: the switch is a question about this app's state,
+    /// and the delegate is what holds that state. Going through a notification
+    /// would be the same call with a queue in front of it.
+    static func setScreenshotInboxFromSettings(_ on: Bool) {
+        (NSApp.delegate as? AppDelegate)?.setScreenshotInbox(on)
     }
 
     /// The guard that keeps the inbox honest about its own tick. The user
@@ -588,6 +617,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             itemsChanged()
             return
         }
+    }
+
+    /// A capture, arriving from the screenshot overlay.
+    ///
+    /// Not simply `.image` with a bare origin: a capture knows which app it came
+    /// from, and the name is worth carrying. It costs one field and buys the only
+    /// word anyone would search a picture of a spreadsheet by tomorrow — "Excel"
+    /// — because the pixels themselves can only be found by what OCR read out of
+    /// them.
+    ///
+    /// Reached through `NSApp.delegate` rather than held by the capture: there is
+    /// one app and one delegate, and a reference passed down through the overlay
+    /// would be the same fact kept twice.
+    func acceptCapture(at url: URL, from app: String?) {
+        var origin = Origin()
+        origin.app = app
+        hang(.image(url), origin: origin)
+    }
+
+    /// Words that were read out of a region, arriving from the same overlay.
+    ///
+    /// The same landing as a capture, deliberately, and a different card: this
+    /// one is a snippet, so it carries the paper and the caption instead of a
+    /// picture and its source. There is no file because there is nothing to
+    /// write down — the words are the content, and a file of them would be a
+    /// folder of small text files nobody asked for.
+    ///
+    /// No app in the origin: the capture knows which app it photographed, but
+    /// what hangs here is not that app's text, it is what a reader made of a
+    /// picture of it.
+    func acceptCapturedText(_ text: String) {
+        hang(.text(text, isCode: false), origin: Origin())
     }
 
     /// Where a card will hang, in screen coordinates, using the same layout
@@ -1874,6 +1935,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // combination, the one a door already had included.
         clipboardKey = nil
         notesKey = nil
+        captureKey = nil
         panelKeys = [:]
 
         // Only the two summons are permanent. The doors that act on a line
@@ -1904,6 +1966,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             notesKey = key
             reportRegistration("notes", key)
+        }
+        // The third door, and the only one that opens no line. Registered in
+        // the Lite build as well, where it is refused by the capture itself
+        // rather than by the key: a shortcut that is advertised but does
+        // nothing is worse than one that says why.
+        if Door.capture.isSet {
+            // Nothing of this delegate's is needed: the capture keeps its own
+            // state, and the picture finds its way back to the line through
+            // `hangCapture` once it exists.
+            let key = HotKey(keyCode: Door.capture.keyCode,
+                             modifiers: Door.capture.carbonModifiers, id: 3) {
+                diagLog("Hotkey fired: capture")
+                CaptureController.shared.begin()
+            }
+            captureKey = key
+            reportRegistration("capture", key)
         }
         // Let this re-arm whichever panel doors still hold a key, now that
         // the old ones are a moment gone.
@@ -2001,6 +2079,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         notesDoor.keyEquivalentModifierMask = Door.notes.nsModifiers
         notesDoor.toolTip = L("The notes hang on the same line as what you copy")
         menu.addItem(notesDoor)
+
+        // The third door, which opens no line: the capture overlay, then a card
+        // that hangs itself. Named by what it does rather than by where it puts
+        // the result, because where it puts the result is the line — and that
+        // is the one thing the rest of this menu is already about.
+        let captureDoor = ClosureMenuItem(L("Capture the screen")) {
+            CaptureController.shared.begin()
+        }
+        captureDoor.keyEquivalent = Door.capture.displayCharacter.lowercased()
+        captureDoor.keyEquivalentModifierMask = Door.capture.nsModifiers
+        captureDoor.toolTip = L("Takes a picture of a window, an area or the whole screen. It goes to the clipboard and hangs on the line")
+        menu.addItem(captureDoor)
 
         // The rope, propped down so it stays until released. The same toggle
         // the peg at the end of the rope offers, here for the times the line is

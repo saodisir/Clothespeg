@@ -52,6 +52,15 @@ final class LinePanel: NSPanel {
     /// for the number itself, which is the only place it is decided.
     var depthProvider: () -> CGFloat = { Layout.clipboardDepth }
 
+    /// The strip that is on screen, so a window opened from a card can be put
+    /// under it.
+    ///
+    /// Weak, and a static rather than a reference handed through four layers:
+    /// the editor window is opened from a menu item four objects away from the
+    /// panel, and the one fact it needs is where the strip ends. Nothing should
+    /// own the panel on the editor's behalf.
+    static weak var current: LinePanel?
+
     func placeOnScreen(_ screen: NSScreen? = nil) {
         guard let visible = (screen ?? LinePanel.screenUnderPointer())?.visibleFrame else { return }
         let depth = depthProvider()
