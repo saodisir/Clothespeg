@@ -78,9 +78,10 @@ final class CaptureController {
         previousApp = NSWorkspace.shared.frontmostApplication
         // Read before the backdrop is taken, and read from the window server
         // rather than from the picture: what a click may take is the windows
-        // that exist now, and asking after the shutter would include this app's
-        // own overlay.
-        let pickable = WindowPick.windows(excluding: ProcessInfo.processInfo.processIdentifier)
+        // that exist now. This app's own windows are in the list — the strip and
+        // the editor are on the screen like anything else — and only its capture
+        // overlay is not, because it does not exist yet.
+        let pickable = WindowPick.windows()
         diagLog("Capture: entering on \(target.localizedName), \(pickable.count) window(s) pickable")
 
         Task {
@@ -387,11 +388,12 @@ final class CaptureController {
 
     /// The words in the other language.
     ///
-    /// The engine is the system's own, which is the only one this app can offer
-    /// honestly: it runs on the machine, and the words never leave the Mac —
-    /// the same promise the capture itself makes.
+    /// Two engines, and which one answers is decided by a key rather than by a
+    /// switch: with one filled in, `TranslationAPI` translates on the other end
+    /// of a wire; with the field empty, the system's own engine does it on this
+    /// Mac. See `TranslationAPI` for why the second one exists at all.
     ///
-    /// The source language is left for the system to work out. Knowing which
+    /// The source language is left for the engine to work out. Knowing which
     /// language a page is in is its job, and a wrong guess on our side would
     /// fail as silence rather than as an error.
     private func translate(_ text: String) {
@@ -402,6 +404,42 @@ final class CaptureController {
         // not how it came back — a refusal is a reason to ask later, not a
         // reason to forget the place.
         if let region = surface?.region { LastCapture.remember(.translate, region) }
+
+        let asked = Self.translationTarget()
+
+        // A filled-in key is the whole of the choice between the two engines,
+        // so the remote one is asked first and the system's engine is not
+        // asked afterwards: a fallback that ran quietly would hide a wrong key
+        // behind a worse translation, and the person would have no way to tell
+        // which had happened.
+        if TranslationAPI.isConfigured {
+            guard let target = asked else {
+                surface?.showTranslationRefused(.unsure)
+                diagLog("Capture text: no target language for the remote engine")
+                return
+            }
+            // Asked, and already in the language asked for. The model would
+            // hand the same words back, which reads as a button that did
+            // nothing, and only the guess can tell that from a translation
+            // that happens to match. A guess that fails is not a refusal here
+            // — the model does not need to know what it is reading.
+            if let source = SourceLanguage.guess(text), SourceLanguage.same(source, target) {
+                surface?.showTranslationNoop()
+                diagLog("Capture text: already \(source.minimalIdentifier)")
+                return
+            }
+            Task { @MainActor in
+                do {
+                    let translated = try await TranslationAPI.translate(text, into: target)
+                    surface?.showTranslation(translated)
+                } catch {
+                    surface?.showTranslationRefused(.failed)
+                    diagLog("Capture text: remote translation failed — \(error.localizedDescription)")
+                }
+            }
+            return
+        }
+
         guard #available(macOS 15.0, *) else {
             surface?.showTranslation(nil)
             diagLog("Capture text: no translation on this macOS (needs 15)")
@@ -416,7 +454,7 @@ final class CaptureController {
             diagLog("Capture text: cannot tell which language \(text.count) character(s) are in")
             return
         }
-        let target = Self.translationTarget()
+        let target = asked
         // Already in the language asked for. Asking would be a round trip to be
         // told what is known, and the engine's way of saying it is an error.
         if SourceLanguage.same(source, target) {
@@ -521,6 +559,7 @@ final class CaptureController {
         // repeat photograph the window rather than whatever is in front of it,
         // and the frame is what the id is replaced by when that window is gone.
         LastCapture.remember(.window, picked.frame, window: picked.id)
+        if picked.isOwn { return takeOwnWindow(picked, editAfter: false) }
         // Closed first, and deliberately: the overlay is a full-screen window
         // at the top level, and it must not be part of the answer even for the
         // instant before the frame is taken.
@@ -534,6 +573,29 @@ final class CaptureController {
                 self.report(error)
             }
         }
+    }
+
+    /// One of our own windows, cut out of the backdrop instead of rendered.
+    ///
+    /// It is already in the backdrop — that is what the change to `ScreenGrab`
+    /// bought — and that copy is the honest one: it is the window as it was on
+    /// the screen when the frame was drawn, in the same instant as everything
+    /// around it. A window render would answer a different question (`what does
+    /// this window look like on its own`) and it is the one path here that has
+    /// never been proved to work on a window belonging to the app doing the
+    /// asking. The trade is a window we own that was half covered coming out
+    /// half covered — which is what the screen showed, and the reason window
+    /// capture exists at all is somebody else's window behind somebody else's.
+    private func takeOwnWindow(_ picked: PickableWindow, editAfter: Bool) {
+        guard let backdrop, let screen else { return cancel() }
+        let image = Self.crop(backdrop, to: picked.frame, on: screen)
+        close()
+        diagLog("Capture: own window \(picked.id) cut from the backdrop")
+        guard let image else {
+            report(ScreenGrabError.failed(L("That area could not be read back from the screen.")))
+            return
+        }
+        commit(image, from: picked.owner.isEmpty ? nil : picked.owner, editAfter: editAfter)
     }
 
     /// The chosen thing, taken and then opened in the editor.
@@ -561,6 +623,7 @@ final class CaptureController {
             commit(image, from: nil, editAfter: true)
         case .window(let picked):
             LastCapture.remember(.window, picked.frame, window: picked.id)
+            if picked.isOwn { return takeOwnWindow(picked, editAfter: true) }
             close()
             Task {
                 do {

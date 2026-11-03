@@ -388,6 +388,25 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         primarySlider.previewDrag(false)
     }
 
+    /// Harness: a colour arriving with a mark in hand — the state the ink bug
+    /// lived in.
+    ///
+    /// Returns what the mark got and what the tool remembers, the second read
+    /// back through the store rather than out of the field: the question is not
+    /// what this window believes, it is what the next one will open on. A mark
+    /// is made here and thrown away again because a selection that outlived the
+    /// drill would be a selection the next drill has to work around.
+    func previewInk(_ colour: NSColor, onSelectedMark: Bool) -> (mark: NSColor?, tool: NSColor?) {
+        let mark = ShapeMark(shape: .rectangle,
+                             rect: CGRect(x: 12, y: 12, width: 60, height: 40),
+                             style: style(for: .rectangle))
+        canvas.selected = onSelectedMark ? mark : nil
+        applyInk(colour)
+        let remembered = EditorStyleStore.load()[.rectangle]?.color
+        canvas.selected = nil
+        return (onSelectedMark ? mark.style.color : nil, remembered)
+    }
+
     /// Harness: the three bars in content-view coordinates.
     ///
     /// They are pinned to three different anchors, so the one failure with no
@@ -1132,7 +1151,32 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     @objc private func presetTapped(_ sender: NSButton) {
         let presets = Self.presetColours
         guard presets.indices.contains(sender.tag) else { return }
-        mutateStyle(tag: "color") { $0.color = presets[sender.tag].colour }
+        applyInk(presets[sender.tag].colour)
+    }
+
+    /// A colour handed over by a dot or by the well: the ink, not only the mark.
+    ///
+    /// Both roads come through here because the two have to agree about the one
+    /// thing that was wrong. A colour press is a decision about what to draw
+    /// *with*, so it belongs to the tool as much as to whatever is selected —
+    /// and `mutateStyle` is the wrong place for that half of it, because it
+    /// stops at the selection it finds and comes back. That stop is what lost
+    /// the choice: a mark is still selected after it has been drawn, so
+    /// choosing black while it was in hand recoloured the mark, put the ring on
+    /// the eighth dot, and left the tool's own colour where it was — the next
+    /// mark came out in the old red, and the only way to annotate in black was
+    /// to choose it again every single time.
+    private func applyInk(_ colour: NSColor) {
+        var ink = style(for: currentTool)
+        ink.color = colour
+        styles[currentTool] = ink
+        // On disk before the mark, because this is the half that outlives the
+        // window: what the next capture opens with.
+        EditorStyleStore.save(styles)
+        // What the next stroke draws with, whether it starts now or after the
+        // selection is dropped.
+        canvas.style = ink
+        mutateStyle(tag: "color") { $0.color = colour }
     }
 
     /// The eighth dot: the well, for the colour nobody keeps on a shelf.
@@ -1153,8 +1197,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     }
 
     @objc private func panelColourChanged(_ sender: NSColorPanel) {
-        let colour = sender.color
-        mutateStyle(tag: "color") { $0.color = colour }
+        // Continuous, so this arrives while the wheel is still being dragged:
+        // the same road a presets press takes, for the same reason.
+        applyInk(sender.color)
     }
 
     /// Bold and italic, as two chips rather than two keys.
@@ -1371,6 +1416,14 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     /// Where the picture has been pushed to, in points, from the middle of the
     /// view. Only means anything while zoomed past the window.
     private var pan: CGSize = .zero
+    /// When the wheel last wrote a line to the log, how many events the current
+    /// turn has sent and how far it has travelled. Diagnostics only: the one
+    /// number that cannot be read off the code is how much a turn of the wheel
+    /// in the user's hand is worth, and the step is a function of it.
+    private var lastWheelLog = Date(timeIntervalSince1970: 0)
+    private var lastPanLog = Date(timeIntervalSince1970: 0)
+    private var wheelBurstCount = 0
+    private var wheelBurstTravel: CGFloat = 0
     /// Whose turn it is to say what the picture is scaled to. The bar shows a
     /// percentage, and the percentage depends on the window as much as on the
     /// zoom, so the canvas is the only thing that can work it out.
@@ -1388,20 +1441,28 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         reportZoom()
     }
 
-    /// One step in or out, ten percentage points at a time.
+    /// One step in or out, measured in percentage points.
     ///
     /// A ratio was the first try and it was the wrong kind of number: ×1.25 from
     /// a hundred gives a hundred and twenty-five, and a ladder of numbers
     /// nobody asked for. A step is a habit, and a habit is countable — from
-    /// wherever the picture happens to be, one press lands on the next round
-    /// ten, so the ladder reads 10, 20, 30 … and a fit at 73% steps to 80%.
-    func stepZoom(_ direction: CGFloat) {
+    /// wherever the picture happens to be, one step lands on the next multiple,
+    /// so the ladder reads 10, 20, 30 … and a fit at 73% steps to 80%.
+    ///
+    /// Ten for the bar's + / −, because a press is a deliberate act and ten
+    /// points is a visible move. Five for the wheel, because a notch is a
+    /// twitch and a turned wheel sends them in pairs — at ten the picture
+    /// jumped a fifth of its size between two fingers. The number is here, in
+    /// the default, so it can be moved without touching either caller.
+    func stepZoom(_ direction: CGFloat, by points: Int = 10) {
         let here = Int((scale * 100).rounded())
         let target = direction > 0
-            ? (here / 10) * 10 + 10
+            ? (here / points) * points + points
             // From a round number the step has to leave it: 100 down to 90, not
             // to 100 again.
-            : (here % 10 == 0 ? here : (here / 10) * 10) - 10
+            : (here % points == 0 ? here : (here / points) * points) - points
+        // The floor stays ten whatever the step: below that the picture is a
+        // thumbnail with a frame around it, and the bar is the way back.
         setZoom(CGFloat(max(target, 10)) / 100)
     }
 
@@ -1709,7 +1770,84 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
             super.scrollWheel(with: event)
             return
         }
-        // A mouse wheel reports lines, a trackpad reports points. Ten lines to
+        // A mouse wheel zooms — the same ask as the pinch, only without a
+        // second finger. What separates a wheel from the trackpad is not the
+        // delta precision (wheel software fakes that) but the phase: only a
+        // touch surface reports began/changed/ended, and only a touch surface
+        // keeps reporting while the glide coasts down.
+        //
+        // Precision is asked a second question further down, and it is a
+        // different question: not "wheel or trackpad" but "is this event a
+        // notch, or one frame of a smoothed turn". A driver that smooths turns
+        // one notch into thirty events, and only the travel is the same number
+        // for both shapes of device.
+        //
+        // Every event says which branch it took, and by what numbers, because
+        // the one question this judgement gets wrong is about the device in
+        // the hand and there is no way to see a device from code: a wheel that
+        // arrives as `.began/.changed/.ended` looks exactly like a trackpad
+        // here, and the fix has to start from the file the event wrote down.
+        //
+        // `isEmpty`, not `== .none`: `NSEvent.Phase` is an option set, and the
+        // literal `.none` in a comparison is read as `Optional.none` — the
+        // phase is then promoted to an optional and compared against nil,
+        // which is false for every event ever posted. The compiler only warns,
+        // and the warning was the whole bug: the zoom branch existed, compiled,
+        // and could not be reached.
+        let wheel = event.phase.isEmpty && event.momentumPhase.isEmpty
+        // A wheel is logged event by event, because how many events one turn
+        // sends is the one number that cannot be read off the code and is the
+        // whole question of how big a step can be. The burst total is written
+        // when the turn is over, one quarter of a second after the last event:
+        // that is the "one notch of this mouse" figure, in the device's own
+        // units, and the step is set from it.
+        //
+        // A trackpad is throttled to one line a second, because sixty a second
+        // is not a fact worth having.
+        let now = Date()
+        if now.timeIntervalSince(lastWheelLog) > 0.35, wheelBurstCount > 0 {
+            diagLog("Editor wheel burst: \(wheelBurstCount) event(s), travel=\(wheelBurstTravel)")
+            wheelBurstCount = 0
+            wheelBurstTravel = 0
+        }
+        if wheel {
+            lastWheelLog = now
+            wheelBurstCount += 1
+            wheelBurstTravel += event.scrollingDeltaY
+            diagLog("Editor wheel: dy=\(event.scrollingDeltaY) dx=\(event.scrollingDeltaX)"
+                    + " precise=\(event.hasPreciseScrollingDeltas) → \(wheel ? "zoom" : "pan")")
+        } else if now.timeIntervalSince(lastPanLog) >= 0.5 {
+            lastPanLog = now
+            diagLog("Editor pan: dy=\(event.scrollingDeltaY) dx=\(event.scrollingDeltaX)"
+                    + " precise=\(event.hasPreciseScrollingDeltas)"
+                    + " phase=\(event.phase.rawValue) momentum=\(event.momentumPhase.rawValue)")
+        }
+        if wheel {
+            guard event.scrollingDeltaY != 0 else { return }
+            if event.hasPreciseScrollingDeltas {
+                // A smoothed wheel (Mos, Logi Options+) arrives as a stream of
+                // points: one turn of the wheel is thirty events, ramping up
+                // and down. A step counted per event is therefore a step per
+                // frame of the animation, which is how one flick of the wrist
+                // became half the picture. Travel is the only honest unit here
+                // — the zoom is proportional to how far the wheel turned, not
+                // to how finely a driver chopped that turn up.
+                //
+                // The rate is set from a measured turn: 81 points of travel,
+                // which at 0.0015 is about twelve percent. One number, one
+                // place; a device that turns heavier can be answered by moving
+                // it and nothing else.
+                setZoom(scale * CGFloat(exp(-Double(event.scrollingDeltaY) * 0.0015)))
+            } else {
+                // A wheel that reports lines sends one event per notch, and one
+                // notch is one step — five points, which is the ladder the bar's
+                // + / − climb cut in half, because a notch is a twitch and a
+                // press is a decision.
+                stepZoom(event.scrollingDeltaY < 0 ? 1 : -1, by: 5)
+            }
+            return
+        }
+        // A trackpad reports points, a mouse wheel reports lines. Ten lines to
         // a point is a guess, but it is the guess every AppKit app makes.
         let unit: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
         var dx = event.scrollingDeltaX * unit

@@ -7,20 +7,29 @@ Copyright 2026 Alejandro Buján, licensed under the MIT License.
 Tendedero's licence as published is LICENSE-MIT, and it is not changed by this
 fork.
 
-The additions listed below are licensed under the Apache License, Version 2.0.
-The licence text is LICENSE.
+The additions written for Clothespeg are licensed as follows:
 
-So the two apply to different parts: MIT to Alejandro Buján's work as
-published in Tendedero, Apache-2.0 to everything written for Clothespeg.
+- Versions 1.11.0 and earlier were released under the Apache License, Version
+  2.0. Those releases keep that licence; the text is in the project history at
+  those tags.
+- Version 2.0.0 and later are licensed under the PolyForm Noncommercial License
+  1.0.0. The text is LICENSE.
 
-The licensor for the Apache-2.0 half is VIZWISE (HONGKONG) LIMITED. It is also
-the company whose Developer ID a release is signed with, which keeps the
-copyright and the signature on the same party — the patent grant in section 3
-of the licence can only be given by the copyright holder, so a split between the
-two would weaken what that clause is worth.
+So the licences apply to different parts: MIT to Alejandro Buján's work as
+published in Tendedero, and the PolyForm Noncommercial License to everything
+written for Clothespeg from 2.0.0 onward. The Apache-2.0 text that covered the
+earlier releases is kept in the git history for those tags.
 
-Apache-2.0 asks that a redistributed copy carry these notices. This file is
-where the provenance of a fork is recorded; it is not itself a licence.
+The licensor for the Clothespeg additions is VIZWISE (HONGKONG) LIMITED. It is
+also the company whose Developer ID a release is signed with, which keeps the
+copyright and the signature on the same party.
+
+Selling Clothespeg, or any other use for a commercial purpose, is not granted by
+the PolyForm Noncommercial License. It requires a separate commercial licence
+from VIZWISE (HONGKONG) LIMITED. Contact the licensor before selling or
+distributing it for a commercial purpose.
+
+This file records the provenance of the fork. It is not itself a licence.
 
 
 ---

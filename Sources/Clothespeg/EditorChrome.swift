@@ -7,15 +7,15 @@ import AppKit
 /// `#d97757`, and it stays an emphasis colour only — the picked tool, the
 /// primary button — never a ground and never a text colour.
 enum EditorInk {
-    static let clay = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
+    /// `CDS.clayInk`, the app's one orange, under the name this window calls it
+    /// by. Not restated: a second `#d97757` here is a second thing to forget to
+    /// change, and `scripts/check-colours.swift` would rightly fail on it.
+    static let clay = CDS.clayInk
 
     /// The word on clay: white on light, near-black on dark, where white on
-    /// clay glows more than it reads.
-    static let onClay = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.102, green: 0.098, blue: 0.094, alpha: 1)
-            : .white
-    }
+    /// clay glows more than it reads. The rule and its two inks live with the
+    /// colour; this is the AppKit face of it.
+    static let onClay = CDS.onClayInk
 
     /// The hairline the CDS pill wears. A tray of controls should not read as a
     /// tray of boxes, so it is quiet — but a ring at 8% is not quiet, it is

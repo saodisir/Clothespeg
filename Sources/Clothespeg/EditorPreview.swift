@@ -437,6 +437,10 @@ enum EditorPreview {
             sliderDrill(controller)
         }
 
+        if ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_INK"] != nil {
+            inkDrill(controller)
+        }
+
         // The title bar is part of what is being looked at now: the file name
         // and its size moved up there, so a shot of the content view alone
         // would leave out the one line the round was about. The frame view is
@@ -904,6 +908,67 @@ enum EditorPreview {
         // of the editor as the user left it.
         controller.previewSlidePrimary(to: Double(before))
         controller.previewReleasePrimary()
+    }
+
+    /// Whether a colour chosen with a mark in hand is the next mark's colour
+    /// too.
+    ///
+    /// The failure this exists to catch is invisible in a picture of the strip:
+    /// the ring sat on the dot that had just been chosen, the drawer said black,
+    /// and the next stroke came out red. What was wrong was never the drawing —
+    /// it was that the colour press stopped at the selected mark and never
+    /// reached the tool, so the choice had to be made again for every mark. So
+    /// the drill does the sequence the user does: a mark in hand, then a colour,
+    /// then read the tool's own colour back off the disk — the copy the next
+    /// window opens on — rather than the one this window is showing.
+    private static func inkDrill(_ controller: EditorWindowController) {
+        // The tool sizes this drill overwrites are the user's. "Never chosen" is
+        // not the same as "chosen", so an absent key is put back as absent.
+        let stored = UserDefaults.standard.object(forKey: EditorStyleStore.defaultsKey)
+        defer {
+            if let stored {
+                UserDefaults.standard.set(stored, forKey: EditorStyleStore.defaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: EditorStyleStore.defaultsKey)
+            }
+        }
+
+        func srgb(_ colour: NSColor?) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+            guard let resolved = colour?.usingColorSpace(.sRGB) else { return nil }
+            return (resolved.redComponent, resolved.greenComponent, resolved.blueComponent)
+        }
+        func hex(_ colour: NSColor?) -> String {
+            guard let c = srgb(colour) else { return "nothing" }
+            return String(format: "#%02x%02x%02x", Int(c.r * 255), Int(c.g * 255), Int(c.b * 255))
+        }
+        func isSame(_ a: NSColor?, _ b: NSColor) -> Bool {
+            guard let x = srgb(a), let y = srgb(b) else { return false }
+            return abs(x.r - y.r) < 0.01 && abs(x.g - y.g) < 0.01 && abs(x.b - y.b) < 0.01
+        }
+
+        controller.select(.rectangle)
+
+        // Colours the tool cannot already be holding. Without that care the
+        // check compares the saved colour with itself and passes on a build
+        // that writes nothing at all — which is exactly the build this drill
+        // was written against, so it was caught passing before it ever ran.
+        let already = EditorStyleStore.load()[.rectangle]?.color
+        let well: NSColor = isSame(already, .black) ? .white : .black
+        let dot: NSColor = isSame(already, .systemGreen) ? .systemBlue : .systemGreen
+
+        // The well, with a frame still selected — the state after drawing one.
+        let (mark, tool) = controller.previewInk(well, onSelectedMark: true)
+        print("ink: the frame in hand became \(hex(mark)), the tool remembers \(hex(tool))")
+        print(isSame(mark, well) && isSame(tool, well)
+              ? "ink: a colour chosen while a mark is in hand is the next mark's too"
+              : "ink: FAILED — the choice stopped at the mark (wanted \(hex(well)), tool kept \(hex(tool)))")
+
+        // A dot is the same act and has to take the same road.
+        let (presetMark, presetTool) = controller.previewInk(dot, onSelectedMark: true)
+        print("ink: a dot in hand became \(hex(presetMark)), the tool remembers \(hex(presetTool))")
+        print(isSame(presetMark, dot) && isSame(presetTool, dot)
+              ? "ink: a dot takes the same road as the well"
+              : "ink: FAILED — a dot and the well disagree (wanted \(hex(dot)), tool kept \(hex(presetTool)))")
     }
 
     /// Whether the editor opens under the line rather than in the middle of the

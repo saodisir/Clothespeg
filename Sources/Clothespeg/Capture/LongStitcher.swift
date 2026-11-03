@@ -1,7 +1,7 @@
 import CoreGraphics
 import Vision
 
-/// Stitching a region that keeps growing downwards into one tall picture.
+/// Stitching a region that keeps growing into one tall picture.
 ///
 /// The frames arrive by hand: the person scrolls, this samples, and nothing is
 /// posted into the other app — no `CGEvent`, no Accessibility permission. So
@@ -23,17 +23,26 @@ import Vision
 /// same. That check is below, and it is what turns a plausible number into a
 /// refusal.
 ///
+/// **The picture is a page, not a ribbon.** Every frame is placed at the spot it
+/// was seen at, and the output is the union of those spots. Which is why both
+/// directions are allowed (2026-11-03): scrolling up is not a mistake, it is
+/// wanting the paragraph above the one you started on. Scrolling back over
+/// something already seen costs nothing — that band is simply drawn again, in
+/// place, by the newer frame — so a gesture that wanders up and down still ends
+/// at one continuous picture, from the highest frame's top to the lowest
+/// frame's bottom.
+///
 /// Pixels throughout. The frames all come from the same rectangle on the same
 /// display, so they are all the same size and the scale never has to be known
 /// here — it is only needed to say the height in points, which is the caller's
 /// business.
 final class LongStitcher {
     enum Step {
+        /// How far the last frame moved, positive downwards. Negative is a
+        /// scroll towards the top of the page.
         case advanced(pixels: Int)
         /// Nothing moved: the wheel is at rest, or the page has reached its end.
         case still
-        /// The content moved the other way. This mode only grows downwards.
-        case backwards
         /// No usable measurement: too fast to still overlap, or nothing in the
         /// frame worth recognising.
         case lost(String)
@@ -43,22 +52,29 @@ final class LongStitcher {
     private(set) var size = CGSize.zero
     private var frames: [CGImage] = []
     /// Where each frame's top edge sits, measured downwards from the top of the
-    /// stitched picture.
+    /// *first* frame — which is only where the gesture started, not the top of
+    /// the picture. Signed: a frame seen by scrolling up has a negative top.
     private var tops: [Int] = []
+    /// The picture's own extent, in the same signed space. Kept as two numbers
+    /// rather than recomputed, because `height` is asked on every frame.
+    private var minTop = 0
+    private var maxBottom = 0
 
     /// A ceiling, because this is a picture that grows while the person keeps
     /// scrolling and a 90,000-pixel-tall canvas is a memory problem, not a
-    /// screenshot. Roughly twenty screens.
+    /// screenshot. Roughly twenty screens, in either direction together.
     private static let maxHeight = 20000
 
     var count: Int { frames.count }
-    var height: Int { frames.first.map { $0.height + (tops.last ?? 0) } ?? 0 }
+    var height: Int { maxBottom - minTop }
 
-    /// The first frame: it is the top of the picture, and it is also the
+    /// The first frame: it is where the gesture started, and it is also the
     /// reference every later frame is measured against.
     func start(_ frame: CGImage) {
         frames = [frame]
         tops = [0]
+        minTop = 0
+        maxBottom = frame.height
         size = CGSize(width: frame.width, height: frame.height)
     }
 
@@ -74,8 +90,14 @@ final class LongStitcher {
     static var notes: [String] { [noteResized, noteTooFast, noteCeiling] }
 
     /// One more frame, taken after the person scrolled.
+    ///
+    /// Measured against the frame before it *in time*, never against the one
+    /// nearest the bottom of the picture: after a scroll towards the top the
+    /// newest frame sits above the previous one, and measuring against the
+    /// bottom-most frame would be comparing two photographs of different
+    /// paragraphs.
     func append(_ frame: CGImage) -> Step {
-        guard let last = frames.last else {
+        guard let last = frames.last, let lastTop = tops.last else {
             start(frame)
             return .advanced(pixels: 0)
         }
@@ -86,19 +108,23 @@ final class LongStitcher {
             return .lost(Self.noteTooFast)
         }
         if moved == 0 { return .still }
-        if moved < 0 { return .backwards }
         // Less than a sixth of the frame left in common is not an overlap, it is
         // a guess. Better to stop and say so than to stitch a seam nobody can
         // find until the picture is published.
-        let overlap = Int(size.height) - moved
+        let overlap = Int(size.height) - abs(moved)
         guard overlap >= Int(size.height) / 6 else {
             return .lost(Self.noteTooFast)
         }
-        guard height + moved <= Self.maxHeight else {
+        let top = lastTop + moved
+        let nextMin = min(minTop, top)
+        let nextMax = max(maxBottom, top + frame.height)
+        guard nextMax - nextMin <= Self.maxHeight else {
             return .lost(Self.noteCeiling)
         }
         frames.append(frame)
-        tops.append((tops.last ?? 0) + moved)
+        tops.append(top)
+        minTop = nextMin
+        maxBottom = nextMax
         return .advanced(pixels: moved)
     }
 
@@ -110,8 +136,10 @@ final class LongStitcher {
     /// loses.
     ///
     /// y-up, like every Core Graphics context: the *top* of the picture is the
-    /// highest y, so a frame whose top edge is `tops[i]` below the top of the
-    /// picture is drawn with its top at `height - tops[i]`.
+    /// highest y, so a frame whose top edge sits `t` below the picture's own top
+    /// (`minTop`) is drawn with its top at `height - t`. Frames stay in the
+    /// order they were taken, which is what makes a band that has been scrolled
+    /// back over be repainted by the newer picture rather than the stale one.
     func image() -> CGImage? {
         guard let first = frames.first else { return nil }
         let width = first.width
@@ -124,7 +152,7 @@ final class LongStitcher {
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
         for (index, frame) in frames.enumerated() {
-            let top = tops[index]
+            let top = tops[index] - minTop
             let rect = CGRect(x: 0, y: CGFloat(tall - top - frame.height),
                               width: CGFloat(frame.width), height: CGFloat(frame.height))
             context.draw(frame, in: rect)

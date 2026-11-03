@@ -130,7 +130,8 @@
 "Open System Settings" = "Open System Settings";
 "After granting it, macOS may ask you to reopen Clothespeg." = "After granting it, macOS may ask you to reopen Clothespeg.";
 "Based on Tendedero" = "Based on Tendedero";
-"by Alejandro Buján, used under the MIT License. This fork is Apache-2.0." = "by Alejandro Buján, used under the MIT License. This fork is Apache-2.0.";
+"Clothespeg" = "Clothespeg";
+"Licensed under the PolyForm Noncommercial License 1.0.0. Based on Tendedero by Alejandro Buján, used under the MIT License." = "Licensed under the PolyForm Noncommercial License 1.0.0. Based on Tendedero by Alejandro Buján, used under the MIT License.";
 "Licence" = "Licence";
 "Done" = "Done";
 "Retention" = "Retention";
@@ -143,7 +144,6 @@
 "Language" = "Language";
 "Changes apply at once." = "Changes apply at once.";
 "Translate into" = "Translate into";
-"The capture's 译 button uses this. The system's own translator does the work, on this Mac." = "The capture's 译 button uses this. The system's own translator does the work, on this Mac.";
 "Clean up" = "Clean up";
 "Clipboard cards" = "Clipboard cards";
 "Clear the clipboard?" = "Clear the clipboard?";
@@ -290,7 +290,7 @@
 "Zoom In" = "Zoom In";
 "Zoom Out" = "Zoom Out";
 "Zoom to Fit" = "Zoom to Fit";
-"Show shortcuts on the buttons" = "Show shortcuts on the buttons";
+"Show capture editor shortcuts" = "Show capture editor shortcuts";
 "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain.";
 
 "Capture the screen" = "Capture the screen";
@@ -325,9 +325,8 @@
 "Translate · the same words, another language" = "Translate · the same words, another language";
 "Edit · take it and open the editor" = "Edit · take it and open the editor";
 "Again · put the last frame back" = "Again · put the last frame back";
-"Scroll down · Return when done" = "Scroll down · Return when done";
+"Scroll up or down · Return when done" = "Scroll up or down · Return when done";
 "Drag the area that should keep growing" = "Drag the area that should keep growing";
-"That went upwards — this one only grows downwards" = "That went upwards — this one only grows downwards";
 "That scroll was too fast to follow — go a little slower." = "Too fast to follow · slower, with an overlap";
 "That is as long as one picture can be." = "That is as long as one picture can be.";
 "The area changed size while it was being captured." = "The area changed size while it was being captured.";
@@ -347,3 +346,16 @@
 "Cannot tell which language these words are in" = "Cannot tell which language these words are in";
 "This Mac cannot translate between those two languages" = "This Mac cannot translate between those two languages";
 "Those words are already in this language" = "Already in this language · change it in Settings";
+
+/* Clipboard page — the 译 button's language, engine and key */
+"Translation" = "Translation";
+"Translation API" = "Translation API";
+"Address" = "Address";
+"Model" = "Model";
+"API key" = "API key";
+"Test" = "Test";
+"Testing…" = "Testing…";
+"Works" = "Works";
+"Did not work" = "Did not work";
+"If this API key is filled in, translation uses that key's model by default." = "If this API key is filled in, translation uses that key's model by default.";
+"Capture editor" = "Capture editor";

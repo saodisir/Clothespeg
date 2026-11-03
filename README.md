@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  免费开源 · macOS 14 及更高版本 · <a href="#致谢">基于 Tendedero</a>
+  免费 · 非商用 · macOS 14 及更高版本 · <a href="#致谢">基于 Tendedero</a>
 </p>
 
 Clothespeg 的灵感来自 Tendedero，西班牙语里的「晾衣绳」。一根晾衣绳穿起一个剪贴板、一个便签簿：复制过的截图、文字、文件夹都晾在上面，随用随取；便签也晾在绳上，写灵感、记待办，抬眼就在。刘海停一停，绳就放下来；移开，绳就收起，不打断手头的事。
@@ -162,7 +162,7 @@ scripts/build-app.sh release && scripts/make-dmg.sh
 
 ## 给作者买杯咖啡
 
-Clothespeg 免费开源，不放广告，也没有付费墙。如果它帮你省了时间，欢迎请作者喝杯咖啡。
+Clothespeg 免费、非商用，不放广告，也没有付费墙。如果它帮你省了时间，欢迎请作者喝杯咖啡。
 
 <p align="center">
   <a href="https://cv4z8ffs.jsjform.com/p/j5Jhqc">
@@ -182,22 +182,23 @@ Clothespeg 由 [Alejandro Bujan](https://github.com/alejandrobujan) 的 **[Tende
 
 ## 许可证
 
-本项目涉及两份许可证，因为代码来自两个地方：
+本项目涉及两份上游许可证，因为代码来自两个地方：
 
 - **Tendedero（原项目）是 MIT** —— 绳、衣夹、毛玻璃、卡片落绳的摆动，出自
   Alejandro Buján之手，**始终是 MIT，未因本 fork 改变**。原文见 [LICENSE-MIT](LICENSE-MIT)。
-- **本 fork 是 Apache License 2.0** —— 数据模型、便签绳、胶囊工具条、盯住隐藏、
-  截图收件箱、翻页等新增部分。全文见 [LICENSE](LICENSE)，改动清单见 [NOTICE](NOTICE)。
+- **本 fork 的新增部分**：**1.11.0 及更早版本依 Apache License 2.0**；**自 2.0.0 起改用
+  PolyForm Noncommercial License 1.0.0**（全文见 [LICENSE](LICENSE)，改动清单见 [NOTICE](NOTICE)）。
 
-MIT 允许其代码被重新授权进 Apache-2.0，所以两处并存是合法的。
-**读到 Alejandro Buján 的部分适用 MIT，读到新增的部分适用 Apache-2.0。**
+MIT 允许其代码被重新授权，所以 Tendedero 那半永远是 MIT，与新增部分的协议并存互不冲突。
+**读到 Alejandro Buján 的部分适用 MIT；读到 2.0.0 起新增的部分，适用 PolyForm Noncommercial License。**
 
-Apache-2.0 那半的**授权方是 VIZWISE (HONGKONG) LIMITED**，也是发布时签名所用的公司 ——
-版权主体与签名主体是同一方，第 3 条的专利授权才立得住（专利授权只能由版权人给出）。
+### 这意味着什么
 
-你可以自由地使用、修改、再分发，**包括闭源商用**。
-Apache-2.0 另外给出一项**专利授权**（你不会因为用了这份代码而专利指控被反诉），
-并要求**注明做了哪些改动**。
+你可以**免费**地把 Clothespeg 用于个人、学习、研究、爱好等非商业用途，自由地使用、修改、再分发，
+并**保留 LICENSE 与 Required Notice 那一行**。PolyForm NC 还给出一项**专利授权**（你不会因为用了这份代码而在专利上被反诉）。
+
+**但是，本软件不允许用于商业目的，包括售卖、内置进商业产品、或用于公司业务**——这些不在授权范围内，
+需要向 **VIZWISE (HONGKONG) LIMITED** 取得单独的商业授权。想卖或做商业分发，请先联系授权方。
 
 「Name and icon」的限制不在这份授权之内：Tendedero 与 Clothespeg 的名称与图标
 都不在授权之列，再分发版本必须换名换图标，也不能暗示得到原作者背书。

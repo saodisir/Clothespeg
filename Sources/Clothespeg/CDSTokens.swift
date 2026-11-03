@@ -23,7 +23,19 @@ enum CDS {
     /// a chosen filter all used to light up in whatever blue macOS was set to,
     /// which is the one colour in the app that was not chosen. The user's own
     /// words for the fix were "这样我们所有的颜色都统一了".
-    static let clay = Color(red: 0.851, green: 0.467, blue: 0.341)
+    ///
+    /// The number itself is written down once, as `clayInk`; this is its
+    /// SwiftUI face. There used to be three copies — one here, one for the
+    /// AppKit drawing, one in `EditorInk` — and three copies of a colour is
+    /// three chances for one of them to be "slightly warmed" the next time a
+    /// view needs a hand. `scripts/check-colours.swift` keeps it at one.
+    static let clay = Color(nsColor: clayInk)
+
+    /// `clay` for AppKit, where a `Color` cannot be handed to `setFill()`.
+    ///
+    /// **The only `#d97757` in the source.** Everything that means "clay" in
+    /// this app resolves to this constant, in either framework.
+    static let clayInk = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
 
     /// The same clay, one step lighter: `#e9a88f`.
     ///
@@ -32,15 +44,40 @@ enum CDS {
     /// the frame reads as part of the picture it is drawing around, and the
     /// badge reads as a caption the app did not write. Same hue, so it is still
     /// the same colour family; lighter, so it stays a frame.
-    static let claySoft = Color(red: 0.914, green: 0.659, blue: 0.561)
+    static let claySoft = Color(nsColor: claySoftInk)
 
-    /// The same colour for the AppKit drawing the capture overlay does by hand,
-    /// where there is no `Color` to hand to a `CGContext`.
+    /// `claySoft` for AppKit. The second and last orange.
     static let claySoftInk = NSColor(srgbRed: 0.914, green: 0.659, blue: 0.561, alpha: 1)
 
-    /// `clay` as an `NSColor`, for the same reason: the capture bar is drawn by
-    /// hand, and a `Color` cannot be handed to `setFill()`.
-    static let clayInk = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
+    /// The word on clay, at the sizes a word is read at: dark ink on a dark
+    /// appearance, white on light — white on clay in the dark glows less than
+    /// it reads.
+    static func label(onClayIn scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(nsColor: onClayDark) : .white
+    }
+
+    /// `#1a1918`, the ink clay wears in the dark, shared by both faces of the
+    /// rule so the two cannot drift apart.
+    static let onClayDark = NSColor(srgbRed: 0.102, green: 0.098, blue: 0.094, alpha: 1)
+
+    /// The same rule for AppKit, which asks by appearance rather than by scheme.
+    static let onClayInk = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? onClayDark : .white
+    }
+
+    /// The ink clay wears when the thing on it is small: `#1b1917`, in both
+    /// appearances.
+    ///
+    /// There are exactly two answers to "what colour is the ink on clay", and
+    /// the difference between them is size rather than appearance. White on
+    /// `#d97757` measures about 3:1: legible at twelve points, a smudge at the
+    /// six and a half points of a corner key. So the capture bar's filled chips
+    /// — a 14-point glyph and a 6.5-point letter — take this one, and they take
+    /// it in the light too, where the rest of the app is wearing white on clay.
+    ///
+    /// Kept here, beside the other rule, so that a third answer cannot be
+    /// invented in a view that only wanted to look a little darker.
+    static let onClaySmallInk = NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 1)
 
     /// The ground the settings pages sit on, in both appearances.
     ///
@@ -62,12 +99,6 @@ enum CDS {
             NSColor(srgbRed: 0.961, green: 0.961, blue: 0.953, alpha: 1)   // #f5f5f3
         }
     })
-
-    /// The word on clay: dark ink on a dark appearance, white on light —
-    /// white on clay in the dark glows less than it reads.
-    static func label(onClayIn scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(red: 0.102, green: 0.098, blue: 0.094) : .white
-    }
 
     // MARK: Shape
 

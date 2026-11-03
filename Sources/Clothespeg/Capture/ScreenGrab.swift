@@ -72,7 +72,16 @@ enum ScreenGrab {
     /// a source rect that runs past the display with black bands rather than an
     /// error, and a picture with a black band down one side is a picture that
     /// looks like a bug in the app rather than a click that ran off the edge.
-    static func areaImage(in rect: CGRect, on screen: NSScreen) async throws -> CGImage {
+    ///
+    /// `excludingThisApp` is for the one caller that asks with the capture's own
+    /// overlay already on the screen. A long capture takes a frame every third
+    /// of a second while the dimmed window is up, and a dim is a picture of the
+    /// tool rather than of the page; there is no other way to leave one window
+    /// out, since a display filter can exclude applications and not windows.
+    /// Every other road here asks *before* the overlay exists, which is why
+    /// nothing of this app's needs leaving out of them.
+    static func areaImage(in rect: CGRect, on screen: NSScreen,
+                          excludingThisApp: Bool = false) async throws -> CGImage {
         let clipped = rect.intersection(screen.frame)
         guard !clipped.isNull, clipped.width >= 1, clipped.height >= 1 else {
             throw ScreenGrabError.noDisplay
@@ -81,7 +90,14 @@ enum ScreenGrab {
         guard let display = display(for: screen, in: content) else {
             throw ScreenGrabError.noDisplay
         }
-        let excluded = ownApplication(in: content).map { [$0] } ?? []
+        // Nothing is excluded, and the app itself least of all. This used to
+        // leave the whole of Clothespeg out, so that the capture's own dimmed
+        // window could not be photographed as part of the backdrop it draws —
+        // but there is no such window at the moment this runs: the overlay is
+        // built *from* the picture this returns. What the exclusion actually
+        // removed was the clipboard line, the editor and a pinned picture,
+        // which are on the screen and belong in a picture of the screen.
+        let excluded = excludingThisApp ? ownApplication(in: content).map { [$0] } ?? [] : []
         let filter = SCContentFilter(display: display,
                                      excludingApplications: excluded,
                                      exceptingWindows: [])
@@ -164,12 +180,13 @@ enum ScreenGrab {
         }
     }
 
-    /// This app, so it can be left out of its own pictures.
+    /// This app, for the one grab that is taken with its own overlay on screen.
     ///
-    /// Left in, the strip along the top of the screen is in every grab, and the
-    /// capture's own dimmed window would be photographed as part of the
-    /// backdrop it is drawing. Leaving it out means the pixels underneath show
-    /// through, which is what the picture should have shown all along.
+    /// A long capture samples the screen while the dimmed window is up, so the
+    /// whole app goes rather than the one window: a display filter can leave out
+    /// applications, not windows. The cost is that a surface of our own cannot
+    /// appear in a scrolling capture — and a frame with a dim drawn over the
+    /// page in it would be a worse bug than that.
     private static func ownApplication(in content: SCShareableContent) -> SCRunningApplication? {
         let pid = ProcessInfo.processInfo.processIdentifier
         return content.applications.first { $0.processID == pid }

@@ -80,14 +80,32 @@ enum CaptureSymbol {
     /// reads as a download at 14 points.
     static let long = "scroll"
     static let read = "text.viewfinder"
-    static let translate = "translate"
-    /// A pencil, plain. `square.and.pencil` draws a pencil *and* a canvas in
-    /// thirty points, and at this size the two collapse into a slashed box.
-    static let edit = "pencil"
-    /// Back the way it came — the button puts the last frame back rather than
-    /// taking anything by itself, and an arrow turning back says exactly that.
-    static let again = "arrow.uturn.backward"
-    static let all = [ratio, long, read, translate, edit, again]
+    /// A bubble with a character in it, rather than `translate`.
+    ///
+    /// `translate` is two overlapping bubbles, and the rear one ends exactly in
+    /// the bottom right corner — which is where this bar puts the key. The `T`
+    /// landed on that bubble's outline and read as a smudge, reported as soon as
+    /// the keys moved into the corners. `character.bubble` is one bubble whose
+    /// tail is bottom *left*, so the corner the letter needs is empty, and it
+    /// still says "words, spoken in another language".
+    static let translate = "character.bubble"
+    /// A pencil over a scribble: writing on the picture, which is what the
+    /// editor is for. Three earlier answers were all pictures of a pencil
+    /// (`pencil`, `highlighter`); this one is the only one that shows a pencil
+    /// *at work*, and at 14 points that difference is what tells it apart from
+    /// the rectangle beside it.
+    static let edit = "pencil.and.scribble"
+    /// A dashed frame — the frame that comes back, still empty.
+    ///
+    /// This button does not take a second picture and does not reopen the last
+    /// one: it puts the frame back where it was and waits for a person to press
+    /// Return. That is precisely what a dashed frame means, and it is why this
+    /// beat the whole family of return arrows (`arrow.uturn.backward`,
+    /// `arrow.uturn.backward.square`): an arrow says "back", never "this frame
+    /// is on screen but nothing has been taken yet".
+    static let again = "rectangle.dashed"
+    /// In the order they are drawn, which is also the order they are read.
+    static let all = [ratio, long, read, translate, again, edit]
 }
 
 /// What the capture draws and what it hears.
@@ -142,7 +160,20 @@ final class CaptureSurface: NSView {
     /// passes the threshold that tells it apart from a click, and it stays
     /// after the release: a frame that is drawn is a frame that can still be
     /// adjusted.
-    private var selection: CGRect?
+    private var selection: CGRect? {
+        didSet {
+            // The frame on screen is no longer the one `重截` put back: it is
+            // being drawn, moved, resized, replaced by a window or by the whole
+            // screen. The light belongs to the replay, not to any rectangle, so
+            // it goes out here — one place, because every road that changes the
+            // frame comes through this property.
+            //
+            // Compared rather than assumed: `restore` sets the same rectangle it
+            // is about to light, and a report after a rescale or a reshape of an
+            // unchanged frame must not put the light out.
+            if selection != oldValue { againShowing = false }
+        }
+    }
     /// What the press in progress has hold of. One value rather than three
     /// booleans, because the three are exclusive — a press that is resizing an
     /// edge is not also drawing a new rectangle, and a flag left over from the
@@ -234,6 +265,22 @@ final class CaptureSurface: NSView {
     private var doneHover = false
     /// Whether the pointer is over the ✕.
     private var closeHover = false
+
+    /// Whether the frame on screen is one `重截` put back.
+    ///
+    /// A state, not a press: while that frame is up, `重截` is lit, because what
+    /// the chip is saying is "this rectangle came from the last capture" and
+    /// that keeps being true until the rectangle stops being that one — a new
+    /// drag, another window, the whole screen, a resize. Cleared by the frame
+    /// changing (see `selection`), set by `restore`.
+    ///
+    /// The first version of this was a 0.3 s glow, which was a mistake of
+    /// category: the light was timed like a button press when the thing it
+    /// describes is a frame that stays on screen. The user's correction was
+    /// 「出现的对话框就应该是出现的，它在出现的过程中，就应该一直是亮的」.
+    private var againShowing = false {
+        didSet { if againShowing != oldValue { needsDisplay = true } }
+    }
 
     /// What the region is doing once `识别` has been pressed.
     ///
@@ -536,6 +583,15 @@ final class CaptureSurface: NSView {
 
     // MARK: The drawing
 
+    /// The bar's surface and ink are chosen from the appearance, so a change in
+    /// the middle of a capture — the system switching at sunset, or the app's
+    /// own switch being moved — has to be a repaint rather than a bar that stays
+    /// the colour it was asked for first. AppKit asks here and nowhere else.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
@@ -652,7 +708,7 @@ final class CaptureSurface: NSView {
         let text = aspect.ratio == nil ? numbers : "\(aspect.title)  \(numbers)"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 1),
+            .foregroundColor: CaptureInk.onClay,
         ]
         let size = (text as NSString).size(withAttributes: attributes)
         let padding = NSSize(width: 7, height: 3)
@@ -700,7 +756,10 @@ final class CaptureSurface: NSView {
     /// that have it sit low in a 22-point circle.
     private func drawClose(_ rect: NSRect, lit: Bool) {
         let disc = NSBezierPath(ovalIn: rect)
-        NSColor.white.withAlphaComponent(lit ? 0.24 : 0.11).setFill()
+        // The bar's ink rather than white: on a light bar a white disc is not a
+        // disc, it is nothing at all.
+        CaptureInk.ink(effectiveAppearance)
+            .withAlphaComponent(lit ? 0.18 : 0.09).setFill()
         disc.fill()
         let cross = NSBezierPath()
         let centre = NSPoint(x: rect.midX, y: rect.midY)
@@ -711,7 +770,8 @@ final class CaptureSurface: NSView {
         cross.line(to: NSPoint(x: centre.x + arm, y: centre.y - arm))
         cross.lineWidth = 1.4
         cross.lineCapStyle = .round
-        NSColor.white.withAlphaComponent(lit ? 0.95 : 0.75).setStroke()
+        CaptureInk.ink(effectiveAppearance)
+            .withAlphaComponent(lit ? 0.95 : 0.7).setStroke()
         cross.stroke()
     }
 
@@ -726,18 +786,23 @@ final class CaptureSurface: NSView {
     /// The bar carries the count, so what is cut off is still accounted for.
     private func drawReading(_ rect: NSRect) {
         let sheet = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        NSColor(srgbRed: 0.08, green: 0.078, blue: 0.075, alpha: 0.93).setFill()
+        CaptureInk.panel(effectiveAppearance).setFill()
         sheet.fill()
 
         let pad: CGFloat = 12
         let box = rect.insetBy(dx: pad, dy: pad)
-        guard box.width > 40, box.height > 18 else { return }
+        // A degenerate box (no room at all) has nothing to draw into; a short
+        // one — a single line of small text, say — still gets its one line,
+        // centred, rather than a blank panel with the words missing. The old
+        // `box.height > 18` test dropped exactly those: the sheet painted, the
+        // text did not, so a one-line read showed as an empty block.
+        guard box.width > 8 else { return }
 
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.93),
+            .foregroundColor: CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.93),
             .paragraphStyle: style,
         ]
 
@@ -754,10 +819,16 @@ final class CaptureSurface: NSView {
         case .found:
             guard let text = shownText else { return }
             let lineHeight: CGFloat = 17
-            let room = max(1, Int(box.height / lineHeight))
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            let room = max(1, Int(box.height / lineHeight))
+            // Top-down when there is a line of headroom; centred when the box is
+            // shorter than one line, so a single short line still lands inside
+            // the sheet instead of above it.
+            let oneLineShort = box.height < lineHeight
             for (index, line) in lines.prefix(room).enumerated() {
-                let y = box.maxY - CGFloat(index + 1) * lineHeight
+                let y = oneLineShort
+                    ? box.minY + (box.height - lineHeight) / 2
+                    : box.maxY - CGFloat(index + 1) * lineHeight
                 (String(line) as NSString).draw(in: NSRect(x: box.minX, y: y + 4,
                                                           width: box.width, height: lineHeight),
                                                 withAttributes: attributes)
@@ -891,7 +962,7 @@ final class CaptureSurface: NSView {
     private var lineWindow: String { L("Window · Return to capture") }
     private var lineWaiting: String { L("Drag out an area · click a window · Space for the whole screen") }
     private var lineArmed: String { L("Drag the area that should keep growing") }
-    private var lineGrowing: String { L("Scroll down · Return when done") }
+    private var lineGrowing: String { L("Scroll up or down · Return when done") }
     private var lineReadArmed: String { L("Drag the area whose words you want") }
     private var lineTranslateArmed: String { L("Drag the area to translate") }
     private var lineReading: String { L("The words in this area") }
@@ -903,13 +974,6 @@ final class CaptureSurface: NSView {
         L("This Mac cannot translate between those two languages")
     }
     private var lineTranslateNoop: String { L("Those words are already in this language") }
-    private var lineUpwards: String { Self.surfaceNote }
-
-    /// The one note with no counterpart in the stitcher: the scroll went the
-    /// wrong way. Named as a static because the harness measures it too.
-    nonisolated static var surfaceNote: String {
-        L("That went upwards — this one only grows downwards")
-    }
 
     private func textWidth(_ text: String, _ font: NSFont) -> CGFloat {
         (text as NSString).size(withAttributes: [.font: font]).width
@@ -932,7 +996,7 @@ final class CaptureSurface: NSView {
          lineTranslateArmed,
          lineGrowing, lineReading, lineTranslating, lineTranslated, lineTranslateFailed,
          lineTranslateNoop, lineTranslateUnsure, lineTranslateUnsupported,
-         lineUpwards, longNote ?? "", previewNote ?? ""] + LongStitcher.notes
+         longNote ?? "", previewNote ?? ""] + LongStitcher.notes
     }
 
     /// Where everything in the bar sits, in this view's own coordinates.
@@ -1009,10 +1073,11 @@ final class CaptureSurface: NSView {
         x += lineWidth + Self.barGap
         out.divider = NSRect(x: x, y: midY - 8, width: 1, height: 16)
         x += 1 + Self.barGap
-        // The run of chips: the ratio one first, then the four actions, then the
-        // repeat. Four points between them and ten before the `esc` — the tight
-        // gap is what makes them read as one row of the same kind of thing,
-        // which is the whole reason for borrowing the editor's numbers.
+        // The run of chips: the ratio one first, then the four actions, ending on
+        // the one that hands the picture over. Four points between them and ten
+        // before the `esc` — the tight gap is what makes them read as one row of
+        // the same kind of thing, which is the whole reason for borrowing the
+        // editor's numbers.
         func chip(_ x: CGFloat, _ width: CGFloat) -> NSRect {
             NSRect(x: x, y: midY - Self.chipHeight / 2, width: width, height: Self.chipHeight)
         }
@@ -1024,20 +1089,25 @@ final class CaptureSurface: NSView {
         x += Self.chipWidth + Self.chipGap
         out.translate = chip(x, Self.chipWidth)
         x += Self.chipWidth + Self.chipGap
-        out.edit = chip(x, Self.chipWidth)
+        // 重载 comes before 编辑. The row now ends on the button that hands the
+        // picture over, so the last thing under the hand after choosing a shape
+        // is the one that finishes the job; 重载 sits one place earlier because
+        // it throws the choice away and starts again.
         if againShown {
-            x += Self.chipWidth + Self.chipGap
             out.again = chip(x, Self.chipWidth)
+            x += Self.chipWidth + Self.chipGap
         }
+        out.edit = chip(x, Self.chipWidth)
         // The keys slot starts a full gap past whichever chip is last, which is
         // also where the pill is anchored below — one end for both, so a press
-        // meant for one cannot land on the other.
-        x = (againShown ? out.again.maxX : out.edit.maxX) + Self.barGap
+        // meant for one cannot land on the other. 编辑 is always drawn and is
+        // now always last, so this no longer has to ask which chip that is.
+        x = out.edit.maxX + Self.barGap
         // The pill and the ✕ hang off the far end of the slot the buttons share,
-        // whichever button is at that end. Anchored to `译` instead — where they
-        // were before this button existed — they would sit over a button that is
-        // no longer last, and the two would trade presses.
-        let lastButton = againShown ? out.again.maxX : out.edit.maxX
+        // which is the end 编辑 occupies. Anchored to `译` instead — where they
+        // were before these buttons existed — they would sit over a button that
+        // is no longer last, and the two would trade presses.
+        let lastButton = out.edit.maxX
         out.middle = NSRect(x: out.button.minX, y: midY - 8,
                             width: lastButton - out.button.minX, height: 16)
         // Pinned to the far edge of the slot the buttons share. The height
@@ -1243,6 +1313,9 @@ final class CaptureSurface: NSView {
     func restore(_ rect: CGRect) {
         guard mode == .shot, readingState == nil else { return }
         selection = rect
+        // After the assignment, not before: the `didSet` above puts every light
+        // out on a change of frame, and this is the one change that lights it.
+        if selection == rect { againShowing = true }
         press = .idle
         dragged = false
         barPress = false
@@ -1298,10 +1371,13 @@ final class CaptureSurface: NSView {
 
         let capsule = NSBezierPath(roundedRect: bar.capsule,
                                    xRadius: Self.barHeight / 2, yRadius: Self.barHeight / 2)
-        NSColor(srgbRed: 0.08, green: 0.078, blue: 0.075, alpha: 0.9).setFill()
+        // The editor's floating surface, in whichever appearance the app is
+        // wearing. The bar used to be one hardcoded dark colour, which made a
+        // light-mode app with a black bar in the corner of every capture.
+        CaptureInk.surface(effectiveAppearance).setFill()
         capsule.fill()
         NSGraphicsContext.restoreGraphicsState()
-        NSColor.white.withAlphaComponent(0.13).setStroke()
+        CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.13).setStroke()
         capsule.lineWidth = 1
         capsule.stroke()
 
@@ -1314,10 +1390,11 @@ final class CaptureSurface: NSView {
         // appeared about once a week.
         draw(bar.lineText, in: bar.line,
              attributes: [.font: Self.lineFont,
-                          .foregroundColor: NSColor.white.withAlphaComponent(0.86)],
+                          .foregroundColor: CaptureInk.ink(effectiveAppearance)
+                              .withAlphaComponent(0.86)],
              centred: true)
 
-        NSColor.white.withAlphaComponent(0.16).setFill()
+        CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.16).setFill()
         bar.divider.fill()
 
         if collapsed {
@@ -1328,7 +1405,8 @@ final class CaptureSurface: NSView {
                                  height: bar.middle.height)
             draw(bar.middleText, in: numbers,
                  attributes: [.font: Self.buttonFont,
-                              .foregroundColor: NSColor.white.withAlphaComponent(0.88)],
+                              .foregroundColor: CaptureInk.ink(effectiveAppearance)
+                                  .withAlphaComponent(0.88)],
                  centred: true)
 
             // The one pressable thing that changes what happens, and the only
@@ -1342,14 +1420,17 @@ final class CaptureSurface: NSView {
                 CDS.clayInk.setFill()
                 pill.fill()
                 if doneHover {
+                    // White on clay in both appearances: the ring is drawn on the
+                    // pill rather than on the bar, so the bar's ink is not its
+                    // ink — a near-black ring on clay in light mode would read as
+                    // a pressed border rather than as "this is the thing".
                     NSColor.white.withAlphaComponent(0.55).setStroke()
                     pill.lineWidth = 1.5
                     pill.stroke()
                 }
                 draw(bar.doneText, in: bar.done,
                      attributes: [.font: Self.buttonFont,
-                                  .foregroundColor: NSColor(srgbRed: 0.106, green: 0.098,
-                                                            blue: 0.090, alpha: 1)],
+                                  .foregroundColor: CaptureInk.onClay],
                      centred: true)
             }
 
@@ -1375,38 +1456,55 @@ final class CaptureSurface: NSView {
             drawChip(bar.read, symbol: CaptureSymbol.read, key: "W", picked: isPicked(.read))
             drawChip(bar.translate, symbol: CaptureSymbol.translate, key: "T",
                      picked: isPicked(.translate))
-            drawChip(bar.edit, symbol: CaptureSymbol.edit, key: nil)
-            // The last one never fills and has no key: it ends the capture
-            // rather than describing what the next one will be.
+            // 重载 before 编辑, the same order the row is laid out in. The one
+            // that ends nothing comes first; the one that takes the picture away
+            // is last, at the end of the row.
+            //
+            // `A` for again. It is the one key here that is not about the next
+            // drag but about ending this whole capture, so it is drawn even
+            // though the chip never fills: a key nobody can see is a key nobody
+            // presses. The letter choice is a mnemonic like the others (`L`
+            // long, `W` words, `T` translate, `R` ratio) — and bare rather than
+            // global for the same reason they are.
+            // `A` for again, and the one chip whose fill means something the
+            // other five cannot: "the frame you are looking at came from the
+            // last capture". It stays lit for as long as that is true.
             if againShown {
-                drawChip(bar.again, symbol: CaptureSymbol.again, key: nil)
+                drawChip(bar.again, symbol: CaptureSymbol.again, key: "A", picked: againShowing)
             }
+            // `E` for edit, the last of the five mnemonic keys. It ends the
+            // capture the way Return does, so it is not a mode either — but it
+            // is the one key that says what happens *after* the picture lands,
+            // which is the whole difference between this button and Return.
+            drawChip(bar.edit, symbol: CaptureSymbol.edit, key: "E")
         }
 
         draw(bar.keysText, in: bar.keys,
              attributes: [.font: Self.keysFont,
-                          .foregroundColor: NSColor.white.withAlphaComponent(0.55)])
+                          .foregroundColor: CaptureInk.ink(effectiveAppearance)
+                              .withAlphaComponent(0.55)])
 
         guard panelOpen, mode == .shot else { return }
         let panel = NSBezierPath(roundedRect: bar.panel, xRadius: 10, yRadius: 10)
         NSGraphicsContext.saveGraphicsState()
         shadow.set()
-        NSColor(srgbRed: 0.09, green: 0.088, blue: 0.085, alpha: 0.96).setFill()
+        CaptureInk.panel(effectiveAppearance).setFill()
         panel.fill()
         NSGraphicsContext.restoreGraphicsState()
-        NSColor.white.withAlphaComponent(0.12).setStroke()
+        CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.12).setStroke()
         panel.lineWidth = 1
         panel.stroke()
         for (option, rect) in bar.options {
             let chip = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
             let picked = option == aspect
-            (picked ? CDS.clayInk : NSColor.white.withAlphaComponent(0.07)).setFill()
+            (picked ? CDS.clayInk
+                    : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
             chip.fill()
             draw(option.title, in: rect,
                  attributes: [.font: Self.chipFont,
                               .foregroundColor: picked
-                                  ? NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 1)
-                                  : NSColor.white.withAlphaComponent(0.9)],
+                                  ? CaptureInk.onClay
+                                  : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)],
                  centred: true)
         }
     }
@@ -1448,19 +1546,29 @@ final class CaptureSurface: NSView {
     /// tinting belongs to `NSButton`'s cell, and there is no button here.
     /// `paletteColors` is the system's own way to say "draw this symbol in this
     /// colour" — one configuration instead of a compositing pass over a copy.
-    private static func glyph(_ symbol: String, pointSize: CGFloat, dark: Bool) -> NSImage? {
-        let key = "\(symbol)-\(pointSize)-\(dark ? "dark" : "light")"
+    private static func glyph(_ symbol: String, pointSize: CGFloat, ink: NSColor) -> NSImage? {
+        let key = "\(symbol)-\(pointSize)-\(inkCacheKey(ink))"
         if let cached = glyphs[key] { return cached }
         guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else {
             return nil
         }
-        let ink = dark ? NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 1)
-                       : NSColor.white.withAlphaComponent(0.92)
         let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))
         let image = base.withSymbolConfiguration(config) ?? base
         glyphs[key] = image
         return image
+    }
+
+    /// Which ink a cached symbol was baked in, as a string.
+    ///
+    /// The colour used to be a bool — "dark, because it is on clay" — and a bool
+    /// cannot tell white from near-black, which are now the two answers for the
+    /// same chip in two appearances. Keyed by the resolved components, a symbol
+    /// drawn in the light appearance is never handed back for the dark one.
+    private static func inkCacheKey(_ ink: NSColor) -> String {
+        let rgb = ink.usingColorSpace(.sRGB) ?? ink
+        return String(format: "%.3f/%.3f/%.3f/%.3f", rgb.redComponent, rgb.greenComponent,
+                      rgb.blueComponent, rgb.alphaComponent)
     }
 
     /// Whether a chip is filled, and therefore whether the thing it names is the
@@ -1495,6 +1603,13 @@ final class CaptureSurface: NSView {
         Choice.allCases.filter(isPicked).map(\.rawValue)
     }
 
+    /// Whether `重截` is lit at this instant, for the harness.
+    ///
+    /// A third kind of light, beside "armed" and "on clay": one that belongs to
+    /// the frame on screen rather than to a mode, so it is asked for after the
+    /// frame is there — and asked again after the frame changes.
+    var againShowingForTesting: Bool { againShowing }
+
     /// Arms a mode without a key press, for the layout harness.
     ///
     /// The picture is the only place the wash can be judged, and there is no
@@ -1504,6 +1619,9 @@ final class CaptureSurface: NSView {
         case "long": longArmed = true
         case "read": readArmed = true
         case "translate": translateArmed = true
+        // Not an arming either, but it has to be holdable for a photograph:
+        // `restore` is what normally lights this, and a preview has no click.
+        case "again": againShowing = true
         default: break
         }
     }
@@ -1518,9 +1636,12 @@ final class CaptureSurface: NSView {
     /// it does not have.
     private func drawChip(_ rect: NSRect, symbol: String, key: String?, picked: Bool = false) {
         let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
-        (picked ? CDS.clayInk : NSColor.white.withAlphaComponent(0.10)).setFill()
+        (picked ? CDS.clayInk
+                : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
         box.fill()
-        if let image = Self.glyph(symbol, pointSize: 14, dark: picked) {
+        let ink = picked ? CaptureInk.onClay
+                         : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
+        if let image = Self.glyph(symbol, pointSize: 14, ink: ink) {
             let size = image.size
             image.draw(in: NSRect(x: rect.midX - size.width / 2,
                                   y: rect.midY - size.height / 2,
@@ -1541,8 +1662,9 @@ final class CaptureSurface: NSView {
     /// smudge. `onClay` is the one chip whose ground is clay rather than ink,
     /// and a white letter on clay is not a faint hint — it is an absent one.
     private func drawHint(_ key: String, in rect: NSRect, onClay: Bool = false) {
-        let ink = onClay ? NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 0.55)
-                         : NSColor.white.withAlphaComponent(0.5)
+        let ink = onClay
+            ? CaptureInk.onClay.withAlphaComponent(0.55)
+            : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.5)
         let string = NSAttributedString(string: key, attributes: [
             .font: Self.hintFont,
             .foregroundColor: ink,
@@ -1607,11 +1729,12 @@ final class CaptureSurface: NSView {
         // claiming a state the free shape does not have.
         let locked = isPicked(.ratio)
         let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
-        (locked ? CDS.clayInk : NSColor.white.withAlphaComponent(0.10)).setFill()
+        (locked ? CDS.clayInk
+                : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
         box.fill()
-        let ink = locked ? NSColor(srgbRed: 0.106, green: 0.098, blue: 0.090, alpha: 1)
-                         : NSColor.white.withAlphaComponent(0.92)
-        if let image = Self.glyph(CaptureSymbol.ratio, pointSize: 13, dark: locked) {
+        let ink = locked ? CaptureInk.onClay
+                         : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
+        if let image = Self.glyph(CaptureSymbol.ratio, pointSize: 13, ink: ink) {
             let size = image.size
             image.draw(in: NSRect(x: rect.minX + 8, y: rect.midY - size.height / 2,
                                   width: size.width, height: size.height))
@@ -1816,11 +1939,11 @@ final class CaptureSurface: NSView {
             return true
         }
         if againShown, bar.again.contains(local) {
-            // The same area again. Nothing to arm and nothing to draw, so this
-            // is the one button here that ends something rather than describing
-            // it — and deferred a turn for the same reason every other ending
-            // is: the press tears the capture down, and this view has to
-            // outlive the event it is dispatching.
+            // The same area again. Nothing to arm and nothing to draw here: the
+            // light comes on with the frame, in `restore`. Deferred a turn for
+            // the same reason every other ending is — the press tears the
+            // capture down, and this view has to outlive the event it is
+            // dispatching.
             DispatchQueue.main.async { [weak self] in self?.onAgain() }
             return true
         }
@@ -2348,7 +2471,12 @@ final class CaptureSurface: NSView {
         Task {
             defer { busy = false }
             do {
-                let frame = try await ScreenGrab.areaImage(in: rect, on: screen)
+                // The old exclusion of everything this app draws, kept for the
+                // one grab that is taken with the dim on screen: without it
+                // every frame would come back with the overlay painted over the
+                // page, and the stitcher would happily line those up.
+                let frame = try await ScreenGrab.areaImage(in: rect, on: screen,
+                                                          excludingThisApp: true)
                 guard mode == .long else { return }
                 ingest(frame)
             } catch {
@@ -2368,8 +2496,6 @@ final class CaptureSurface: NSView {
             // The wheel is at rest. Saying so every third of a second would be
             // a line that flickers, and there is nothing to fix.
             break
-        case .backwards:
-            longNote = lineUpwards
         case .lost(let why):
             longNote = why
         }
@@ -2686,6 +2812,35 @@ final class CaptureSurface: NSView {
             // choice is still open.
             guard mode == .shot, reading == nil else { return }
             armTranslate()
+        case 0:                     // A — the last frame, back where it was
+            // The one key on this bar that ends the capture and takes nothing:
+            // it puts the frame back and waits for Return like any other frame.
+            // (`E`, below, is the other key that ends one — but it takes the
+            // picture first, which is the difference between "again" and
+            // "edit".)
+            //
+            // Silent when there is nothing to put back — the state in which the
+            // button is not drawn either. A key that beeped about a button
+            // nobody can see would be worse than the button being absent.
+            //
+            // `A` for again, and the letter itself carries no other meaning
+            // here: it is a bare key during the capture, not a global hot key,
+            // so nothing is taken from the app underneath.
+            guard mode == .shot, reading == nil, againShown else { return }
+            // Deferred a turn for the reason the button is: the press tears the
+            // capture down, and this view has to outlive the event it is
+            // dispatching. The chip lights when the frame lands, not here —
+            // `restore` is the only place that knows a frame came back.
+            DispatchQueue.main.async { [weak self] in self?.onAgain() }
+        case 14:                    // E — take it, then open it in the editor
+            // Return with one more step: the picture lands exactly the way it
+            // always lands, and then opens. The target is worked out before the
+            // turn is given up, because ending the capture is what the turn buys
+            // and this view will not be here for it — the same reason the button
+            // does it this way.
+            guard mode == .shot, reading == nil else { return }
+            let chosen = target
+            DispatchQueue.main.async { [weak self] in self?.onEdit(chosen) }
         default:
             super.keyDown(with: event)
         }

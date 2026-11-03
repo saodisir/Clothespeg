@@ -77,7 +77,36 @@ fi
 # Reminders also catch up after sleep. A turn that passed while the Mac was
 # asleep used to be skipped for being late; it is now delivered once, on waking,
 # and a duplicate that the system already showed is not shown twice.
-VERSION="1.11.0"
+#
+# 2.0.0 is a major: taking a screenshot is a capture of its own now, and the
+# biggest thing in it is a change of rule — everything only *selects*. A drag,
+# a click on a window and the space bar used to fire, and a frame that fired
+# was a frame nobody could adjust; now they choose, and Return (or a double
+# click on the frame) takes the picture, so the same gesture can be corrected
+# before it counts.
+#
+# The bar under the frame follows from that. It lost its words and became six
+# icons with their keys in the corner — `R` shape, `L` long, `W` words, `T`
+# translate, `A` again, `E` edit — and two of them are new: 编辑 takes the
+# picture and opens it in the editor in one move, and 重截 puts the last frame
+# back where it was and waits, lit, until you press Return, instead of
+# photographing a rectangle you cannot see.
+#
+# The bar also dresses the way the rest of the app does now: light where the app
+# is light, dark where it is dark, with the same surface as the editor's own
+# floating bar. Every capture used to wear one hardcoded dark surface, which in
+# a light-mode app was the one thing on screen that came from a different one.
+#
+# And a capture can photograph this app now. The clipboard line, the editor and
+# a pinned picture were all left out of every picture — including their pixels
+# in a selection, which is a hole nobody asked for. The line has the same
+# standing as anything else on the screen, which is the rule macOS itself
+# follows.
+#
+# One fix in the editor: a colour is the pen's, not the mark's. Choosing black
+# from the well while a mark was still selected recoloured that mark and left
+# the pen red, so the same colour had to be chosen again for every annotation.
+VERSION="2.0.1"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -161,7 +190,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>11</string>
+  <key>CFBundleVersion</key><string>13</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

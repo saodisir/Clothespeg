@@ -40,7 +40,14 @@
 - `zoom: CGFloat?`（nil=适合窗口）+ `pan`。
 - **步进 ±10 个百分点且第一步对齐整十**（73%→80%）；菜单 50/100/200/400 是「回固定档位」，两回事。
 - **`imageRect` 是唯一变换点**：箭头头部/文字框/插入符/裁剪框/命中松弛全从它推。
-- 百分比按钮落菜单（⌘1 适合 / ⌘+ / ⌘− / 100 ⌘0）；滚轮、双指、捏合、**`hand`(G) 拖动平移**；**空格留给文字工具**；`fit` 只缩不放。
+- 百分比按钮落菜单（⌘1 适合 / ⌘+ / ⌘− / 100 ⌘0）；**鼠标滚轮、触控板捏合缩放**（围绕图片中心）；触控板双指滚动 / **`hand`(G) 拖动平移**；**空格留给文字工具**；`fit` 只缩不放。
+- 鼠标滚轮与触控板靠 `event.phase` / `momentumPhase` 区分：滚轮两者皆空（判空写 `isEmpty`，见下条）。向上滚（deltaY<0）放大。
+- **滚轮内部的步长按「事件形状」分，不按设备分**（同一个 `hasPreciseScrollingDeltas`，问的是另一个问题）：
+  - `precise=true`（Mos / Logi Options+ 平滑过的滚轮）：一次转动被切成**一串点**——2026-11-03 实测一格 = **30 个事件、总行程 81 点**，斜坡 1→5→1。所以**按事件计步必然跑飞**（30 步 × 2% = 60%，用户原话「一下 50%」）。改**连续比例**：`setZoom(scale * exp(-deltaY * 0.0015))`，81 点 ≈ 12%。
+  - `precise=false`（老实的一格一事件滚轮）：一格 = 一步，`stepZoom(±1, by: 5)` 五个百分点。浮条 +/− 仍是 `by: 10`（默认值）。
+  - 旋钮只有两处：上面那个 `0.0015` 和 `by: 5`。**调速度改这两个数，别碰判据。**
+- ⚠️ **判断必须写 `event.phase.isEmpty`，不能写 `== .none`**。`NSEvent.Phase` 是 OptionSet（非可选），比较里的 `.none` 字面量会被读成 `Optional.none`，phase 被提升成 Optional 去和 nil 比 —— **恒等于 false**，缩放分支写得再对也进不去。编译器只给 warning（`comparing non-optional value of type 'NSEvent.Phase' to 'Optional.none' always returns false`），当警告被刷过去，症状就是「滚轮只上下移动」，且与设备无关。2026-11-03 为此先后错怪过 `hasPreciseScrollingDeltas`（说驱动伪造 delta）和用户的鼠标，两次都改在判据上，而错在表达式。
+- 判据之外：先确认跑的是不是新进程。`build-app.sh` 换掉磁盘上的包时，**已经在跑的进程还在用内存里的旧代码**，日志里 `App launched` 的时间戳是唯一可靠判据（`lsof -p <pid>` 取路径，别用 `ps`，本机沙盒会拒）。
 
 ## 窗口与记忆
 
@@ -53,6 +60,12 @@
 - 7 系统色点 + 加号点开 `NSColorPanel`，非常规色落在加号点上；点 18pt。
 - `NSColorPanel.shared` 全进程一个 target 且**只能 set 不能 get** → `weak static var panelOwner`，关窗还。
 - `NSColor` 相等是目录条目同一性 → `ColourDot.matches`（sRGB 分量差<0.004），**且必须 aqua 与 darkAqua 各比一次**（否则深色下选中环消失、第八点假装自定义）。
+- **颜色只能走 `applyInk(_:)` 一条路**（色点与色板都进它）。它先写「笔」再写「这一笔」：
+  `styles[currentTool]` + `EditorStyleStore.save` + `canvas.style`，最后才 `mutateStyle`。
+  ⚠️ **不能只调 `mutateStyle`**——它在有选中标记时会**停在那条标记上返回**，笔的颜色一点没动；
+  而画完一笔标记仍是选中的，于是「选了黑、下一笔还是红」，每一笔都得重选一次（2026-11-03 用户报的就是这个）。
+  判据：`CLOTHESPEG_EDITOR_PREVIEW_INK=1` 的 `ink:` 两行，**必须先用「和已存色不同」的颜色**，
+  否则比对的是存下来的那个值自己，改坏了也照样绿。
 
 ## 点阵底
 
@@ -79,12 +92,12 @@
 ```bash
 CLOTHESPEG_EDITOR_PREVIEW=<图> CLOTHESPEG_EDITOR_SHOT=<png> \
   [.._TOOL] [.._WIDTH] [.._DARK] [.._DRILL] [.._ITALIC] [.._ZOOM] [.._ZOOMDRILL] \
-  [.._FADE] [.._PLACE] [.._HINTS] [.._NOHINTS] [.._CHECK=<第二张图>] \
+  [.._FADE] [.._PLACE] [.._HINTS] [.._NOHINTS] [.._SLIDER] [.._INK] [.._CHECK=<第二张图>] \
   build/Clothespeg.app/Contents/MacOS/Clothespeg
 ```
 
 - 裸 `.build/debug` 没有 .lproj，必须跑 `.app` 里的二进制。
-- 自检行：`preview: everything fits`、`bars: three, tightest gap N pt`（相撞打 OVERLAP）、`zoom: the transform agrees…`、`hints: all eleven on one line`、`place: …under the strip`。
+- 自检行：`preview: everything fits`、`bars: three, tightest gap N pt`（相撞打 OVERLAP）、`zoom: the transform agrees…`、`hints: all eleven on one line`、`place: …under the strip`、`slider: …`、`ink: …`。
 - **演练瞄准图片坐标**（`previewViewPoint`），截图拍 window frame view（含标题栏）。
 - 设置页 `CLOTHESPEG_SETTINGS_SHOT=<png> [.._PAGE=…]`——唯一 SwiftUI，**只出图不出数**。
 - 两处没有自动化：浮条上的光标、真面板下面那条路。

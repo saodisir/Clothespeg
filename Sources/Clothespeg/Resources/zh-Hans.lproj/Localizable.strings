@@ -130,7 +130,8 @@
 "Open System Settings" = "打开系统设置";
 "After granting it, macOS may ask you to reopen Clothespeg." = "授权后，macOS 可能会要求你重新打开 Clothespeg。";
 "Based on Tendedero" = "基于 Tendedero";
-"by Alejandro Buján, used under the MIT License. This fork is Apache-2.0." = "作者 Alejandro Buján，依 MIT 许可证使用；本 fork 依 Apache-2.0 授权。";
+"Clothespeg" = "Clothespeg";
+"Licensed under the PolyForm Noncommercial License 1.0.0. Based on Tendedero by Alejandro Buján, used under the MIT License." = "依 PolyForm Noncommercial License 1.0.0 授权。基于 Alejandro Buján 的 Tendedero，依 MIT 许可证使用。";
 "Licence" = "许可证";
 "Done" = "完成";
 "Retention" = "保留天数";
@@ -143,7 +144,6 @@
 "Language" = "语言";
 "Changes apply at once." = "改动立即生效，不用重启。";
 "Translate into" = "译成";
-"The capture's 译 button uses this. The system's own translator does the work, on this Mac." = "截图浮条上的「译」用它。翻译由系统自己的引擎在这台 Mac 上完成，文字不出本机。";
 "Clean up" = "清理";
 "Clipboard cards" = "剪贴板文字";
 "Clear the clipboard?" = "清空剪贴板？";
@@ -296,7 +296,7 @@
 "Zoom Out" = "缩小";
 "Zoom to Fit" = "适合窗口";
 /* 这一条现在同时管编辑器和截图浮条：两处都是图标 + 角标快捷键。 */
-"Show shortcuts on the buttons" = "在按钮上显示快捷键";
+"Show capture editor shortcuts" = "显示截图编辑快捷键";
 "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "每个工具的右下角会标出它的字母键。复制、覆盖、缩放用的是通用 ⌘ 组合键，不标。";
 
 "Capture the screen" = "截取屏幕";
@@ -333,9 +333,8 @@
 "Translate · the same words, another language" = "译 · 同一段字，另一种语言";
 "Edit · take it and open the editor" = "编辑 · 截下来并打开编辑器";
 "Again · put the last frame back" = "重截 · 把上一次的框放回原位";
-"Scroll down · Return when done" = "往下滚动 · 回车完成";
+"Scroll up or down · Return when done" = "上下滚动都行 · 回车完成";
 "Drag the area that should keep growing" = "拖出要一直长下去的区域";
-"That went upwards — this one only grows downwards" = "往上滚了 —— 这个只往下长";
 /* 这一句曾经是全浮条最宽的一句（233pt），而它一年出现两次：浮条的宽度钉在
    最宽那句上，于是另外 364 天都在给这句话让位置。压到 160 出头。 */
 "That scroll was too fast to follow — go a little slower." = "滚太快了 · 慢一点，让两屏有重叠";
@@ -359,3 +358,16 @@
    而浮条的宽度钉在最长那句上：一年遇到两次的话，凭什么让另外 364 天留着空。 */
 "This Mac cannot translate between those two languages" = "这台 Mac 不支持这两种语言";
 "Those words are already in this language" = "已经是这种语言了 · 设置里可改";
+
+/* 剪贴板页 —— 「译」用哪种语言、哪个引擎、哪把钥匙 */
+"Translation" = "翻译";
+"Translation API" = "翻译 API";
+"Address" = "接口地址";
+"Model" = "模型";
+"API key" = "API Key";
+"Test" = "测试";
+"Testing…" = "测试中…";
+"Works" = "可用";
+"Did not work" = "不可用";
+"If this API key is filled in, translation uses that key's model by default." = "如果填写了这个 API key，那就默认使用这个 API key 的模型做翻译。";
+"Capture editor" = "截图编辑器";

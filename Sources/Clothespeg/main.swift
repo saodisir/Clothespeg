@@ -80,6 +80,20 @@ MainActor.assumeIsolated {
         print(report)
         exit(0)
     }
+    // Keychain and wire probe: whether a key survives a round trip through the
+    // login keychain from *this* binary — an ad-hoc signature cannot read back
+    // what it wrote (errSecMissingEntitlement, -34018) — and, when a key is
+    // handed in as `CLOTHESPEG_TRANSLATE_KEY`, whether the address answers with
+    // a translation. Both are facts about the machine rather than about the
+    // code, so neither can be settled by reading it.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_TRANSLATE_API_PROBE"] {
+        let environment = ProcessInfo.processInfo.environment
+        let report = TranslateAPIProbe.run(handedIn: environment["CLOTHESPEG_TRANSLATE_KEY"],
+                                           keep: environment["CLOTHESPEG_TRANSLATE_KEEP"] != nil)
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
     // Capture harness: everything the capture can be wrong about without a
     // pointer in the way — permission, window picking, the size of the grab,
     // and whether the crop lands where the rectangle said. Writes its lines to
@@ -112,9 +126,10 @@ MainActor.assumeIsolated {
                                      long: env["CLOTHESPEG_CAPTURE_LONG"].flatMap(Int.init),
                                      read: env["CLOTHESPEG_CAPTURE_READ"],
                                      note: env["CLOTHESPEG_CAPTURE_NOTE"]
-                                        .map { $0 == "1" ? CaptureSurface.surfaceNote : $0 },
+                                        .map { $0 == "1" ? LongStitcher.noteTooFast : $0 },
                                      translated: env["CLOTHESPEG_CAPTURE_TRANSLATED"],
-                                     armed: env["CLOTHESPEG_CAPTURE_ARM"]))
+                                     armed: env["CLOTHESPEG_CAPTURE_ARM"],
+                                     appearance: env["CLOTHESPEG_APPEARANCE"]))
         exit(0)
     }
     let delegate = AppDelegate()

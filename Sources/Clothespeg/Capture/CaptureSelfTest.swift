@@ -18,12 +18,13 @@ enum CaptureSelfTest {
         var lines: [String] = []
         lines.append("capture permission: \(ScreenGrab.hasAccess ? "granted" : "NOT GRANTED")")
 
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let pickable = WindowPick.windows(excluding: pid)
+        let pickable = WindowPick.windows()
         let front = pickable.first.map {
             "\($0.owner.isEmpty ? "?" : $0.owner) \(Int($0.frame.width))×\(Int($0.frame.height)) at \(Int($0.frame.minX)),\(Int($0.frame.minY))"
         } ?? "none"
-        lines.append("capture windows: \(pickable.count) pickable, front \(front)")
+        lines.append("capture windows: \(pickable.count) pickable, front \(front), "
+                     + "\(pickable.filter(\.isOwn).count) of this app")
+        lines.append(ownLine())
 
         lines.append(ratioLine())
         lines.append(frameLine())
@@ -34,6 +35,7 @@ enum CaptureSelfTest {
         lines.append(MainActor.assumeIsolated { againLine() })
         lines.append(MainActor.assumeIsolated { chooseLine() })
         lines.append(MainActor.assumeIsolated { chipsLine() })
+        lines.append(MainActor.assumeIsolated { styleLine() })
         lines.append(keysLine())
         if #available(macOS 15.0, *) {
             lines.append(MainActor.assumeIsolated { TranslateProbe.line() })
@@ -97,6 +99,31 @@ enum CaptureSelfTest {
         lines.append(box.grab)
         lines.append(box.compare)
         return lines.joined(separator: "\n")
+    }
+
+    /// Whether a window of this app can be pointed at, stated as the rule rather
+    /// than as a window.
+    ///
+    /// The four layers asked about are the ones this app really puts up — the
+    /// editor, the clipboard line, a note or the search, a pinned picture — plus
+    /// the capture's own overlay, which must never become one of the choices.
+    /// A live version of this would need a real window, a moment for the window
+    /// server to list it, and a picture to look at; the mistake it guards is one
+    /// line of arithmetic, so that is where the check goes.
+    private static func ownLine() -> String {
+        let editor = WindowPick.admits(layer: 0, isOwn: true, alpha: 1)
+        let line = WindowPick.admits(layer: Int(CGWindowLevelForKey(.floatingWindow)),
+                                     isOwn: true, alpha: 1)
+        let note = WindowPick.admits(layer: Int(CGWindowLevelForKey(.statusWindow)),
+                                     isOwn: true, alpha: 1)
+        let pin = WindowPick.admits(layer: WindowPick.ceiling, isOwn: true, alpha: 1)
+        let overlay = WindowPick.admits(layer: WindowPick.ceiling + 1, isOwn: true, alpha: 1)
+        let foreign = WindowPick.admits(layer: Int(CGWindowLevelForKey(.floatingWindow)),
+                                        isOwn: false, alpha: 1)
+        let invisible = WindowPick.admits(layer: 0, isOwn: true, alpha: 0)
+        let ok = editor && line && note && pin && !overlay && !foreign && !invisible
+        return "capture own: editor/line/note/pin pickable, overlay not, "
+            + "another app's panel not, transparent not " + (ok ? "ok" : "WRONG")
     }
 
     /// The ratio lock, checked as arithmetic rather than by eye.
@@ -246,9 +273,47 @@ enum CaptureSelfTest {
         idle.start(first)
         parts.append("still \(isStill(idle.append(first)) ? "ok" : "WRONG")")
 
+        // Upward, which is the direction this mode used to refuse: the second
+        // frame is taken above the first, so the picture has to grow by its top
+        // — the first frame is where the gesture started, not the top of the
+        // picture. 300..700 seen first, then 0..400, is 0..700.
         let upward = LongStitcher()
-        upward.start(second)
-        parts.append("backwards \(isBackwards(upward.append(first)) ? "ok" : "WRONG")")
+        upward.start(window(300))
+        let upStep = upward.append(window(0))
+        let upImage = upward.image()
+        let upWanted = page.cropping(to: CGRect(x: 0, y: 0, width: 300, height: 700))
+        let upDifference = upImage.flatMap { made in
+            upWanted.flatMap { LongStitcher.meanDifference(made, $0) }
+        }
+        let upSizes = upImage.map { "\($0.width)×\($0.height)" } ?? "none"
+        let upGap = upDifference.map { String(format: "%.4f", $0) } ?? "n/a"
+        let upClose = isAdvanced(upStep, -300) && upImage?.height == 700
+            && (upDifference ?? 1) < 0.02
+        parts.append("upwards \(upSizes) "
+            + (upClose ? "ok" : "WRONG (expected -300 and 300×700, diff \(upGap))"))
+
+        // Back and forth: down a screen, up a screen, down again. The picture is
+        // a page, so this is 0..700 seen twice as often, not 0..1900 — and the
+        // union is what has to come out.
+        let wander = LongStitcher()
+        wander.start(window(0))
+        let downAgain = [wander.append(window(300)), wander.append(window(0)),
+                         wander.append(window(300))]
+        let wanderImage = wander.image()
+        let wanderWanted = page.cropping(to: CGRect(x: 0, y: 0, width: 300, height: 700))
+        let wanderDifference = wanderImage.flatMap { made in
+            wanderWanted.flatMap { LongStitcher.meanDifference(made, $0) }
+        }
+        let wanderSizes = wanderImage.map { "\($0.width)×\($0.height)" } ?? "none"
+        let wanderGap = wanderDifference.map { String(format: "%.4f", $0) } ?? "n/a"
+        let wanderMoves = downAgain.map { step -> Int? in
+            if case .advanced(let moved) = step { return moved }
+            return nil
+        }
+        let wanderClose = wanderMoves == [300, -300, 300] && wanderImage?.height == 700
+            && (wanderDifference ?? 1) < 0.02
+        parts.append("back and forth \(wanderSizes) "
+            + (wanderClose ? "ok" : "WRONG (moves \(wanderMoves), diff \(wanderGap), expected 300/-300/300 and 300×700)"))
 
         let near = LongStitcher.advance(from: first, to: window(250))
         let far = LongStitcher.advance(from: first, to: window(380))
@@ -307,14 +372,14 @@ enum CaptureSelfTest {
         let steady = bar(99999).map { $0.done == short.done } ?? false
         parts.append("steady \(steady ? "ok" : "WRONG (moved with the readout)")")
 
-        // A note mid-capture — the wrong way up, or too fast to follow — must
+        // A note mid-capture — too fast to follow, or the ceiling reached — must
         // not resize the capsule. The pill is anchored to its far edge, so a
         // capsule that widens by a word slides the pill by a word, at the one
         // moment somebody is already reaching for it. Every note the stitcher
         // can say is measured whether or not it is showing, which is what makes
         // this hold; this line is what checks it stays that way.
         var capsuleOfNoted: NSRect?
-        for note in [CaptureSurface.surfaceNote] + LongStitcher.notes {
+        for note in LongStitcher.notes {
             let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
             view.frame = NSRect(origin: .zero, size: screen.frame.size)
             view.previewLong = 1240
@@ -643,6 +708,17 @@ enum CaptureSelfTest {
         parts.append("hidden until used " + (hidden ? "ok"
             : "WRONG (shown with nothing to repeat)"))
 
+        // And the key is silent in exactly that state, for the same reason the
+        // button is absent: there is nothing to put back. Pressed here rather
+        // than assumed, because a bare `A` with no guard is a key that ends a
+        // capture that has nothing to restore.
+        var keyedWithNothing = false
+        empty.onAgain = { keyedWithNothing = true }
+        if let down = press(0, "a") { empty.keyDown(with: down) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        parts.append("A silent until used " + (keyedWithNothing
+            ? "WRONG (fired with nothing to repeat)" : "ok"))
+
         // Remembered, and it comes back the same.
         let rect = CGRect(x: screen.frame.minX + 120, y: screen.frame.minY + 90,
                           width: 320, height: 180)
@@ -702,13 +778,48 @@ enum CaptureSelfTest {
         // down, and the harness waits rather than assuming it is instant.
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         let inside = bar.capsule.contains(bar.again)
+        // 重载 now sits before 编辑, and 编辑 is the last button in the row.
         let afterTranslate = bar.translate.maxX <= bar.again.minX
-        let beforeKeys = bar.again.maxX <= bar.keys.minX
+        let beforeEdit = bar.again.maxX <= bar.edit.minX
         let sized = bar.again.height == 26 && bar.again.width >= 30
         parts.append("button \(Int(bar.again.width))×\(Int(bar.again.height)) "
-            + (pressed && inside && afterTranslate && beforeKeys && sized ? "ok"
+            + (pressed && inside && afterTranslate && beforeEdit && sized ? "ok"
                : "WRONG (pressed \(pressed), inside \(inside), "
-                 + "after 译 \(afterTranslate), before the keys \(beforeKeys), sized \(sized))"))
+                 + "after 译 \(afterTranslate), before 编辑 \(beforeEdit), sized \(sized))"))
+
+        // The `A` in that chip's corner has to be heard and not merely drawn: a
+        // letter on a button that does nothing is worse than no letter, because
+        // the person concludes the app did not hear them.
+        var keyed = false
+        let byKey = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+        byKey.frame = NSRect(origin: .zero, size: screen.frame.size)
+        // The controller's half, played by hand. `A` only asks; what lights the
+        // chip is the frame arriving, so a closure that set the light itself
+        // would be this harness testing its own opinion instead of the app's.
+        byKey.onAgain = {
+            keyed = true
+            byKey.restore(rect)
+        }
+        if let down = press(0, "a") { byKey.keyDown(with: down) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        parts.append("A takes it too " + (keyed ? "ok" : "WRONG (the key did nothing)"))
+
+        // Lit because the frame is back — and still lit half a second later.
+        // The light belongs to the frame, not to the press: the first version
+        // treated a state as a blink and the user's correction was exact
+        // (「它在出现的过程中，就应该一直是亮的」).
+        let litOnArrival = byKey.againShowingForTesting
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        let stillLit = byKey.againShowingForTesting
+        parts.append("A lights it " + (litOnArrival && stillLit ? "ok"
+            : "WRONG (lit \(litOnArrival), half a second later \(stillLit))"))
+
+        // And a frame of one's own puts it out again: the light means *that*
+        // frame, so a light that outlived it would be the same lie in the other
+        // direction.
+        byKey.selectForTesting(rect.offsetBy(dx: 40, dy: 0))
+        parts.append("a new frame puts it out " + (byKey.againShowingForTesting
+            ? "WRONG (still lit over a frame it did not bring back)" : "ok"))
 
         // The pill now hangs off the last button rather than off 译. They are
         // the same edge only while 重截 is absent, and the day they differ is
@@ -726,12 +837,13 @@ enum CaptureSelfTest {
             // a different width from the button it sits on — `复制` plus more
             // air than `重截` — so its left edge is a couple of points past the
             // button's on purpose; what must not happen is it landing where the
-            // 译 button is, or short of the end.
-            let atTheEnd = abs(reading.done.maxX - bar.again.maxX) <= 1
+            // 译 button is, or short of the end. Measured against 编辑 because
+            // that is the button at the end of the row since the two swapped.
+            let atTheEnd = abs(reading.done.maxX - bar.edit.maxX) <= 1
                 && reading.done.minX > bar.translate.maxX
             parts.append("pill at the end " + (atTheEnd ? "ok"
                 : "WRONG (pill \(Int(reading.done.minX))…\(Int(reading.done.maxX)), "
-                  + "重截 \(Int(bar.again.minX))…\(Int(bar.again.maxX)), "
+                  + "编辑 \(Int(bar.edit.minX))…\(Int(bar.edit.maxX)), "
                   + "译 ends at \(Int(bar.translate.maxX)))"))
         } else {
             parts.append("pill at the end WRONG (no pill on a reading)")
@@ -871,6 +983,20 @@ enum CaptureSelfTest {
             parts.append("编辑 a frame WRONG (no 编辑 button on the bar)")
         }
 
+        // And `E` does the same thing without aiming at anything. Pressed on a
+        // drawn frame rather than on an empty surface, because that is where the
+        // key could quietly mean something else: the frame is already chosen, so
+        // an `E` that opened a fresh full-screen editor would be a second
+        // definition of the act.
+        edited = nil
+        let keyDoor = surface()
+        keyDoor.onEdit = { edited = $0 }
+        keyDoor.selectForTesting(rect)
+        if let down = press(14, "e") { keyDoor.keyDown(with: down) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        parts.append("E edits it too " + (describe(edited) == "region 240×120" ? "ok"
+            : "WRONG (got \(describe(edited)))"))
+
         return "capture choose: " + parts.joined(separator: ", ")
     }
 
@@ -916,10 +1042,15 @@ enum CaptureSelfTest {
             return "capture chips: MISSING (the bar is not there)"
         }
 
-        let chips = [bar.long, bar.read, bar.translate, bar.edit]
+        // In the order they are drawn — 编辑 last, 重载 one place before it when
+        // it is there at all. The gaps are measured between neighbours, so a row
+        // laid out in a different order shows up here as a 38-point hole.
+        var chips = [bar.long, bar.read, bar.translate]
+        if !bar.again.isEmpty { chips.append(bar.again) }
+        chips.append(bar.edit)
         let boxes = chips.allSatisfy { $0.width == 30 && $0.height == 26 }
         let sizes = chips.map { "\(Int($0.width))×\(Int($0.height))" }.joined(separator: " ")
-        parts.append("four 30×26 " + (boxes ? "ok" : "WRONG (\(sizes))"))
+        parts.append("\(chips.count) 30×26 " + (boxes ? "ok" : "WRONG (\(sizes))"))
 
         // Asked as distances between edges rather than as a count: a chip that
         // grew by a point would move its neighbours and still pass a count.
@@ -927,8 +1058,9 @@ enum CaptureSelfTest {
         for (left, right) in zip(chips, chips.dropFirst()) {
             gaps.append(Int(right.minX - left.maxX))
         }
+        let wantedGaps = Array(repeating: "4", count: gaps.count).joined(separator: "/")
         parts.append("gap \(gaps.map(String.init).joined(separator: "/")) "
-            + (gaps.allSatisfy { $0 == 4 } ? "ok" : "WRONG (wanted 4/4/4/4)"))
+            + (gaps.allSatisfy { $0 == 4 } ? "ok" : "WRONG (wanted \(wantedGaps))"))
 
         // The value chip: wider than a chip, the same height, and the last one
         // before the gap that leads to `esc`.
@@ -980,6 +1112,78 @@ enum CaptureSelfTest {
                ? " ok" : " WRONG (nothing chosen lit: \(quiet))"))
 
         return "capture chips: " + parts.joined(separator: ", ")
+    }
+
+    /// Whether the bar is drawn in the appearance it is drawn in.
+    ///
+    /// "暗色就是暗色，亮色就是亮色" is not a claim about a colour constant, it is a
+    /// claim about pixels — and pixels only arrive by drawing. So the bar is
+    /// drawn twice, once in aqua and once in darkAqua, and the capsule is
+    /// sampled on a grid: the light one has to come out mostly bright with dark
+    /// ink inside it, the dark one mostly dark with bright ink. A surface left
+    /// hardcoded fails the first; an ink left hardcoded fails the second. Those
+    /// are precisely the two mistakes this file exists to catch, and both of
+    /// them look like nothing at all in a screenshot of the other appearance.
+    @MainActor
+    private static func styleLine() -> String {
+        guard let screen = NSScreen.main, let blank = blankImage() else {
+            return "capture style: no screen"
+        }
+        var parts: [String] = []
+        let cases: [(String, NSAppearance.Name, Bool)] = [
+            ("light", .aqua, true), ("dark", .darkAqua, false),
+        ]
+        for (name, appearanceName, wantLight) in cases {
+            let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+            view.frame = NSRect(origin: .zero, size: screen.frame.size)
+            view.appearance = NSAppearance(named: appearanceName)
+            view.selectForTesting(CGRect(x: screen.frame.midX - 100, y: screen.frame.midY - 60,
+                                        width: 200, height: 120))
+            guard let bar = view.shotBarOnScreen,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                parts.append("\(name) WRONG (nothing was drawn)")
+                continue
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+
+            let capsule = bar.capsule.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+            let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+            var bright = 0, dark = 0, total = 0
+            var x = capsule.minX + 4
+            while x < capsule.maxX - 4 {
+                var y = capsule.minY + 3
+                while y < capsule.maxY - 3 {
+                    // A bitmap is stored top-down; this view is not flipped, so
+                    // the y has to be turned round before it is a pixel row.
+                    let point = NSPoint(x: x * scale, y: (view.bounds.height - y) * scale)
+                    if let colour = rep.colorAt(x: Int(point.x), y: Int(point.y))?
+                        .usingColorSpace(.sRGB) {
+                        let luminance = 0.2126 * colour.redComponent
+                            + 0.7152 * colour.greenComponent + 0.0722 * colour.blueComponent
+                        if luminance > 0.65 { bright += 1 }
+                        if luminance < 0.35 { dark += 1 }
+                        total += 1
+                    }
+                    y += 2
+                }
+                x += 2
+            }
+            guard total > 200 else {
+                parts.append("\(name) WRONG (only \(total) samples)")
+                continue
+            }
+            let brightShare = Double(bright) / Double(total)
+            let darkShare = Double(dark) / Double(total)
+            // Both numbers, because a bar that is one flat colour passes one of
+            // them and the interesting failure — bright ground under white type
+            // — is only visible in the pair.
+            let surfaceOK = wantLight ? brightShare > 0.6 : darkShare > 0.6
+            let inkOK = wantLight ? darkShare > 0.01 : brightShare > 0.01
+            parts.append("\(name) \(Int(brightShare * 100))% light, \(Int(darkShare * 100))% dark "
+                + (surfaceOK && inkOK ? "ok"
+                   : "WRONG (surface \(surfaceOK), ink \(inkOK))"))
+        }
+        return "capture style: " + parts.joined(separator: ", ")
     }
 
     /// A picture with known words on it, for the reader to read.    ///
@@ -1063,11 +1267,6 @@ enum CaptureSelfTest {
 
     private static func isStill(_ step: LongStitcher.Step) -> Bool {
         if case .still = step { return true }
-        return false
-    }
-
-    private static func isBackwards(_ step: LongStitcher.Step) -> Bool {
-        if case .backwards = step { return true }
         return false
     }
 
@@ -1162,7 +1361,8 @@ enum CaptureSelfTest {
     static func render(to path: String, hovered: Bool, selected: Bool,
                        aspect: CropAspect = .free, panel: Bool = false,
                        long: Int? = nil, read: String? = nil, note: String? = nil,
-                       translated: String? = nil, armed: String? = nil) -> String {
+                       translated: String? = nil, armed: String? = nil,
+                       appearance: String? = nil) -> String {
         guard ScreenGrab.hasAccess else { return "capture preview: NOT GRANTED, nothing to draw" }
         guard let screen = NSScreen.main else { return "capture preview: no screen" }
 
@@ -1178,6 +1378,12 @@ enum CaptureSelfTest {
 
         let view = CaptureSurface(backdrop: image, screen: screen, windows: [])
         view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        // Which way the bar dresses, for a photograph of it in the appearance
+        // somebody is asking about rather than the one this app happens to be
+        // wearing while the harness runs.
+        if let appearance {
+            view.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
+        }
         view.aspect = aspect
         view.panelOpen = panel
         view.previewLong = long
@@ -1211,6 +1417,13 @@ enum CaptureSelfTest {
                                            y: screen.frame.minY + 200,
                                            width: (screen.frame.width * 0.62).rounded(),
                                            height: (screen.frame.height * 0.52).rounded())
+        }
+        // A short, one-line-tall selection, to exercise the reading sheet's
+        // "too short for a line" path that used to paint a blank panel.
+        if ProcessInfo.processInfo.environment["CLOTHESPEG_CAPTURE_SHORT"] != nil,
+           let sel = view.previewSelection {
+            view.previewSelection = CGRect(x: sel.minX, y: sel.midY - 15,
+                                           width: min(sel.width, 320), height: 30)
         }
 
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {

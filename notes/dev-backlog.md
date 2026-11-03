@@ -40,7 +40,7 @@
 | 18 | 应用内更新检查与安装 | 🔵 等 #14 凭据到位 | 2026-10-27 PicRope |
 | 19 | 工程习惯：弹簧解析解 + 纯逻辑测试 | 🔵 | 2026-10-27 PicRope |
 | 20 | 图片编辑器（替换系统「预览」） | 🟡 路线图 `roadmap-capture-and-editor.md`，第二版细节计划 `editor-plan-v2.md`（保存语义 / 每工具属性 / 文字与马赛克），待拍板 | 2026-11-02 用户 |
-| 21 | 截图（抓屏 + 与剪贴板融合） | 🟡 P0 已实现待实测（遮罩 / 窗口·选区·全屏 / 进剪贴板 + 挂绳）；P1 比例锁（`R` + 底部胶囊里的比例按钮）；P1.2 松手留框 + 八手柄可调整；P2 竖向长图（手动滚 + 整帧配准 + 像素复核）；P2.1 长图按键改为 Carbon 全局热键 + 主动让出前台；P2.2 长图态「完成」按钮（独立不抢焦点面板）+ 裸键 `L`，已真机验（面板自己收点击，前提是 `canBecomeKey=true` 且窗口非全透明）；P3 横向长图（用户暂缓）、P4 OCR、P5 翻译未做 | 2026-11-03 用户 |
+| 21 | 截图（抓屏 + 与剪贴板融合） | 🟡 P0 已实现待实测（遮罩 / 窗口·选区·全屏 / 进剪贴板 + 挂绳）；P1 比例锁（`R` + 底部胶囊里的比例按钮）；P1.2 松手留框 + 八手柄可调整；P2 竖向长图（手动滚 + 整帧配准 + 像素复核）；P2.1 长图按键改为 Carbon 全局热键 + 主动让出前台；P2.2 长图态「完成」按钮（独立不抢焦点面板）+ 裸键 `L`，已真机验（面板自己收点击，前提是 `canBecomeKey=true` 且窗口非全透明）；P3 横向长图（用户暂缓）、P4 OCR 与 P5 翻译（系统引擎 + 在线模型，Key 进钥匙串）已实现待真机验 | 2026-11-03 用户 |
 | 22 | 实时屏幕标注（画在屏幕上） | 🔵 先出 RFC，不排期 | 2026-11-02 用户 |
 | 23 | 编辑器按钮上的快捷键角标 | ✅ 2026-11-02（#20 的一小块） | 2026-11-02 用户 |
 
@@ -2123,3 +2123,215 @@ esc 17pt ok, inside the capsule ok, tool tip owner ok`。间距是**按边到边
 
 新增/改了自检：`capture chips: … armed long/read/translate ok`；预览器多了
 `CLOTHESPEG_CAPTURE_ARM=long|read|translate`，因为 15% 陶土这层洗色只在图里看得出来。整份 `WRONG` 0。
+
+### P8 第三轮：编辑与重截的图标候选（2026-11-03）
+
+用户：「『编辑』用笔没问题，但可以选其他一种笔」；「『重载』现在的图标不太对，用返回键肯定不对。
+你想想重截能用什么代表，是不是类似于用方块之类的图标？」——后者是对的，而且比我的两版都好：
+
+- **重截的语义是「那块框回来了」**，不是「时间倒流」。所以一个纯箭头（`arrow.counterclockwise`、
+  `arrow.uturn.backward`）都不够：箭头的方向说的是「回去」，没有说回去的是**什么**。
+  候选都渲染成 1x + 3.5x 两排看过（见下），最后选 `arrow.uturn.backward.square`：
+  **框 + 里面的回头箭头**，一个字形说完整件事。
+- **编辑**从 `pencil` 换成 `highlighter`：纯铅笔在 14pt 下就是一道斜线，读作「一条线」；
+  马克笔有笔尖 + 底下那道横线，读得出「会写的东西」。同样看过的还有 `pencil.and.scribble`（热闹但糊）、
+  `paintbrush` / `paintbrush.pointed`（真机大小下笔杆糊掉）、`square.and.pencil`（已经否过）。
+
+**候选清单**（渲染脚本是临时的，符号名记在这里就够复盘）：
+编辑 = pencil / pencil.line / pencil.tip / pencil.and.outline / pencil.and.scribble / pencil.and.ruler /
+pencil.circle / applepencil / highlighter / scribble / square.and.pencil /
+rectangle.and.pencil.and.ellipsis / pencil.tip.crop.circle / pencil.and.list.clipboard /
+paintbrush.pointed / paintbrush。
+重截 = rectangle.dashed / rectangle.dashed.badge.record / rectangle.badge.plus /
+rectangle.on.rectangle / square.on.square / rectangle.and.hand.point.up.left /
+rectangle.filled.and.hand.point.up.left / rectangle.portrait.and.arrow.forward /
+rectangle.portrait.and.arrow.right / square.dashed / rectangle.expand.vertical /
+arrow.uturn.backward.square / arrow.uturn.backward.circle / repeat /
+arrow.triangle.2.circlepath / crop。
+
+⚠️ 没有 `rectangle.and.arrow.uturn.backward`（探测过，不存在）——最贴切的名字是空想，
+真正的那个叫 `arrow.uturn.backward.square`（箭头在方块**里面**）。
+
+### P8 第四轮：定稿（2026-11-03）
+
+用户看完六种「方案」（整条浮条真尺寸渲染）后拍板，四条一起改：
+
+- **编辑 = `pencil.and.scribble`**（方案 5）：静态的一支笔（`pencil` / `highlighter`）看两轮都不够，
+  这一颗画的是**笔在写**。
+- **重截 = `rectangle.dashed`**（方案 4）：虚线框说的是「框已就位、内容待定」，正好是重截现在做的事——
+  把框放回原位、**不拍**，等人回车。到这一版才彻底放下「箭头」这个隐喻。
+- **译 = `character.bubble`**：用户报「翻译那颗的快捷键看不清」。真因是**角标画在右下角，而 `translate`
+  两颗气泡里后面那颗的右下角正好在角标的位置上**，`T` 压在笔画里。单气泡、尾巴在左下的这颗，右下角是空的。
+  → 记成硬约束：**带角标的图标，右下角必须空着**（选图标时连角标一起按 8× 画出来看）。
+- **重截与编辑对调**：一行以「把图交出去」那颗（编辑）收尾，`esc` 仍在它右边。
+  连带改动：`bar.keys` 的起点与「完成」胶囊的右边缘从 `again.maxX` 改成 `edit.maxX`
+  （编辑现在恒在最后），自检里 `pill at the end` 的判据跟着改；`chipsLine` 的 chips 数组改成按画的顺序拼。
+
+真机自检：`capture chips: symbols 6/6 ok, 5 30×26 ok, gap 4/4/4/4/4 ok, ratio 80×26 ok, esc 17pt ok,
+inside the capsule ok, tool tip owner ok, armed long/read/translate ok`；
+`capture again: hidden until used ok, remembers ok, frame back ok, double-click takes it ok,
+button 30×26 ok, pill at the end ok`。**待用户真机验。**
+
+### P8 第五轮：重截加 `A`（2026-11-03）
+
+用户：「重载这个可以增加一个快捷键」。字母按老规矩取助记 —— `A` = again（`L` long / `W` words /
+`T` translate / `R` ratio 已占位）。
+
+- 这是全条栏**唯一「结束」而不是「上膛」的键**：立刻把上次的框放回原位，不改变下一次拖拽是什么，
+  所以 `isPicked` 里没有它、它也永远不实心。和按钮同义，同样延迟一拍（`DispatchQueue.main.async`）。
+- **没有可放回的框时静默**（`guard … againShown`），也就是按钮不画出来的那个状态。
+  一个为看不见的按钮尖叫的键，比没有这个键更糟。
+- 角标那边撞上刚记下的硬约束的第二次：`rectangle.dashed` 的框铺满字形框，`A` 只能挤在右下角。
+  连角标按 16× 看过：间隙 1–2 点、虚线在角上本来就有缺口，**没重叠、能看清**，所以保留；
+  嫌挤的替补是 `square.dashed`（角落更空，但读起来更像「一个空方框」）。
+- 自检加两条实按：`A takes it too`（有框可放回时触发）、`A silent until used`（没有时不触发）。
+  全绿：`capture again: hidden until used ok, A silent until used ok, remembers ok, frame back ok,
+  double-click takes it ok, button 30×26 ok, A takes it too ok, pill at the end ok`。**待真机验。**
+
+### P8 第六轮：编辑加 `E`（2026-11-03）
+
+用户：「编辑也给他加一个快捷键吧」。`E` = edit，与前五个同一套助记。
+
+- 语义分两类，这下正好齐了：**上膛类** `R`/`L`/`W`/`T`（改下一次拖拽，按下点亮），
+  **出口类** `A`/`E`（当场结束这次截图，不点亮）。`A` 结束但不拍，`E` 结束并且拍 + 开编辑器。
+- `E` 取目标在 `DispatchQueue.main.async` 之前（同按钮）：结束截图正是这一拍买下的，视图活不到那时候。
+- 角标硬约束第三次出现：`pencil.and.scribble` 笔杆斜穿右上、笔尖左下，右下角空着 → `E` 干净；
+  而 `highlighter` / `pencil.line` 底边那道横线会一直伸到角标底下 → **带下划线的符号当不了带角标的按钮**。
+- 自检加一条：`E edits it too`（先画框再按 `E`，必须拿到那个框而不是整屏）。全绿：
+  `capture choose: click chooses ok, double-click takes it ok, space fills the frame ok,
+  Return takes it ok, 编辑 a window ok, 编辑 a frame ok, E edits it too ok`。**待真机验。**
+
+### P9 风格统一：截图浮条跟随外观（2026-11-03）
+
+用户：「因为我们现在想让它跟我们软件 APP 的风格保持一致：暗色就是暗色，亮色就是亮色，风格统一了」。
+
+- 病根：浮条表面写死 `srgb(0.08,0.078,0.075)` + 白字。亮色外观下就是「设置页暖白、浮条漆黑」。
+- 解法：新 `Capture/CaptureInk.swift`，按 `effectiveAppearance` 回答颜色；**浮条的面直接用
+  `EditorInk.float(a)`**（和编辑器浮条同一块面），字用一颗 `ink(a)`（暗白 / 亮近黑）配各种 alpha。
+- 不跟外观的那一族：**选区边框、八手柄、尺寸牌**（`claySoft` + 黑 hairline）——它们画在别人的像素上。
+  压陶土的字恒深色（`CaptureInk.onClay`，不是 `EditorInk.onClay`）。
+- 连带修：`glyph()` 缓存键从 `dark: Bool` 改成解析后的 RGBA（布尔分不出白与近黑，切外观会发回旧图）；
+  `viewDidChangeEffectiveAppearance` 里重画；`render(appearance:)` + `CLOTHESPEG_APPEARANCE` 让预览能按指定外观出图。
+- 自检新增 `capture style:`（像素级，不是常量级）：`light 91% light, 4% dark ok, dark 7% light, 88% dark ok`。
+  全量自检 0 个 `WRONG`。**待真机验**（亮/暗各看一眼浮条、比例面板、识别浮层、长图完成按钮）。
+
+### P10 重截常亮（2026-11-03，我第一版做错了一回）
+
+用户：「重载也可以有高亮效果」。
+
+**第一版（已废弃）**：做成按下去闪 0.3 s 的陶土。当时的理由是「重截不改下一次拖拽，长亮等于宣称一个
+不存在的状态」。用户直接否了，而且是对的：**「出现的对话框就应该是出现的，它在出现的过程中，
+就应该一直是亮的」**——我把一个**状态**当成一次**按键**来计时了。
+
+**定稿**：
+
+- 灯由 `restore()` 点，不由按键点。按键只是把请求送出去，真正发生的是「框回来了」，
+  所以灯跟着 `againShowing` 走，代表「**你眼前这个框是重截带回来的**」。
+- **框一变就灭**：`selection` 的 `didSet` 一处判掉（新拖、换窗口、空格整屏、拖边、锁比例改形状）。
+  「框不在了，这句话就不成立」——这也是它和上膛亮能共用同一种实心的原因：两种亮都是**当下为真的事实**。
+- 于是原来的 `againGlow`（`DispatchWorkItem` 计时器）与 `flashAgain()` 全部删掉：
+  这个按钮不需要时钟。
+- 自检跟着改：`A lights it`（框落地就亮，且**半秒后还亮着**——这一条专门抓「又被做成闪一下」的回归）、
+  `a new frame puts it out`（自己另画一个框，灯必须灭——抓「灯亮着不放」）。
+  全绿：`capture again: … A takes it too ok, A lights it ok, a new frame puts it out ok, pill at the end ok`。
+- 预览台：`CLOTHESPEG_CAPTURE_ARM=again` 定格这个状态照相。**待真机验。**
+
+### 2.0.0 版本号（2026-11-03）
+
+用户：「行，现在应该是 2.0.0 版本了。」判据不是「加了几个按钮」，是**规则变了**：拖拽/单击窗口/空格
+过去直接拍，现在只「选」，回车（或双击框）才拍——同一个手势在计数之前可以改。所以 2.0 是 major。
+
+- `scripts/build-app.sh`：`VERSION="1.11.0"` → `"2.0.0"`，并补 2.0.0 的 changelog 注释块
+  （先选后截 / 六颗图标 + 角标键 / 编辑与重截 / 浮条跟外观）。
+- `CFBundleVersion` `11` → `12`（发版规则：用户可见的新功能 → minor 升级时递增 build 号）。
+- 构建：`scripts/build-app.sh debug` 退出码 0、`codesign -v` 通过；
+  `Info.plist` 读到 `CFBundleShortVersionString=2.0.0` / `CFBundleVersion=12`；
+  二进制 mtime（14:01）晚于三个改动源文件（13:33–13:52）→ 确实是新代码。
+- 官网 `website/index.html` 特意**不写版本号**（第 495 行的注释：Flyring 那边写进 JS 常量、每次发版都得记着改），
+  所以发版不用动 HTML，`latest` 键固定那套照旧。
+  只有 `notes/promo-article*.md` 里还留着「当前版本 v1.10.0」，那是文章稿，等真发文章再改。
+- 全量自检 0 个 `WRONG`（`capture again` / `capture style` / `capture choose` / `capture chips` 全绿）。
+
+### P11 颜色记在「笔」上（2026-11-03）
+
+用户：「这个加号选的颜色不能固定下来……选了黑色，下次再选还得改，它自动就跳回红色了。」
+
+- **根因**：色点和色板都只调 `mutateStyle`，而它在**有选中标记时停在那条标记上返回**。画完一笔标记
+  仍是选中的，于是黑色只落在那一笔上，工具的墨一点没动 —— 下一笔红，每笔都得重选。
+- **修法**：新增 `applyInk(_:)`，色点/色板都走它：先写笔（`styles[currentTool]` + `EditorStyleStore.save`
+  + `canvas.style`），最后才 `mutateStyle` 落到标记/正在输入的文字上。
+- **判据**：新增 `inkDrill`（`CLOTHESPEG_EDITOR_PREVIEW_INK=1`），读的是**磁盘上的**工具色而不是窗口里的：
+  `ink: the frame in hand became #000000, the tool remembers #000000` /
+  `ink: a colour chosen while a mark is in hand is the next mark's too`；色点同一条路再验一次。
+  ⚠️ 第一版 drill 用 `isSame(tool, .black)` 直接比，被自己的存档骗过去了（用户存的正好是黑/紫）——
+  改成**先读已存色、再挑一个和它不同的颜色**才抓得住。
+  故意把修复回退重跑，drill 报 `FAILED — the choice stopped at the mark (tool kept #cb30e0)`，证明它会红。
+- 全量截图自检仍 0 个 `WRONG`，`slider` drill 不受影响。
+
+### P12 截到自己（2026-11-03，用户选了「加，不要开关」）
+
+用户：「我们现在的截屏截不到自己……弹出来的绳子、编辑按钮、盯住，这些是不是应该可以截得到？」
+
+- **不是难，是主动排除**：`ScreenGrab.areaImage` 排了本 App，`WindowPick` 也排了。而照片是从**冻结帧**裁的，
+  冻结帧在遮罩出现**之前**抓 → 遮罩本来就不会进去。被排掉的只有自家面板/编辑器/盯住窗。
+- 改三处：① 冻结帧 `excludingApplications: []`；② `WindowPick.windows()` 放行自己的窗口
+  （别人 `layer == 0`，自己 `layer <= .popUpMenu`，遮罩 `+1` 除外，规则抽成 `admits(...)`）；
+  ③ 点自家窗口走 `takeOwnWindow`（从冻结帧裁，不走没验过的 `windowImage`）。
+- ⚠️ **长图必须留旧行为**：`sample()` 传 `excludingThisApp: true`——那时遮罩在屏幕上，不排就是每帧拼进压暗。
+  这一条是自查代码时发现的回归，不是用户报的。
+- 自检新增 `capture own: editor/line/note/pin pickable, overlay not, another app's panel not, transparent not ok`；
+  `capture windows` 多报一个「N of this app」。全量 0 个 `WRONG`，`capture compare` 仍 0.0000。
+- **待真机验**：面板在屏幕上时按热键，画面里应真的有绳子；悬停面板应高亮它并且单击能选中它。
+
+### P13 「到底有几种橙色」（2026-11-03）
+
+用户：「看看我们现在这个橙色的方案到底有几种橙色……所有的按钮、高亮等用到橙色地方，都应该使用同一个橙色方案。」
+
+**盘点（`swift scripts/check-colours.swift`，机械统计，不是眼看）**：11 个字面量、10 个不同色值、其中橙色**两个字面量**：
+
+| 值 | 谁 | 性质 |
+|---|---|---|
+| `#d97757` 陶土 | `CDS.clay` / `CDS.clayInk` / `EditorInk.clay`（**改前是 3 处字面量**） | 唯一的强调色：选中、开关、主按钮、点亮的一切 |
+| `#e9a88f` 淡陶土 | `CDS.claySoft` / `claySoftInk`，只给截图选区框 + 尺寸牌 | 压在别人像素上，全强度会跟画面抢 |
+| `#c67622` 琥珀 | `scripts/make-icon.swift` 的图标木夹 | 图像资源，不是 UI |
+| `.orange` 系统橙 | 设置页「未授权」9 处 | 状态语义（警告），不是强调 |
+| `.systemOrange` | 编辑器画笔调色盘的「橙」 | 画在图片上的墨，用户选的颜色 |
+| `#efdcca`¹ | `Paper` 便签的「橙色」纸 | 纸，不是强调 |
+
+¹ 便签色是 `rgb(0.938, 0.865, 0.794)`，不是十六进制。
+
+**结论：按钮/高亮已经只有一种橙**，问题在「同一个值写了三遍」。
+
+- **改法**：`CDS.clayInk` 成为唯一的 `#d97757`，`CDS.clay = Color(nsColor: clayInk)`，`EditorInk.clay = CDS.clayInk`。
+  淡橙同理。**「压在陶土上的字」也搬进 `CDS` 一处**：`onClayDark`（#1a1918）/ `onClayInk`（按外观）/
+  `onClaySmallInk`（#1b1917，两副外观都用，给 6.5pt 角标）——两种答案并排放在一起，
+  而不是三个文件各写一个，第三条才无处发明。
+- **判据**：`scripts/check-colours.swift`（走源码，hue 10–45° 且饱和度 ≥25% 记为橙）。
+  CDSTokens 以外的橙色字面量 → 退出码 1。改前它报 `WRONG — #d97757 at EditorChrome.swift:10`，改后 `ok`。
+- **没变色的证明**：改前/改后各渲染一次编辑器（`CLOTHESPEG_EDITOR_PREVIEW`），**两张 PNG 逐字节相同**；
+  设置页截图里暖色只剩一个值 `#d97757 ×5176`。
+- **没动、已拍板（2026-11-03 用户选）**：
+  - 选区框的淡橙 **保持 `#e9a88f`**——它画在别人的照片上，淡一阶才不跟画面抢；色族相同。
+  - 设置页「未授权」**保持系统橙**——那是「需要你处理」的状态色、和绿色成对，
+    换陶土会把「强调」和「警告」混成一件事。
+  - 图标琥珀 `#c67622` 不动（图像资源，图标要的是辨识度不是色号一致）。
+  所以本轮之后**橙色仍是两个**：`#d97757` + `#e9a88f`，都只在 `CDSTokens.swift` 里写一次。
+
+### P14 长图能向上滚了（2026-11-03）
+
+用户先问「长截图不能向上滚是吧？」，确认后选「现在就加上」；随即又问「又向上又向下了，怎么截屏啊？」——
+这一问定了语义。
+
+- **语义**：图是**一张页面**，不是一条带子。每帧按测出的位置摆，输出 = 并集（最高帧的顶 → 最低帧的底）。
+  起手那帧只是原点；滚回看过的地方**被后到的帧原地重画**，所以来回滚不多一截、不重复。
+  按回车那一刻才定稿，之前滚多少次都不影响结果，只影响覆盖范围。
+- **代码**：`LongStitcher` 的 `tops` 从「距第一帧顶」改成**带符号偏移**，新增 `minTop` / `maxBottom`，
+  `height = maxBottom - minTop`，绘制时整体平移。`.backwards` 这个 case 删掉。
+  ⚠️ 基线仍是 `frames.last`（时间上的上一帧）——往上一插就换基线 = 拿两段不同内容做配准。
+- **文案**：`Scroll down · Return when done` → `Scroll up or down · Return when done`
+  （中：上下滚动都行 · 回车完成）；「往上滚了 —— 这个只往下长」整句删除，`surfaceNote`、`measuredLines`
+  里那条、`main.swift` 预览台对它的引用一起清掉（`CLOTHESPEG_CAPTURE_NOTE=1` 现在喂 `noteTooFast`）。
+- **判据**（`capture long:`）：`upwards 300×700 ok` —— 先 window(300) 再 window(0)，位移 −300，
+  出来必须等于页面 0..700；`back and forth 300×700 ok` —— 下→上→下，位移 +300/−300/+300，
+  出来仍是 300×700（1900 就是重复拼接，会被这条抓住）。全量 0 个 `WRONG`。
+- `check-strings` 与 HEAD 直接对比**逐行相同**（脚本本身的 unused 噪声是既有的，不是这轮引入）。

@@ -695,17 +695,41 @@ final class Line: ObservableObject {
         // and a card cannot answer.
         defer { ZoomController.shared.register(contentsOf: items) }
 
-        // Copying the same thing twice in a row is not a second thing that
-        // happened. It is one copy pressed again, and hanging a second card
-        // for it fills the line with copies of one colour because a key was
-        // hit twice.
+        // Copying something already on the line is not a second thing that
+        // happened. It is one copy pressed again — or a return to something
+        // copied an hour ago — and hanging a second card for it fills the
+        // line with copies of one colour because a key was hit twice. So the
+        // whole line is asked, not just the newest card, and the match comes
+        // back up to the newest end instead of a second card being minted.
+        // One card per thing is what every clipboard manager does: Maccy
+        // deletes the old item and hangs a new one, Alfred moves it.
         //
-        // Strictly consecutive: the same thing as the last thing copied. The
-        // same thing again after something else in between is a return rather
-        // than a repeat, and gets its own card.
-        if let previous = items.first(where: { !$0.falling }),
-           previous.payload == payload {
-            return nil
+        // The same card comes up, not a copy of it: the id, the thumb and
+        // whatever a picture has already been read for all stay, so coming
+        // back costs nothing and re-reads nothing. What changes is where it
+        // came from and when — a card says how long ago it was copied, and
+        // that answer just became now — and the dressing that arrived with
+        // it, since the same words can come plain one time and formatted the
+        // next.
+        //
+        // A pinned card is left alone. A pin is the user's own hand on the
+        // line, and a copy is nobody's permission to move it: the copy hangs
+        // a card of its own instead, which is what it did before.
+        if let index = items.firstIndex(where: {
+            !$0.falling && !$0.pinned && $0.payload == payload
+        }) {
+            var again = items.remove(at: index)
+            again.origin = origin
+            again.rich = rich
+            // The same end as a new card, so a return and an arrival are one
+            // order and not two.
+            items.insert(again, at: 0)
+            NotificationCenter.default.post(name: .filterCollapsed, object: nil)
+            if !activeQuery.isEmpty { SearchController.shared.close() }
+            panToNewest()
+            save()
+            if !quietly { play(.hang) }
+            return again.id
         }
         var item = Pegged(payload: payload, origin: origin, thumb: thumb(for: payload), rich: rich)
         item.flying = flying
@@ -1219,9 +1243,10 @@ final class Line: ObservableObject {
         // oldest card you had copied, which is the one thing a memory must
         // never do.
         // Each card is its own entry, identified by its own id. Comparing by
-        // payload would drop every repeat, which is the thing the line is
-        // for now: two copies of the same snippet at two different minutes
-        // are two things that happened.
+        // payload would drop one of the two cards that can hold the same
+        // thing: a pin is left alone by `hang`, so a copy of something pinned
+        // hangs beside it rather than replacing it, and the history must be
+        // able to hold both.
         var entries = items.filter { !$0.falling }
             .map { Attic.Entry(payload: $0.payload, origin: $0.origin, id: $0.id, rich: $0.rich, pinned: $0.pinned, qrcodes: $0.qrcodes, ocr: $0.ocr) }
         // Anything panned out of sight is still hung, and still comes back.

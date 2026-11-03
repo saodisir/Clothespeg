@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  Free and open source · macOS 14 and later · <a href="#credits">built on Tendedero</a>
+  Free for noncommercial use · macOS 14 and later · <a href="#credits">built on Tendedero</a>
 </p>
 
 Clothespeg takes its name — and its idea — from Tendedero, Spanish for
@@ -235,7 +235,7 @@ script submits and staples automatically, without them it only signs.
 
 ## Buy the author a coffee
 
-Clothespeg is free and open source — no ads, no paywall. If it has saved you
+Clothespeg is free for noncommercial use — no ads, no paywall. If it has saved you
 time, a coffee is the kindest way to say so.
 
 <p align="center">
@@ -262,29 +262,35 @@ right-click menu.
 
 ## License
 
-Two licences, because the code comes from two places:
+Two upstream licences, because the code comes from two places:
 
 - **Tendedero, the original, is MIT** — the rope, the clothespin, the glass
   and the swing of a card landing on the line are Alejandro Buján's work and
   **stay MIT, unchanged by this fork**. As published, it is in
   [LICENSE-MIT](LICENSE-MIT).
-- **This fork is Apache License 2.0** — the data model, the notes rope, the
-  pill, watching and hiding, the screenshot inbox, paging. Full text in
-  [LICENSE](LICENSE), what changed in [NOTICE](NOTICE).
+- **The additions in this fork**: **versions 1.11.0 and earlier are under the
+  Apache License 2.0**; **from 2.0.0 onward they are under the PolyForm
+  Noncommercial License 1.0.0**. Full text in [LICENSE](LICENSE), what changed
+  in [NOTICE](NOTICE).
 
-MIT permits its code to be redistributed under Apache-2.0, which is what makes
-both true at once. **Where you are reading Alejandro Buján's work, MIT applies;
-where you are reading the additions, Apache-2.0 does.**
+MIT permits its code to be redistributed, so Tendedero's half stays MIT and
+sits alongside the licence for the additions without conflict. **Where you are
+reading Alejandro Buján's work, MIT applies; where you are reading the additions
+from 2.0.0 onward, the PolyForm Noncommercial License applies.**
 
-The **licensor** for the Apache-2.0 half is **VIZWISE (HONGKONG) LIMITED**, also
-the company a release is signed with — copyright and signature on the same
-party, which is what keeps the patent grant in section 3 worth anything, since
-only the copyright holder can give it.
+### What this means
 
-You may use, change and redistribute freely, **including closed source and
-commercially**. Apache-2.0 also gives an express **patent grant** (so the
-licence cannot be used as a weapon in patent litigation against someone who
-took this) and requires you to **state what you changed**.
+You may use Clothespeg **for free** for personal, study, research, hobby and
+other noncommercial purposes, use it, change it and redistribute it freely,
+keeping the LICENSE and the `Required Notice:` line. The PolyForm NC also gives
+an express **patent grant** (so the licence cannot be used as a weapon in patent
+litigation against someone who took this).
+
+**But this software may not be used for a commercial purpose — including selling
+it, bundling it into a commercial product, or using it for company business.**
+Those uses are not granted; they require a separate commercial licence from
+**VIZWISE (HONGKONG) LIMITED**. Before selling or distributing it for a
+commercial purpose, contact the licensor.
 
 The "Name and icon" restriction is not part of that licence: neither the
 Tendedero nor the Clothespeg name or icon is granted here, a redistributed

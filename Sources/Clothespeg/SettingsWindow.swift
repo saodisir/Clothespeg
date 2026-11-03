@@ -335,11 +335,9 @@ struct GeneralPage: View {
 
     @State private var chosen: Appearance = Appearance.current
     @State private var language: Localization.Language = Localization.language
-    @State private var translationTarget: TranslationTarget = TranslationTarget.current
     @State private var atLogin = SMAppService.mainApp.status == .enabled
     @State private var panReversed = AppDelegate.panReversed
     @State private var sideButtonPaging = AppDelegate.sideButtonPaging
-    @State private var shortcutHints = ShortcutHints.isEnabled
     @State private var soundOn: Bool
 
     init(line: Line?) {
@@ -383,22 +381,10 @@ struct GeneralPage: View {
                 Localization.language = picked
             }
 
-            Section {
-                // The same shape as the language picker above, and beside it on
-                // purpose: both are about which language the app speaks, and the
-                // second is only ever a subset of what the first implies.
-                Picker(L("Translate into"), selection: $translationTarget) {
-                    ForEach(TranslationTarget.allCases) { option in
-                        Text(option.label).tag(option)
-                    }
-                }
-                Text(L("The capture's 译 button uses this. The system's own translator does the work, on this Mac."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .onChange(of: translationTarget) { _, picked in
-                TranslationTarget.current = picked
-            }
+            // The 译成 picker and the engine that answers it moved to the
+            // Clipboard page, beside the key that chooses between the two
+            // engines: a translation setting three cards away from the field
+            // that decides who does the translating is a setting nobody finds.
 
             Section {
                 Toggle(L("Open at login"), isOn: $atLogin)
@@ -422,16 +408,11 @@ struct GeneralPage: View {
                 }
             }
 
-            Section {
-                Toggle(L("Show shortcuts on the buttons"), isOn: $shortcutHints)
-                // What it does and what it leaves out, said together: a switch
-                // that promises "shortcuts" and then shows letters on eleven
-                // buttons but not on the four that use ⌘ reads as half done,
-                // unless it says why first.
-                Text(L("Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            // What it does and what it leaves out, said together: a switch
+            // that promises "shortcuts" and then shows letters on eleven
+            // buttons but not on the four that use ⌘ reads as half done,
+            // unless it says why first. The switch itself lives on the
+            // Clipboard page now, next to the capture's other answers.
 
             Section {
                 Toggle(L("Sounds"), isOn: $soundOn)
@@ -467,12 +448,6 @@ struct GeneralPage: View {
         .onChange(of: sideButtonPaging) { _, on in
             AppDelegate.sideButtonPaging = on
         }
-        .onChange(of: shortcutHints) { _, on in
-            // The setter posts the notification the open editor windows are
-            // listening for, so the corners change while the switch is still
-            // under the pointer.
-            ShortcutHints.isEnabled = on
-        }
         .onChange(of: soundOn) { _, on in
             line?.soundOn = on
         }
@@ -493,6 +468,20 @@ struct ClipboardPage: View {
     @State private var imageFilesAsPictures = ImageFileHanging.isEnabled
     @State private var imageFileLimitText = String(ImageFileHanging.limitMB)
 
+    /// The three fields that choose the other end of the wire. Read on the way
+    /// in and written back on commit rather than on every keystroke: a
+    /// keychain write per character would be a keychain write per character.
+    @State private var translationTarget = TranslationTarget.current
+    @State private var apiKey = TranslationAPI.key
+    @State private var apiModel = TranslationAPI.model
+    @State private var apiEndpoint = TranslationAPI.endpoint
+    @State private var testing = false
+    @State private var testResult: String?
+    /// The capture editor's corner letters. Moved here from the General page:
+    /// what it changes is in the capture, and the capture's answers are on
+    /// this page.
+    @State private var shortcutHints = ShortcutHints.isEnabled
+
     /// The typed limit, when it is one this app will honour: a whole number
     /// between one and 1024 megabytes. Anything else is a typing in progress,
     /// not an answer.
@@ -505,6 +494,38 @@ struct ClipboardPage: View {
     /// became one.
     private func commitImageFileLimit() {
         imageFileLimitText = String(ImageFileHanging.limitMB)
+    }
+
+    /// Empties the key, which is also the way back to the system's engine:
+    /// an emptied field deletes the keychain item rather than storing a blank
+    /// one, and "no key" is what `TranslationAPI.isConfigured` reads.
+    private func clearKey() {
+        apiKey = ""
+        TranslationAPI.key = ""
+        testResult = nil
+    }
+
+    /// One real round trip, from the button that promises one.
+    ///
+    /// The three faults people actually hit — a key that was revoked, a model
+    /// name that has been retired, an address with no network behind it — come
+    /// back as three different sentences, because they need three different
+    /// fixes. A single "failed" would leave the next step to guesswork.
+    private func runTest() {
+        guard !testing else { return }
+        // Committed first: the button is often pressed in the same second as
+        // the last keystroke, and a test of the previous key is worse than no
+        // test at all — it passes, and the translation then fails.
+        TranslationAPI.key = apiKey
+        TranslationAPI.model = apiModel
+        TranslationAPI.endpoint = apiEndpoint
+        testing = true
+        testResult = nil
+        Task { @MainActor in
+            let outcome = await TranslationAPI.test()
+            testing = false
+            testResult = (outcome.ok ? L("Works") : L("Did not work")) + " · " + outcome.detail
+        }
     }
 
     var body: some View {
@@ -564,6 +585,87 @@ struct ClipboardPage: View {
                 }
             }
 
+            // What the 译 button in the capture answers with, in one card:
+            // which language, and which engine. The engine follows from the
+            // key rather than from a switch — a key that is filled in is a
+            // person saying "use this" — so the two rows have to be read
+            // together, which is why they are together.
+            Section {
+                Text(L("Translation"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Picker(L("Translate into"), selection: $translationTarget) {
+                    ForEach(TranslationTarget.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+            }
+            .onChange(of: translationTarget) { _, picked in
+                TranslationTarget.current = picked
+            }
+
+            Section {
+                Text(L("Translation API"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                LabeledContent(L("Address")) {
+                    SleepyField(text: $apiEndpoint, prompt: TranslationAPI.defaultEndpoint) {
+                        TranslationAPI.endpoint = apiEndpoint
+                    }
+                    .frame(width: 300)
+                }
+                LabeledContent(L("Model")) {
+                    SleepyField(text: $apiModel, prompt: TranslationAPI.defaultModel) {
+                        TranslationAPI.model = apiModel
+                    }
+                    .frame(width: 300)
+                }
+                LabeledContent(L("API key")) {
+                    HStack(spacing: 8) {
+                        SleepyField(text: $apiKey, secure: true, prompt: "sk-…") {
+                            TranslationAPI.key = apiKey
+                        }
+                        .frame(width: 240)
+                        Button(L("Clear")) { clearKey() }
+                            .buttonStyle(CDSPillButtonStyle())
+                            .disabled(apiKey.isEmpty)
+                    }
+                }
+                HStack(spacing: 10) {
+                    Button(testing ? L("Testing…") : L("Test")) { runTest() }
+                        .buttonStyle(CDSPillButtonStyle())
+                        .disabled(testing || apiKey.isEmpty)
+                    if let testResult {
+                        Text(testResult)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(3)
+                    }
+                }
+                Text(L("If this API key is filled in, translation uses that key's model by default."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // The capture editor's corner letters, in the page whose cards are
+            // about what happens to a captured thing.
+            Section {
+                Text(L("Capture editor"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(L("Show capture editor shortcuts"), isOn: $shortcutHints)
+                Text(L("Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: shortcutHints) { _, on in
+                // The setter posts the notification the open editor windows are
+                // listening for, so the corners change while the switch is still
+                // under the pointer.
+                ShortcutHints.isEnabled = on
+            }
+
             // The folders the user asked to watch, in a container of their
             // own: these rows come and go with the user's list rather than
             // sitting under one switch, and a watch is a promise about the
@@ -600,6 +702,18 @@ struct ClipboardPage: View {
         // the tick here showing the one it had then — see `SettingsAnswers`.
         .onReceive(NotificationCenter.default.publisher(for: .settingsAnswerChanged)) { _ in
             copyFormatted = FormatCopy.isEnabled
+        }
+        // The key is in the keychain and the other two are in the preferences,
+        // neither of them in this view's state, so the page reads them back
+        // each time it comes up. A settings window is kept alive rather than
+        // rebuilt; without this, a key pasted in once would show blank on the
+        // next visit and look as though it had not been saved.
+        .onAppear {
+            apiKey = TranslationAPI.key
+            apiModel = TranslationAPI.model
+            apiEndpoint = TranslationAPI.endpoint
+            translationTarget = TranslationTarget.current
+            shortcutHints = ShortcutHints.isEnabled
         }
     }
 
@@ -774,6 +888,80 @@ private final class ClickAwakeTextField: NSTextField {
     /// Whether the field has been clicked — the only thing that ever asks
     /// for it to be typed into. Until then it refuses first responder, so a
     /// window looking for somewhere to put its focus finds nothing here.
+    private var awake = false
+
+    override func becomeFirstResponder() -> Bool {
+        awake ? super.becomeFirstResponder() : false
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        awake = true
+        super.mouseDown(with: event)
+    }
+}
+
+/// A field whose life is one paste, and which therefore sleeps until it is
+/// clicked.
+///
+/// The same refusal `LimitField` makes, for the same reason. The difference is
+/// the commit: a limit is applied as it parses, character by character, while
+/// these three are written back when the field is done being edited — one
+/// keychain write per pasted key rather than one per character.
+private struct SleepyField: NSViewRepresentable {
+    @Binding var text: String
+    var secure = false
+    var prompt: String = ""
+    /// Return, or a click somewhere else. Whatever the field really writes to.
+    var commit: () -> Void = {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        // NSSecureTextField is an NSTextField, so one signature serves both;
+        // the two subclasses below differ only in which one they start from.
+        let field: NSTextField = secure ? ClickAwakeSecureField() : ClickAwakeTextField()
+        field.isBezeled = true
+        field.bezelStyle = .roundedBezel
+        // A key and an address are read character by character — "is that an
+        // l or a 1" — so they are set in a monospaced face, small enough that
+        // a whole URL fits. No ellipsis: what is longer than the box is
+        // clipped, which is the field's own default and does not lie about
+        // what is in it.
+        field.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        if !prompt.isEmpty { field.placeholderString = prompt }
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        // Only from the outside in: while the field is being edited its own
+        // string is the truth, and writing the binding back would move the
+        // caret to the end of the line under the person's fingers.
+        if field.currentEditor() == nil, field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SleepyField
+        init(_ parent: SleepyField) { self.parent = parent }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        /// Return, Tab, or a click anywhere else all end editing, which is the
+        /// one moment worth writing to the keychain.
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.commit()
+        }
+    }
+}
+
+/// `ClickAwakeTextField`'s refusal, for the field that shows dots.
+private final class ClickAwakeSecureField: NSSecureTextField {
     private var awake = false
 
     override func becomeFirstResponder() -> Bool {
@@ -1647,9 +1835,9 @@ private struct LicenceSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(L("Based on Tendedero"))
+                Text(L("Clothespeg"))
                     .font(.system(size: 12, weight: .medium))
-                Text(L("by Alejandro Buján, used under the MIT License. This fork is Apache-2.0."))
+                Text(L("Licensed under the PolyForm Noncommercial License 1.0.0. Based on Tendedero by Alejandro Buján, used under the MIT License."))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
