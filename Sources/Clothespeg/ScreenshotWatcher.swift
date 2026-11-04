@@ -34,6 +34,16 @@ final class ScreenshotWatcher {
     private var stopped = false
     private let onNew: (URL) -> Void
     private let onChange: () -> Void
+    /// Files this app wrote itself and has already hung.
+    ///
+    /// The folder is watched, and this app writes its own captures into it,
+    /// so one capture arrives twice: once from the landing that wrote it,
+    /// once from the watcher that follows the folder. The second arrival is
+    /// the same picture and hangs no second card — the line keeps one card
+    /// per thing — but it is still a card being pegged up, and it is still
+    /// heard as one capture making two sounds. So the landing says which
+    /// file it just wrote, and the watcher leaves that one alone.
+    private var ignored: Set<String> = []
 
     private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "webp"]
     /// Screen recordings land in the folder too when the inbox is on. They
@@ -70,6 +80,23 @@ final class ScreenshotWatcher {
                 MainActor.assumeIsolated { self.watch(fd) }
             }
         }
+    }
+
+    /// This file is already on the line — it was written here a moment ago
+    /// by this app's own landing, which hung it as it wrote it.
+    ///
+    /// Said rather than left to the line's one-card-per-thing rule, because
+    /// that rule answers a second card and not a second sound.
+    func ignore(_ url: URL) {
+        ignored.insert(key(url))
+    }
+
+    /// The name a file goes by when two paths are compared: `/var` and
+    /// `/private/var` are the same folder, and the landing that writes a
+    /// capture and the listing that reads the folder back do not have to
+    /// spell it the same way.
+    private func key(_ url: URL) -> String {
+        url.standardizedFileURL.path
     }
 
     /// Safe to call while `start()` or a listing is still pending: the file
@@ -145,9 +172,14 @@ final class ScreenshotWatcher {
         let first = known == nil
         let base = known ?? Set(settled.map(\.path))
         for url in candidates where !base.contains(url.path) {
+            // Our own write, hung by the landing that made it.
+            if ignored.contains(key(url)) { continue }
             onNew(url)
         }
         known = Set(files.map(\.path))
+        // A file that has left the folder cannot arrive again; a set that
+        // only ever grows would remember every capture of the day.
+        ignored.formIntersection(Set(files.map { key($0) }))
         if !first { onChange() }
         if missed {
             missed = false

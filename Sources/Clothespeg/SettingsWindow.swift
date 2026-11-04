@@ -62,50 +62,143 @@ enum Appearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// Where a translation should land.
+/// One language the 译 button can be pointed at.
 ///
-/// A setting rather than a guess, because the guess is wrong exactly half the
-/// time and silently: on a Chinese Mac, an English page and a Chinese page both
-/// plausibly "want" Chinese, and the system's own engine answers a
-/// Chinese-to-Chinese request with an error rather than with the same words.
-/// Following the system stays the default — it is right for the common case —
-/// and the other three are there for the case it cannot serve.
-enum TranslationTarget: String, CaseIterable, Identifiable {
-    case system, english, simplifiedChinese, traditionalChinese
+/// The name is written in the language it names, and it is *short* on purpose:
+/// this string is drawn inside a 26-point chip. `Locale.localizedString(forLanguageCode:)`
+/// would answer "Chinese (Traditional)", which is a sentence, not a value on a
+/// button — so the seven names are spelled out here, once, where they can be
+/// looked at at the size they are actually drawn.
+struct TranslationLanguage: Identifiable, Hashable {
+    let code: String
+    let name: String
 
-    var id: String { rawValue }
+    var id: String { code }
+    var language: Locale.Language { Locale.Language(identifier: code) }
+}
 
-    /// Language names are written in the language they name, for the same
-    /// reason the interface language's are: a reader who cannot read the
-    /// current language still has to be able to find their own.
-    var label: String {
-        switch self {
-        case .system: L("Same as the system")
-        case .english: "English"
-        case .simplifiedChinese: "简体中文"
-        case .traditionalChinese: "繁體中文"
-        }
+/// The languages this app offers, and no others.
+///
+/// A fixed list rather than everything the system knows: the `Translation`
+/// framework can only reach a pair it has (or can download), and a menu of
+/// ninety languages is a menu where the four a person uses are four rows among
+/// eighty-six. These are the ones the capture bar has been asked for; adding one
+/// is one line, and the button measures the widest name it is given.
+enum TranslationCatalogue {
+    static let all: [TranslationLanguage] = [
+        TranslationLanguage(code: "zh-Hans", name: "简体中文"),
+        TranslationLanguage(code: "zh-Hant", name: "繁體中文"),
+        TranslationLanguage(code: "en", name: "English"),
+        TranslationLanguage(code: "ja", name: "日本語"),
+        TranslationLanguage(code: "ko", name: "한국어"),
+        TranslationLanguage(code: "es", name: "Español"),
+        TranslationLanguage(code: "fr", name: "Français"),
+        TranslationLanguage(code: "de", name: "Deutsch"),
+        TranslationLanguage(code: "pt", name: "Português"),
+        TranslationLanguage(code: "ru", name: "Русский"),
+    ]
+
+    static func named(_ code: String) -> TranslationLanguage? {
+        all.first { $0.code == code }
     }
+}
 
-    var language: Locale.Language? {
-        switch self {
-        case .system:
-            return Locale.preferredLanguages.first.map { Locale.Language(identifier: $0) }
-        case .english: return Locale.Language(identifier: "en")
-        case .simplifiedChinese: return Locale.Language(identifier: "zh-Hans")
-        case .traditionalChinese: return Locale.Language(identifier: "zh-Hant")
-        }
-    }
+/// Which languages the 译 button offers, and which of them it uses.
+///
+/// Two settings, not one. The list is the shortlist a person configured — the
+/// capture bar's menu shows exactly those, in that order — and the current one
+/// is what a press of `译` (or the `T` key) translates into. Keeping them apart
+/// is what makes "press it and it just happens" possible without a menu.
+///
+/// The storage is a language code, so the old four-case enum had to be carried
+/// across: a `TranslationTarget` written by the last build says `english`, and
+/// losing that on update would silently change everyone's answer back to the
+/// system language.
+enum TranslationTargets {
+    static let listKey = "translationTargets"
+    /// The same key the old `TranslationTarget` wrote to, deliberately: one key
+    /// for one question ("where should it land"), with the old values migrated
+    /// on first read.
+    static let currentKey = "translationTarget"
 
-    static let defaultsKey = "translationTarget"
+    /// Three directions that cover the ordinary cases on a Chinese Mac: English
+    /// in, Chinese out, and Simplified ↔ Traditional, which is a translation
+    /// that no engine will do for you.
+    ///
+    /// `zh-Hans` rather than `en` as the one in force, although the ask said
+    /// "default to English": pressing `译` on English words and asking for
+    /// English answers 「已经是这种语言了」 and nothing happens, which is a first
+    /// impression that reads as a broken button. The language a person reads is
+    /// the useful default; the ask's own example was "比如".
+    static let fallback = ["zh-Hans", "zh-Hant", "en"]
+    static let fallbackCurrent = "zh-Hans"
 
-    static var current: TranslationTarget {
+    private static let legacy: [String: String] = [
+        "english": "en", "simplifiedChinese": "zh-Hans", "traditionalChinese": "zh-Hant",
+    ]
+
+    static var chosen: [String] {
         get {
-            guard let raw = UserDefaults.standard.string(forKey: defaultsKey),
-                  let stored = TranslationTarget(rawValue: raw) else { return .system }
-            return stored
+            migrateOnce()
+            let stored = UserDefaults.standard.stringArray(forKey: listKey) ?? []
+            let known = stored.filter { TranslationCatalogue.named($0) != nil }
+            return known.isEmpty ? fallback : known
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+        set {
+            var seen: [String] = []
+            for code in newValue where TranslationCatalogue.named(code) != nil && !seen.contains(code) {
+                seen.append(code)
+            }
+            // Kept in the catalogue's order rather than the order they were
+            // ticked: the menu is read, not built, and a list that rearranges
+            // itself as things are added is a list with no place to remember.
+            let order = TranslationCatalogue.all.map(\.code)
+            seen.sort { (order.firstIndex(of: $0) ?? 0) < (order.firstIndex(of: $1) ?? 0) }
+            UserDefaults.standard.set(seen.isEmpty ? fallback : seen, forKey: listKey)
+            // The current one has to stay one of them: a button that says
+            // "Español" while its menu no longer offers it is a button that
+            // cannot be explained.
+            if !seen.contains(current) {
+                current = seen.first ?? fallbackCurrent
+            }
+        }
+    }
+
+    static var current: String {
+        get {
+            migrateOnce()
+            guard let raw = UserDefaults.standard.string(forKey: currentKey) else { return fallbackCurrent }
+            let code = legacy[raw] ?? raw
+            if code == "system" { return systemLanguage }
+            return TranslationCatalogue.named(code) == nil ? fallbackCurrent : code
+        }
+        set { UserDefaults.standard.set(newValue, forKey: currentKey) }
+    }
+
+    /// The language the interface is in, which is what the old `system` case
+    /// meant. Read from the system's preferred languages rather than the app's,
+    /// because the 译 button answers about the screen, not about the interface.
+    private static var systemLanguage: String {
+        let identifier = Locale.preferredLanguages.first ?? "en"
+        if identifier.hasPrefix("zh") {
+            return identifier.contains("Hant") || identifier.contains("TW")
+                || identifier.contains("HK") ? "zh-Hant" : "zh-Hans"
+        }
+        return String(identifier.prefix(2))
+    }
+
+    /// Carries the old single-choice setting across, once.
+    ///
+    /// Done on read rather than at launch because there is no launch step this
+    /// app is guaranteed to run before somebody opens a capture — and a migration
+    /// that runs late is a migration that runs after the wrong answer has already
+    /// been used.
+    private static func migrateOnce() {
+        let defaults = UserDefaults.standard
+        guard defaults.stringArray(forKey: listKey) == nil,
+              let raw = defaults.string(forKey: currentKey), let mapped = legacy[raw] else { return }
+        defaults.set([mapped] + fallback.filter { $0 != mapped }, forKey: listKey)
+        defaults.set(mapped, forKey: currentKey)
     }
 }
 
@@ -166,7 +259,11 @@ enum SettingsWindow {
     /// Wide enough that six tabs read without squeezing, and tall enough for
     /// the busiest page whole — no page may be cut off by the bottom edge: a
     /// setting the user has to scroll for is a setting the user does not find.
-    static let size = CGSize(width: 600, height: 560)
+    ///
+    /// 620 rather than 560 since the capture page took on the translation and
+    /// editor cards (2026-11-03): with them the page ran 60 points past the old
+    /// height and the last card sat below the fold — present, and unreachable.
+    static let size = CGSize(width: 600, height: 620)
 }
 
 /// What the window is made of.
@@ -468,20 +565,6 @@ struct ClipboardPage: View {
     @State private var imageFilesAsPictures = ImageFileHanging.isEnabled
     @State private var imageFileLimitText = String(ImageFileHanging.limitMB)
 
-    /// The three fields that choose the other end of the wire. Read on the way
-    /// in and written back on commit rather than on every keystroke: a
-    /// keychain write per character would be a keychain write per character.
-    @State private var translationTarget = TranslationTarget.current
-    @State private var apiKey = TranslationAPI.key
-    @State private var apiModel = TranslationAPI.model
-    @State private var apiEndpoint = TranslationAPI.endpoint
-    @State private var testing = false
-    @State private var testResult: String?
-    /// The capture editor's corner letters. Moved here from the General page:
-    /// what it changes is in the capture, and the capture's answers are on
-    /// this page.
-    @State private var shortcutHints = ShortcutHints.isEnabled
-
     /// The typed limit, when it is one this app will honour: a whole number
     /// between one and 1024 megabytes. Anything else is a typing in progress,
     /// not an answer.
@@ -494,38 +577,6 @@ struct ClipboardPage: View {
     /// became one.
     private func commitImageFileLimit() {
         imageFileLimitText = String(ImageFileHanging.limitMB)
-    }
-
-    /// Empties the key, which is also the way back to the system's engine:
-    /// an emptied field deletes the keychain item rather than storing a blank
-    /// one, and "no key" is what `TranslationAPI.isConfigured` reads.
-    private func clearKey() {
-        apiKey = ""
-        TranslationAPI.key = ""
-        testResult = nil
-    }
-
-    /// One real round trip, from the button that promises one.
-    ///
-    /// The three faults people actually hit — a key that was revoked, a model
-    /// name that has been retired, an address with no network behind it — come
-    /// back as three different sentences, because they need three different
-    /// fixes. A single "failed" would leave the next step to guesswork.
-    private func runTest() {
-        guard !testing else { return }
-        // Committed first: the button is often pressed in the same second as
-        // the last keystroke, and a test of the previous key is worse than no
-        // test at all — it passes, and the translation then fails.
-        TranslationAPI.key = apiKey
-        TranslationAPI.model = apiModel
-        TranslationAPI.endpoint = apiEndpoint
-        testing = true
-        testResult = nil
-        Task { @MainActor in
-            let outcome = await TranslationAPI.test()
-            testing = false
-            testResult = (outcome.ok ? L("Works") : L("Did not work")) + " · " + outcome.detail
-        }
     }
 
     var body: some View {
@@ -585,87 +636,6 @@ struct ClipboardPage: View {
                 }
             }
 
-            // What the 译 button in the capture answers with, in one card:
-            // which language, and which engine. The engine follows from the
-            // key rather than from a switch — a key that is filled in is a
-            // person saying "use this" — so the two rows have to be read
-            // together, which is why they are together.
-            Section {
-                Text(L("Translation"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Picker(L("Translate into"), selection: $translationTarget) {
-                    ForEach(TranslationTarget.allCases) { option in
-                        Text(option.label).tag(option)
-                    }
-                }
-            }
-            .onChange(of: translationTarget) { _, picked in
-                TranslationTarget.current = picked
-            }
-
-            Section {
-                Text(L("Translation API"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                LabeledContent(L("Address")) {
-                    SleepyField(text: $apiEndpoint, prompt: TranslationAPI.defaultEndpoint) {
-                        TranslationAPI.endpoint = apiEndpoint
-                    }
-                    .frame(width: 300)
-                }
-                LabeledContent(L("Model")) {
-                    SleepyField(text: $apiModel, prompt: TranslationAPI.defaultModel) {
-                        TranslationAPI.model = apiModel
-                    }
-                    .frame(width: 300)
-                }
-                LabeledContent(L("API key")) {
-                    HStack(spacing: 8) {
-                        SleepyField(text: $apiKey, secure: true, prompt: "sk-…") {
-                            TranslationAPI.key = apiKey
-                        }
-                        .frame(width: 240)
-                        Button(L("Clear")) { clearKey() }
-                            .buttonStyle(CDSPillButtonStyle())
-                            .disabled(apiKey.isEmpty)
-                    }
-                }
-                HStack(spacing: 10) {
-                    Button(testing ? L("Testing…") : L("Test")) { runTest() }
-                        .buttonStyle(CDSPillButtonStyle())
-                        .disabled(testing || apiKey.isEmpty)
-                    if let testResult {
-                        Text(testResult)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(3)
-                    }
-                }
-                Text(L("If this API key is filled in, translation uses that key's model by default."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // The capture editor's corner letters, in the page whose cards are
-            // about what happens to a captured thing.
-            Section {
-                Text(L("Capture editor"))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Toggle(L("Show capture editor shortcuts"), isOn: $shortcutHints)
-                Text(L("Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .onChange(of: shortcutHints) { _, on in
-                // The setter posts the notification the open editor windows are
-                // listening for, so the corners change while the switch is still
-                // under the pointer.
-                ShortcutHints.isEnabled = on
-            }
-
             // The folders the user asked to watch, in a container of their
             // own: these rows come and go with the user's list rather than
             // sitting under one switch, and a watch is a promise about the
@@ -703,18 +673,7 @@ struct ClipboardPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .settingsAnswerChanged)) { _ in
             copyFormatted = FormatCopy.isEnabled
         }
-        // The key is in the keychain and the other two are in the preferences,
-        // neither of them in this view's state, so the page reads them back
-        // each time it comes up. A settings window is kept alive rather than
-        // rebuilt; without this, a key pasted in once would show blank on the
-        // next visit and look as though it had not been saved.
-        .onAppear {
-            apiKey = TranslationAPI.key
-            apiModel = TranslationAPI.model
-            apiEndpoint = TranslationAPI.endpoint
-            translationTarget = TranslationTarget.current
-            shortcutHints = ShortcutHints.isEnabled
-        }
+
     }
 
     // MARK: Watched folders
@@ -1147,18 +1106,47 @@ struct InvocationPage: View {
 /// did. And the questions are not "how does the rope come to me" but "what
 /// becomes of a capture", which is a different subject with its own answers.
 ///
-/// Controls only, and no explanatory paragraphs (2026-11-02, user). The other
-/// pages explain themselves because each switch there has a consequence that
-/// is not obvious from its name; these three do not, and a row of grey text
-/// under each one was reading as a manual rather than as a page of settings.
-/// What needs saying about the permission is said on the Permissions page,
-/// where it can be acted on.
+/// Mostly controls, and no paragraphs of advocacy (2026-11-02, user). The three
+/// switches it started with explain nothing because there is nothing to
+/// explain: each one's consequence is its own name. What came here on
+/// 2026-11-03 brought its own sentences, and those are of the other kind — a
+/// caption under the language row because the answer it used to carry moved
+/// into the capture, and a caption under the editor switch because ⌘-keys are
+/// deliberately not marked. Both are one line and both say a fact. What needs
+/// saying about the permission is said on the Permissions page, where it can be
+/// acted on.
+///
+/// Six cards on a 620-point page, and the order is the order of the questions
+/// people arrive with: how do I summon it, what happens after, where do the
+/// system's own screenshots go, then the two cards about what a capture can do
+/// with what is on the screen. The key and address hide behind a triangle — the
+/// one thing here answered once a year.
 struct CapturePage: View {
     /// Whether something new shows itself for a moment. The same switch the
     /// menu carries as "Peek at new cards": a capture is one of the things
     /// that arrives, so it belongs beside the rest of the capture's answers.
     @State private var peeks = AppDelegate.peeksAtNew
     @State private var inbox = Inbox.screenshotInboxEnabled
+
+    /// The shortlist the capture bar's menu offers. What a press of `译`
+    /// actually uses is deliberately not here — it is chosen in that menu,
+    /// which is where the question comes up.
+    @State private var targetCodes = TranslationTargets.chosen
+    /// The three fields that choose the other end of the wire. Read on the way
+    /// in and written back on commit rather than on every keystroke: a
+    /// keychain write per character would be a keychain write per character.
+    @State private var apiKey = TranslationAPI.key
+    @State private var apiModel = TranslationAPI.model
+    @State private var apiEndpoint = TranslationAPI.endpoint
+    @State private var testing = false
+    @State private var testResult: String?
+    /// The capture editor's corner letters. This is the page the editor's other
+    /// answers are on, so the switch that changes them is here too.
+    @State private var shortcutHints = ShortcutHints.isEnabled
+    /// Whether the key and address are showing. Remembered for the life of the
+    /// window only: a page that reopened with the triangle down would be a page
+    /// that scrolls again for anybody who left it open once.
+    @State private var apiExpanded = false
 
     var body: some View {
         Form {
@@ -1186,6 +1174,129 @@ struct CapturePage: View {
                 Toggle(L("Hang new screenshots"), isOn: $inbox)
 #endif
             }
+            // The capture editor's corner letters, in the page whose cards are
+            // about what happens to a captured thing.
+            Section {
+                Text(L("Capture editor"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Toggle(L("Show capture editor shortcuts"), isOn: $shortcutHints)
+                Text(L("Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: shortcutHints) { _, on in
+                // The setter posts the notification the open editor windows are
+                // listening for, so the corners change while the switch is still
+                // under the pointer.
+                ShortcutHints.isEnabled = on
+            }
+            // What the 译 button in the capture has to choose from. The
+            // shortlist only, and only one row of it: which language a press
+            // actually answers in is chosen in the menu under that button, which
+            // is where the question comes up. A second control here answered a
+            // question nobody asked twice, and the person using it said so.
+            Section {
+                Text(L("Translation"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // A menu of ticked rows rather than ten switches on the page —
+                // a settings list that pushes everything under it off the bottom
+                // is the one failure this window has had before.
+                LabeledContent(L("Languages")) {
+                    Menu {
+                        ForEach(TranslationCatalogue.all) { option in
+                            Toggle(option.name, isOn: Binding(
+                                get: { targetCodes.contains(option.code) },
+                                set: { on in toggleLanguage(option.code, on) }))
+                        }
+                    } label: {
+                        Text(targetCodes.compactMap { TranslationCatalogue.named($0)?.name }
+                            .joined(separator: " · "))
+                    }
+                    .frame(width: 300, alignment: .leading)
+                }
+                // One caption, because a question left the page: with the picker
+                // gone, "which one is it using right now" has no answer here and
+                // the row above would look like the whole story.
+                Text(L("The translate button's menu offers exactly these. Which one it uses is chosen there."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Collapsed by default. Three cards came to this page and the page
+            // is 620 points tall: left open, this one pushed the editor's switch
+            // past the bottom edge, where it was still there and still
+            // unreachable. What is behind the triangle is a key and an address,
+            // set once and then forgotten — so it is the one thing here that can
+            // afford to be a click away.
+            Section {
+                // The triangle is drawn here rather than handed to SwiftUI's
+                // `DisclosureGroup`, because in a grouped `Form` that control
+                // lays its label out as a row of the label's own height: 40
+                // points from the header to the first field, against 74 from
+                // 「翻译」 to 「语言清单」 in the card above (measured off a
+                // screenshot, 2026-11-03 — 「展开后的菜单明显高度与其他不同」).
+                // The affordance has to stay, the metrics have to be the page's.
+                // So: one ordinary first row, a headline like every other card
+                // opens with, and the chevron after the words — after, not
+                // before, so all four card titles start on the same vertical.
+                Button {
+                    withAnimation(CDS.microAnimation) { apiExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(L("Translation API"))
+                            .font(.headline)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(apiExpanded ? 0 : -90))
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if apiExpanded {
+                    LabeledContent(L("Address")) {
+                        SleepyField(text: $apiEndpoint, prompt: TranslationAPI.defaultEndpoint) {
+                            TranslationAPI.endpoint = apiEndpoint
+                        }
+                        .frame(width: 300)
+                    }
+                    LabeledContent(L("Model")) {
+                        SleepyField(text: $apiModel, prompt: TranslationAPI.defaultModel) {
+                            TranslationAPI.model = apiModel
+                        }
+                        .frame(width: 300)
+                    }
+                    LabeledContent(L("API key")) {
+                        HStack(spacing: 8) {
+                            SleepyField(text: $apiKey, secure: true, prompt: "sk-…") {
+                                TranslationAPI.key = apiKey
+                            }
+                            .frame(width: 240)
+                            Button(L("Clear")) { clearKey() }
+                                .buttonStyle(CDSPillButtonStyle())
+                                .disabled(apiKey.isEmpty)
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        Button(testing ? L("Testing…") : L("Test")) { runTest() }
+                            .buttonStyle(CDSPillButtonStyle())
+                            .disabled(testing || apiKey.isEmpty)
+                        if let testResult {
+                            Text(testResult)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .lineLimit(3)
+                        }
+                    }
+                    Text(L("If this API key is filled in, translation uses that key's model by default."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -1195,6 +1306,18 @@ struct CapturePage: View {
             // was true when the window was built.
             peeks = AppDelegate.peeksAtNew
             inbox = Inbox.screenshotInboxEnabled
+            // The key is in the keychain and the other two are in the
+            // preferences, none of them in this view's state, so the page reads
+            // them back each time it comes up. A settings window is kept alive
+            // rather than rebuilt; without this, a key pasted in once would show
+            // blank on the next visit and look as though it had not been saved.
+            apiKey = TranslationAPI.key
+            apiModel = TranslationAPI.model
+            apiEndpoint = TranslationAPI.endpoint
+            // The shortlist can be changed from the capture's own menu, and this
+            // page is kept alive rather than rebuilt.
+            targetCodes = TranslationTargets.chosen
+            shortcutHints = ShortcutHints.isEnabled
         }
         // And while it is open, follow: the window outlives every visit (it is
         // kept rather than released when closed), so reading on the way in is
@@ -1213,6 +1336,62 @@ struct CapturePage: View {
             AppDelegate.setScreenshotInboxFromSettings(on)
         }
     }
+
+    /// Ticks or unticks one language in the shortlist.
+    ///
+    /// The last one cannot be unticked: the menu in the capture would then be
+    /// empty, and a menu with nothing in it is a button that has stopped
+    /// working with no way to see why. Unticking the one in force moves the
+    /// answer to whatever is left, which `TranslationTargets.chosen` does on
+    /// the way in.
+    private func toggleLanguage(_ code: String, _ on: Bool) {
+        var codes = targetCodes
+        if on {
+            if !codes.contains(code) { codes.append(code) }
+        } else {
+            guard codes.count > 1 else { return }
+            codes.removeAll { $0 == code }
+        }
+        TranslationTargets.chosen = codes
+        // Read back rather than trusting the argument: the setter de-duplicates
+        // and puts them in the catalogue's order, and it may have moved the
+        // language in force because the one it was pointing at has just gone —
+        // which this page no longer shows, but the bar's next press will.
+        targetCodes = TranslationTargets.chosen
+    }
+
+    /// Empties the key, which is also the way back to the system's engine:
+    /// an emptied field deletes the keychain item rather than storing a blank
+    /// one, and "no key" is what `TranslationAPI.isConfigured` reads.
+    private func clearKey() {
+        apiKey = ""
+        TranslationAPI.key = ""
+        testResult = nil
+    }
+
+    /// One real round trip, from the button that promises one.
+    ///
+    /// The three faults people actually hit — a key that was revoked, a model
+    /// name that has been retired, an address with no network behind it — come
+    /// back as three different sentences, because they need three different
+    /// fixes. A single "failed" would leave the next step to guesswork.
+    private func runTest() {
+        guard !testing else { return }
+        // Committed first: the button is often pressed in the same second as
+        // the last keystroke, and a test of the previous key is worse than no
+        // test at all — it passes, and the translation then fails.
+        TranslationAPI.key = apiKey
+        TranslationAPI.model = apiModel
+        TranslationAPI.endpoint = apiEndpoint
+        testing = true
+        testResult = nil
+        Task { @MainActor in
+            let outcome = await TranslationAPI.test()
+            testing = false
+            testResult = (outcome.ok ? L("Works") : L("Did not work")) + " · " + outcome.detail
+        }
+    }
+
 }
 
 // MARK: - Shortcuts

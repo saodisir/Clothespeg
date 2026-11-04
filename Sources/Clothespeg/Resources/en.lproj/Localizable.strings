@@ -143,7 +143,10 @@
 "Invocation" = "Invocation";
 "Language" = "Language";
 "Changes apply at once." = "Changes apply at once.";
-"Translate into" = "Translate into";
+/* The shortlist the capture bar's language menu offers — read as a list of names, not as one answer. */
+"Languages" = "Languages";
+/* What replaces the "translate into" picker: the shortlist is the whole answer this page holds. */
+"The translate button's menu offers exactly these. Which one it uses is chosen there." = "The translate button's menu offers exactly these. Which one it uses is chosen there.";
 "Clean up" = "Clean up";
 "Clipboard cards" = "Clipboard cards";
 "Clear the clipboard?" = "Clear the clipboard?";
@@ -323,8 +326,10 @@
 "Long · scroll down, Return when done" = "Long · scroll down, Return when done";
 "Text · the words in the area" = "Text · the words in the area";
 "Translate · the same words, another language" = "Translate · the same words, another language";
+"Language · which one a press translates into" = "Language · which one a press translates into";
 "Edit · take it and open the editor" = "Edit · take it and open the editor";
 "Again · put the last frame back" = "Again · put the last frame back";
+"Capture · Return, a double-click, or this button · esc leaves without one" = "Capture · Return, a double-click, or this button · esc leaves without one";
 "Scroll up or down · Return when done" = "Scroll up or down · Return when done";
 "Drag the area that should keep growing" = "Drag the area that should keep growing";
 "That scroll was too fast to follow — go a little slower." = "Too fast to follow · slower, with an overlap";
@@ -346,6 +351,7 @@
 "Cannot tell which language these words are in" = "Cannot tell which language these words are in";
 "This Mac cannot translate between those two languages" = "This Mac cannot translate between those two languages";
 "Those words are already in this language" = "Already in this language · change it in Settings";
+"More text — all of it is in the clipboard" = "More text — all of it is in the clipboard";
 
 /* Clipboard page — the 译 button's language, engine and key */
 "Translation" = "Translation";

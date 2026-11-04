@@ -633,6 +633,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func acceptCapture(at url: URL, from app: String?) {
         var origin = Origin()
         origin.app = app
+        // A capture is written into the folder the screenshot inbox watches,
+        // so the watcher is told this one is already on its way here. Without
+        // that it follows the folder and hangs the same picture a second
+        // time, which the line turns into the same card picked up once more —
+        // no second card, but a second sound: one capture, two pegs going in.
+        screenshotWatcher?.ignore(url)
         hang(.image(url), origin: origin)
     }
 
@@ -886,12 +892,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// that missed everything — there is nothing up there to open — while a click
     /// next to it opened something. Both mean the pointer went to the system and
     /// the line should not follow it back down.
+    ///
+    /// Where the bar is, though, is two questions and not one. The rectangle is
+    /// arithmetic, and it does not know what is drawn over it: a maximised
+    /// window whose top edge sits a point inside the bar was answering for the
+    /// bar every time its first row was clicked. So the rectangle is only the
+    /// cheap pass — the click has to have reached the bar's own window as well,
+    /// which is what keeps the suppression off a picture that fills the screen.
     private func watchMenuBarClicks() {
         let handler: (NSEvent?) -> Void = { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let p = NSEvent.mouseLocation
-                guard NSScreen.screens.contains(where: { NSMouseInRect(p, TriggerBand.menuBar(of: $0), false) }) else { return }
+                guard NSScreen.screens.contains(where: { NSMouseInRect(p, TriggerBand.menuBar(of: $0), false) }),
+                      TriggerBand.isMenuBar(at: p) else { return }
                 self.menuBarSuppressed = true
                 self.hotZoneSince = nil
                 diagLog("Menu-bar click: notch trigger suppressed")

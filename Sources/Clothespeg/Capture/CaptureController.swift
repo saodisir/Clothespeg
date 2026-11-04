@@ -483,12 +483,16 @@ final class CaptureController {
 
     /// Where a translation should land.
     ///
-    /// The picker in Settings, defaulting to the language the interface is in.
+    /// Read from the shortlist the person configured and the one they left in
+    /// force, both of which are language codes now rather than four named
+    /// cases — the bar's menu offers ten languages, and an enum of four could
+    /// not have held them.
+    ///
     /// It has to be a setting and not a guess: a Chinese page on a Chinese Mac
     /// wanting English is the ordinary case for anyone who reads both, and no
     /// default can tell it from someone who does not.
     private static func translationTarget() -> Locale.Language? {
-        TranslationTarget.current.language
+        Locale.Language(identifier: TranslationTargets.current)
     }
 
     /// The words, on their way to the line as text rather than as a picture.

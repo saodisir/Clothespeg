@@ -1471,9 +1471,16 @@ final class Line: ObservableObject {
     func play(_ event: SoundEvent) {
         let name = Line.soundName(for: event)
         guard soundOn, !name.isEmpty,
-              let sound = NSSound(named: name)?.copy() as? NSSound else { return }
+              let sound = NSSound(named: name)?.copy() as? NSSound else {
+            diagLog("Sound \(event.rawValue): off")
+            return
+        }
         sound.volume = event.volume
         sound.play()
+        // Said, because "it made the wrong number of sounds" is a question
+        // the log can answer and the code cannot: one capture asking for two
+        // pegs used to be heard as two sounds by an app that meant one.
+        diagLog("Sound \(event.rawValue): \(name)")
     }
 
     private func pngData(_ url: URL) -> Data? {

@@ -35,7 +35,9 @@ enum CaptureSelfTest {
         lines.append(MainActor.assumeIsolated { againLine() })
         lines.append(MainActor.assumeIsolated { chooseLine() })
         lines.append(MainActor.assumeIsolated { chipsLine() })
+        lines.append(MainActor.assumeIsolated { languagesLine() })
         lines.append(MainActor.assumeIsolated { styleLine() })
+        lines.append(MainActor.assumeIsolated { cardLine() })
         lines.append(keysLine())
         if #available(macOS 15.0, *) {
             lines.append(MainActor.assumeIsolated { TranslateProbe.line() })
@@ -488,13 +490,14 @@ enum CaptureSelfTest {
             return "capture text: MISSING (the bar should carry a 识别 button)"
         }
         let inside = shot.capsule.contains(shot.read)
-        let beforeKeys = shot.read.maxX <= shot.keys.minX
+        // Ahead of the checkmark, which is the last thing in the row.
+        let beforeConfirm = shot.read.maxX <= shot.confirm.minX
         // A chip, not a word: 30 × 26 is the editor's box and the one every
         // neighbouring symbol sits in.
         let sized = shot.read.height == 26 && shot.read.width >= 30
         parts.append("button \(Int(shot.read.width))×\(Int(shot.read.height)) "
-            + (inside && beforeKeys && sized ? "ok"
-               : "WRONG (inside \(inside), left of the keys \(beforeKeys), sized \(sized))"))
+            + (inside && beforeConfirm && sized ? "ok"
+               : "WRONG (inside \(inside), left of the check \(beforeConfirm), sized \(sized))"))
 
         // A reading does not get the bar's own window. That window exists
         // because a long capture's overlay ignores the mouse; a reading's does
@@ -507,18 +510,27 @@ enum CaptureSelfTest {
 
         // 译 is a door of its own beside 识别, not a switch on a finished
         // reading: one puts the words on the line, the other puts them on the
-        // screen and keeps nothing. Two doors, two buttons, one capsule.
-        let heldT = shot.capsule.contains(shot.translate)
-        let leftOfLegend = shot.translate.maxX <= shot.keys.minX
-        let afterRead = shot.read.maxX <= shot.translate.minX
-        // A chip, not a word. The single character the button used to wear is
-        // gone; what is left is the box the symbol sits in, and 30 × 26 is the
-        // editor's own number rather than a new one invented here.
-        let sizedT = shot.translate.height == 26 && shot.translate.width >= 30
-        parts.append("translate \(Int(shot.translate.width))×\(Int(shot.translate.height)) "
-            + (heldT && leftOfLegend && afterRead && sizedT ? "ok"
-               : "WRONG (inside \(heldT), left of the keys \(leftOfLegend), "
-                 + "after 识别 \(afterRead), sized \(sizedT))"))
+        // screen and keeps nothing. Two doors, one capsule.
+        //
+        // It carries a value now — the language a press answers in — so it is
+        // one of the two wide chips at the start of the row rather than one of
+        // the four squares, and it sits before 长图 instead of after 选文字.
+        let heldT = shot.capsule.contains(shot.language)
+        let beforeCheck = shot.language.maxX <= shot.confirm.minX
+        let beforeLong = shot.language.maxX <= shot.long.minX
+        let afterRatio = shot.ratio.maxX <= shot.language.minX
+        // The chevron is inside the chip and at its right end: the menu has to
+        // be reachable without covering the half that translates.
+        let menuInside = shot.language.contains(shot.languageMenu)
+        let menuAtTheEnd = abs(shot.languageMenu.maxX - shot.language.maxX) <= 1
+        let sizedT = shot.language.height == 26 && shot.language.width > 30
+        parts.append("translate \(Int(shot.language.width))×\(Int(shot.language.height)) "
+            + (heldT && beforeCheck && beforeLong && afterRatio && menuInside
+               && menuAtTheEnd && sizedT ? "ok"
+               : "WRONG (inside \(heldT), left of the check \(beforeCheck), "
+                 + "before 长图 \(beforeLong), after 比例 \(afterRatio), "
+                 + "menu inside \(menuInside), menu at the end \(menuAtTheEnd), "
+                 + "sized \(sizedT))"))
 
         // The chain a report of "点击翻译无效，还显示在翻译中" broke: the door is
         // chosen, the area is drawn, the words come back, and the engine is
@@ -531,8 +543,8 @@ enum CaptureSelfTest {
             surface.frame = NSRect(origin: .zero, size: screen.frame.size)
             surface.selectForTesting(area)
             _ = surface.takeBarClickForTesting(
-                at: NSPoint(x: shot.translate.midX - screen.frame.minX,
-                            y: shot.translate.midY - screen.frame.minY))
+                at: NSPoint(x: shot.language.midX - screen.frame.minX,
+                            y: shot.language.midY - screen.frame.minY))
             surface.showReading("one\ntwo")
             return surface
         }
@@ -545,8 +557,8 @@ enum CaptureSelfTest {
         door.onFinishTranslation = { handedOver = $0 }
         door.selectForTesting(area)
         let chosen = door.takeBarClickForTesting(
-            at: NSPoint(x: shot.translate.midX - screen.frame.minX,
-                        y: shot.translate.midY - screen.frame.minY))
+            at: NSPoint(x: shot.language.midX - screen.frame.minX,
+                        y: shot.language.midY - screen.frame.minY))
         door.showReading("one\ntwo")
         parts.append("asks by itself " + (chosen && asked == "one\ntwo" ? "ok"
             : "WRONG (chose \(chosen), asked \(asked ?? "nothing"))"))
@@ -779,13 +791,15 @@ enum CaptureSelfTest {
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         let inside = bar.capsule.contains(bar.again)
         // 重载 now sits before 编辑, and 编辑 is the last button in the row.
-        let afterTranslate = bar.translate.maxX <= bar.again.minX
+        // 译 left this run when it gained a value, so the chip it follows is
+        // 选文字.
+        let afterRead = bar.read.maxX <= bar.again.minX
         let beforeEdit = bar.again.maxX <= bar.edit.minX
         let sized = bar.again.height == 26 && bar.again.width >= 30
         parts.append("button \(Int(bar.again.width))×\(Int(bar.again.height)) "
-            + (pressed && inside && afterTranslate && beforeEdit && sized ? "ok"
+            + (pressed && inside && afterRead && beforeEdit && sized ? "ok"
                : "WRONG (pressed \(pressed), inside \(inside), "
-                 + "after 译 \(afterTranslate), before 编辑 \(beforeEdit), sized \(sized))"))
+                 + "after 选文字 \(afterRead), before 编辑 \(beforeEdit), sized \(sized))"))
 
         // The `A` in that chip's corner has to be heard and not merely drawn: a
         // letter on a button that does nothing is worse than no letter, because
@@ -824,27 +838,34 @@ enum CaptureSelfTest {
         // The pill now hangs off the last button rather than off 译. They are
         // the same edge only while 重截 is absent, and the day they differ is
         // the day a press meant for one lands on the other.
+        //
+        // 译 is no longer the button it could collide with: it moved to the far
+        // end of the row with the other value chip, so what the pill must clear
+        // is 选文字 — the last symbol chip before the two that end the capture.
         door.selectForTesting(rect)
         _ = door.takeBarClickForTesting(
-            at: NSPoint(x: bar.translate.midX - screen.frame.minX,
-                        y: bar.translate.midY - screen.frame.minY))
+            at: NSPoint(x: bar.language.midX - screen.frame.minX,
+                        y: bar.language.midY - screen.frame.minY))
         door.showReading("one\ntwo")
         // The engine's answer has to arrive before the bar is a bar again:
         // while a translation is in flight the pill is deliberately absent.
         door.showTranslation("一\n二")
         if let reading = door.readingBarOnScreen {
-            // Right edges level, and nothing reaching back over 译. The pill is
-            // a different width from the button it sits on — `复制` plus more
-            // air than `重截` — so its left edge is a couple of points past the
-            // button's on purpose; what must not happen is it landing where the
-            // 译 button is, or short of the end. Measured against 编辑 because
-            // that is the button at the end of the row since the two swapped.
-            let atTheEnd = abs(reading.done.maxX - bar.edit.maxX) <= 1
-                && reading.done.minX > bar.translate.maxX
+            // The pill's right edge is the capsule's own inset, and nothing
+            // reaches back over the symbols. It used to be levelled with 编辑,
+            // because the word `esc` was drawn beyond the buttons and the pill
+            // stopped where the buttons did — but that word is gone (the ✓ took
+            // its place), and a pill anchored to the last button would now end
+            // the collapsed bar a chip short of the edge, with a hole beside it.
+            // A range rather than the padding constant, which is private to the
+            // surface: what must not happen is the pill stopping short, and
+            // 8…18 points is the band where it does not.
+            let inset = reading.capsule.maxX - reading.done.maxX
+            let atTheEnd = inset > 8 && inset < 18 && reading.done.minX > bar.read.maxX
             parts.append("pill at the end " + (atTheEnd ? "ok"
                 : "WRONG (pill \(Int(reading.done.minX))…\(Int(reading.done.maxX)), "
-                  + "编辑 \(Int(bar.edit.minX))…\(Int(bar.edit.maxX)), "
-                  + "译 ends at \(Int(bar.translate.maxX)))"))
+                  + "capsule ends \(Int(reading.capsule.maxX)) (inset \(Int(inset))), "
+                  + "选文字 ends at \(Int(bar.read.maxX)))"))
         } else {
             parts.append("pill at the end WRONG (no pill on a reading)")
         }
@@ -1018,9 +1039,9 @@ enum CaptureSelfTest {
     /// renamed between two macOS releases draws as a blank box, and nothing else
     /// in a build would say so. Every chip is the same 30 × 26 box the editor's
     /// chips are, with the same four points between them, because two bars that
-    /// differ by a point read as two different apps. And the ratio chip is the
-    /// one that is wider, pinned to the widest shape title so choosing 2.35:1
-    /// does not move the five beside it.
+    /// differ by a point read as two different apps. And the two chips at the
+    /// start are wider than a chip — the ratio one for its shape's name, the
+    /// language one for the 16 points of chevron that open its menu.
     @MainActor
     private static func chipsLine() -> String {
         guard let screen = NSScreen.main, let blank = blankImage() else {
@@ -1045,7 +1066,10 @@ enum CaptureSelfTest {
         // In the order they are drawn — 编辑 last, 重载 one place before it when
         // it is there at all. The gaps are measured between neighbours, so a row
         // laid out in a different order shows up here as a 38-point hole.
-        var chips = [bar.long, bar.read, bar.translate]
+        //
+        // 译 is not in this list any more: it carries a value now, so it is the
+        // second member of the values group and is checked with 比例 below.
+        var chips = [bar.long, bar.read]
         if !bar.again.isEmpty { chips.append(bar.again) }
         chips.append(bar.edit)
         let boxes = chips.allSatisfy { $0.width == 30 && $0.height == 26 }
@@ -1054,32 +1078,55 @@ enum CaptureSelfTest {
 
         // Asked as distances between edges rather than as a count: a chip that
         // grew by a point would move its neighbours and still pass a count.
-        var gaps: [Int] = [Int(bar.long.minX - bar.ratio.maxX)]
+        //
+        // The two numbers that are not four are the group seam in front of 长图
+        // and the tight gap inside the values group. Two groups that were spaced
+        // like one would be two groups nobody can see.
+        var gaps: [Int] = [Int(bar.language.minX - bar.ratio.maxX),
+                           Int(bar.long.minX - bar.language.maxX)]
         for (left, right) in zip(chips, chips.dropFirst()) {
             gaps.append(Int(right.minX - left.maxX))
         }
-        let wantedGaps = Array(repeating: "4", count: gaps.count).joined(separator: "/")
+        let wantedGaps = ([4, 10] + Array(repeating: 4, count: chips.count - 1))
+            .map(String.init).joined(separator: "/")
         parts.append("gap \(gaps.map(String.init).joined(separator: "/")) "
-            + (gaps.allSatisfy { $0 == 4 } ? "ok" : "WRONG (wanted \(wantedGaps))"))
+            + (gaps == ([4, 10] + Array(repeating: 4, count: chips.count - 1))
+               ? "ok" : "WRONG (wanted \(wantedGaps))"))
 
-        // The value chip: wider than a chip, the same height, and the last one
-        // before the gap that leads to `esc`.
+        // The two value chips: wider than a chip, the same height, and together
+        // at the start of the row — the ratio one first, then the language one.
         let ratioWide = bar.ratio.width > 30 && bar.ratio.height == 26
-        let ratioAtStart = bar.ratio.minX < bar.long.minX
-        parts.append("ratio \(Int(bar.ratio.width))×\(Int(bar.ratio.height)) "
-            + (ratioWide && ratioAtStart ? "ok"
-               : "WRONG (wider \(ratioWide), first \(ratioAtStart))"))
+        let languageWide = bar.language.width > 30 && bar.language.height == 26
+        let valuesAtStart = bar.ratio.maxX <= bar.language.minX
+            && bar.language.maxX <= bar.long.minX
+        parts.append("values \(Int(bar.ratio.width))+\(Int(bar.language.width))×26 "
+            + (ratioWide && languageWide && valuesAtStart ? "ok"
+               : "WRONG (wide \(ratioWide)/\(languageWide), together \(valuesAtStart))"))
 
-        // The legend is gone: the keys are in the corners now, and `esc` — the
-        // one key with no chip — is all that is left spelled out.
-        let esc = bar.keys
-        let spelled = esc.width > 0 && esc.width < 24
-        parts.append("esc \(Int(esc.width))pt " + (spelled && esc.minX > bar.edit.maxX ? "ok"
-            : "WRONG (width \(Int(esc.width)), after 编辑 \(esc.minX > bar.edit.maxX))"))
+        // The far end is a button now, not a legend. The word `esc` used to sit
+        // there and say something nobody could press; the checkmark says the one
+        // thing this whole bar is for, and the gap in front of it is what tells
+        // it apart from the six chips beside it.
+        let confirm = bar.confirm
+        let atTheEnd = confirm.minX > bar.edit.maxX + 8
+        let confirmSized = confirm.width == 30 && confirm.height == 26
+        parts.append("confirm \(Int(confirm.width))×\(Int(confirm.height)) "
+            + (atTheEnd && confirmSized ? "ok"
+               : "WRONG (after 编辑 \(atTheEnd), sized \(confirmSized))"))
 
         let inside = chips.allSatisfy { bar.capsule.contains($0) }
-            && bar.capsule.contains(bar.ratio) && bar.capsule.contains(esc)
+            && bar.capsule.contains(bar.ratio) && bar.capsule.contains(bar.language)
+            && bar.capsule.contains(bar.languageMenu) && bar.capsule.contains(confirm)
         parts.append("inside the capsule " + (inside ? "ok" : "WRONG"))
+
+        // And the capsule itself inside the screen. A second value chip made the
+        // row about seventy points wider, which is the kind of growth that is
+        // invisible until the day the bar runs off both edges of a small display
+        // and the shape chip is the half that goes missing.
+        let onScreen = bar.capsule.minX >= screen.frame.minX
+            && bar.capsule.maxX <= screen.frame.maxX
+        parts.append("capsule \(Int(bar.capsule.width))pt "
+            + (onScreen ? "ok" : "WRONG (runs off the screen)"))
 
         // The words the symbols gave up live in tool tips, and AppKit asks for
         // them through an informal protocol — a selector nothing checks. A typo
@@ -1112,6 +1159,139 @@ enum CaptureSelfTest {
                ? " ok" : " WRONG (nothing chosen lit: \(quiet))"))
 
         return "capture chips: " + parts.joined(separator: ", ")
+    }
+
+    /// The language menu behind the `译` chip's chevron.
+    ///
+    /// Four claims, none of which a picture of the bar would settle. It offers
+    /// the shortlist that was configured and nothing else — a menu that quietly
+    /// showed all ten would be a menu that ignored Settings. It offers them in
+    /// the catalogue's order, because a list that rearranges itself is a list
+    /// with no place to remember. It marks the one in force, which is a colour
+    /// and therefore a pixel. And the chip does not change width when the answer
+    /// changes, because the four symbols to its right would move with it.
+    ///
+    /// The setting itself is written and read back at the end: everything here
+    /// goes through `UserDefaults`, and a menu drawn from a value that was never
+    /// stored would pass every geometry check above.
+    @MainActor
+    private static func languagesLine() -> String {
+        guard let screen = NSScreen.main, let blank = blankImage() else {
+            return "capture languages: no screen"
+        }
+        var parts: [String] = []
+        // The harness runs on a real Mac with real preferences, so it puts back
+        // what it found. A self-test that quietly widened somebody's shortlist
+        // would be a self-test that changed the app.
+        let savedList = TranslationTargets.chosen
+        let savedCurrent = TranslationTargets.current
+        defer {
+            TranslationTargets.chosen = savedList
+            TranslationTargets.current = savedCurrent
+        }
+
+        // Deliberately not the default three, and deliberately not in the order
+        // they are written: a menu that echoed `fallback` would pass without
+        // reading the setting at all.
+        TranslationTargets.chosen = ["en", "ja", "zh-Hans"]
+        TranslationTargets.current = "ja"
+
+        func surface() -> CaptureSurface? {
+            let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+            view.frame = NSRect(origin: .zero, size: screen.frame.size)
+            view.selectForTesting(CGRect(x: screen.frame.midX - 100, y: screen.frame.midY - 60,
+                                        width: 200, height: 120))
+            return view.shotBarOnScreen == nil ? nil : view
+        }
+
+        guard let view = surface(), view.openPanelForTesting("language") else {
+            return "capture languages: MISSING (no panel)"
+        }
+        let rows = view.languageRowsOnScreen
+        let codes = rows.map(\.code)
+        parts.append("offers \(codes.joined(separator: "/")) "
+            + (codes == ["zh-Hans", "en", "ja"] ? "ok" : "WRONG (wanted zh-Hans/en/ja)"))
+
+        // The current one, by pixel. Clay is the only thing in this window whose
+        // red is that far from its blue; the panel behind it is the warm ground,
+        // which is nearly grey in both appearances.
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return "capture languages: MISSING (nothing was drawn)"
+        }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+        func isClay(_ row: NSRect) -> Bool {
+            let local = NSPoint(x: row.minX + 6 - screen.frame.minX,
+                                y: row.midY - screen.frame.minY)
+            guard let colour = rep.colorAt(x: Int(local.x * scale),
+                                           y: Int((view.bounds.height - local.y) * scale))?
+                .usingColorSpace(.sRGB) else { return false }
+            return colour.redComponent - colour.blueComponent > 0.2
+        }
+        let markedCurrent = rows.first { $0.code == "ja" }.map { isClay($0.rect) } ?? false
+        let othersPlain = rows.filter { $0.code != "ja" }.allSatisfy { !isClay($0.rect) }
+        parts.append("current marked " + (markedCurrent && othersPlain ? "ok"
+            : "WRONG (clay on ja \(markedCurrent), plain elsewhere \(othersPlain))"))
+
+        // In the screen, and above the bar rather than over it.
+        let capsule = view.shotBarOnScreen?.capsule ?? .zero
+        let onScreen = rows.allSatisfy {
+            screen.frame.contains($0.rect) && $0.rect.minY >= capsule.maxY
+        }
+        parts.append("on screen " + (rows.count == 3 && onScreen ? "ok"
+            : "WRONG (\(rows.count) rows, on screen \(onScreen))"))
+
+        // No word on the chip, so its width cannot depend on the language: 30
+        // points of icon and 16 of chevron, whatever is in force. Compared
+        // against the number as well as against itself — two chips that were
+        // both wrong would pass "the same".
+        let wide = view.languageChipWidthOnScreen
+        TranslationTargets.current = "en"
+        guard let other = surface() else { return "capture languages: MISSING (no second bar)" }
+        let narrow = other.languageChipWidthOnScreen
+        parts.append("width fixed \(Int(wide))pt "
+            + (wide == narrow && wide == 46 ? "ok"
+               : "WRONG (简体中文 \(Int(wide)), English \(Int(narrow)))"))
+
+        // The chevron opens the menu and the body does not. Two halves of one
+        // box, and geometry alone cannot say which answers what.
+        guard let byClick = surface() else { return "capture languages: MISSING (no bar to press)" }
+        let bar = byClick.shotBarOnScreen!
+        _ = byClick.takeBarClickForTesting(
+            at: NSPoint(x: bar.languageMenu.midX - screen.frame.minX,
+                        y: bar.languageMenu.midY - screen.frame.minY))
+        let opened = byClick.languageRowsOnScreen.count
+        // Pressed with no area drawn, which is the state where arming is
+        // visible at all: with a frame already there the press translates at
+        // once and there is no chip to light — that half is `capture text`'s
+        // "asks by itself".
+        let byBody = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+        byBody.frame = NSRect(origin: .zero, size: screen.frame.size)
+        _ = byBody.takeBarClickForTesting(
+            at: NSPoint(x: bar.language.minX + 12 - screen.frame.minX,
+                        y: bar.language.midY - screen.frame.minY))
+        let armedByBody = byBody.pickedChipsForTesting
+        parts.append("chevron opens · body translates "
+            + (opened == 3 && armedByBody == ["translate"] ? "ok"
+               : "WRONG (menu rows \(opened), body armed \(armedByBody))"))
+
+        // One panel at a time. Opening the shapes menu has to close this one by
+        // construction rather than by anybody remembering to.
+        _ = byClick.openPanelForTesting("ratio")
+        let languageStillOpen = !byClick.languageRowsOnScreen.isEmpty
+        parts.append("one panel " + (languageStillOpen
+            ? "WRONG (the language menu survived the shapes menu)" : "ok"))
+
+        // And the setting is a setting: written, read back, and never empty.
+        TranslationTargets.chosen = ["ko"]
+        let stored = TranslationTargets.chosen
+        TranslationTargets.chosen = []
+        let neverEmpty = TranslationTargets.chosen
+        parts.append("stored \(stored.joined(separator: "/")) "
+            + (stored == ["ko"] && !neverEmpty.isEmpty ? "ok"
+               : "WRONG (read back \(stored), emptied to \(neverEmpty))"))
+
+        return "capture languages: " + parts.joined(separator: ", ")
     }
 
     /// Whether the bar is drawn in the appearance it is drawn in.
@@ -1184,6 +1364,176 @@ enum CaptureSelfTest {
                    : "WRONG (surface \(surfaceOK), ink \(inkOK))"))
         }
         return "capture style: " + parts.joined(separator: ", ")
+    }
+
+    /// Whether the words are on screen at all, at the shapes a hand draws.
+    ///
+    /// Two failures this exists for, both reported on 2026-11-03 and both
+    /// invisible to anyone reading the code: the words did not appear at all
+    /// (the box they were laid into collapsed to `NSRect.null` and the draw
+    /// returned before a glyph — the clipboard had them, the screen did not),
+    /// and long words came out as `…` (the frame, not the type, was deciding the
+    /// line width). The fix was to stop drawing inside the frame; what has to be
+    /// true afterwards is a set of facts about the card, and each of them is
+    /// checked here rather than argued about:
+    ///
+    /// - a card exists at all,
+    /// - it does not sit on the frame it belongs to (the frame is what the words
+    ///   are being checked against),
+    /// - it is inside the screen,
+    /// - its width is the card's own 340–560 rather than the frame's,
+    /// - it has ink in it — counted, not assumed.
+    ///
+    /// 14, 20 and 24 are the heights a frame round one line of small type comes
+    /// to; 40 is a comfortable line; 60×60 is a word circled tightly; and the
+    /// long paragraph is the case that used to be one line and an ellipsis.
+    @MainActor
+    private static func cardLine() -> String {
+        guard let screen = NSScreen.main, let blank = blankImage() else {
+            return "capture card: no screen"
+        }
+        var parts: [String] = []
+
+        func examine(_ name: String, region: CGRect, words: String?, translated: String? = nil,
+                     overlapping: Bool = false,
+                     extra: ((NSRect, (NSRect) -> Int) -> String?)? = nil) {
+            let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+            view.frame = NSRect(origin: .zero, size: screen.frame.size)
+            view.appearance = NSAppearance(named: .aqua)
+            view.selectForTesting(region)
+            if let translated {
+                view.showTranslationForTesting(translated, from: words)
+            } else {
+                view.showReadingForTesting(words)
+            }
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                parts.append("\(name) WRONG (nothing drawn)")
+                return
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let card = view.resultCard
+            let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+
+            func ink(_ rect: NSRect) -> Int {
+                var count = 0
+                var x = rect.minX
+                while x < rect.maxX {
+                    var y = rect.minY
+                    while y < rect.maxY {
+                        // A bitmap is stored top-down; this view is not flipped.
+                        let point = NSPoint(x: x * scale, y: (view.bounds.height - y) * scale)
+                        if let colour = rep.colorAt(x: Int(point.x), y: Int(point.y))?
+                            .usingColorSpace(.sRGB) {
+                            let luminance = 0.2126 * colour.redComponent
+                                + 0.7152 * colour.greenComponent + 0.0722 * colour.blueComponent
+                            // 0.7 rather than 0.5: the original words are set at
+                            // half ink on purpose (they are the reference, not
+                            // the answer), and at 0.5 they came out as "no ink"
+                            // — a check that cannot see the quieter of the two
+                            // blocks is a check that would miss it going away.
+                            if luminance < 0.7 { count += 1 }
+                        }
+                        y += 1
+                    }
+                    x += 1
+                }
+                return count
+            }
+
+            var trouble: [String] = []
+            // The frame in view coordinates, for the two geometric questions.
+            let frame = CGRect(x: region.minX - screen.frame.minX, y: region.minY - screen.frame.minY,
+                               width: region.width, height: region.height)
+            if card.isEmpty { trouble.append("no card") }
+            if card.intersects(frame), !overlapping { trouble.append("on top of the frame") }
+            if !NSRect(x: 0, y: 0, width: view.bounds.width, height: view.bounds.height)
+                .insetBy(dx: -1, dy: -1).contains(card) { trouble.append("off the screen") }
+            if card.width < 339 || card.width > 561 { trouble.append("width \(Int(card.width))") }
+            // Inside the card, so its own hairline edge is not counted as ink.
+            if ink(card.insetBy(dx: 6, dy: 5)) < 40 { trouble.append("blank card") }
+            if let extra, let complaint = extra(card, ink) { trouble.append(complaint) }
+            parts.append("\(name) " + (trouble.isEmpty ? "ok"
+                : "WRONG (" + trouble.joined(separator: ", ") + ")"))
+        }
+
+        for height in [40.0, 30.0, 24.0, 20.0, 14.0] {
+            examine("\(Int(height))",
+                    region: CGRect(x: screen.frame.midX - 160, y: screen.frame.midY - height / 2,
+                                   width: 320, height: height),
+                    words: "Clothespeg 123")
+        }
+        // A word circled tightly: the frame is narrower than the card's own
+        // minimum, which is the whole reason the width is not the frame's.
+        examine("narrow", region: CGRect(x: screen.frame.midX - 30, y: screen.frame.midY - 30,
+                                         width: 60, height: 60),
+                words: "Clothespeg 123")
+        // A paragraph in a one-line frame: this is the case that used to come out
+        // as a single line ending in an ellipsis. The card has to be several
+        // lines tall, which no amount of truncation can fake.
+        let paragraph = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 8)
+        examine("long", region: CGRect(x: screen.frame.midX - 160, y: screen.frame.midY - 10,
+                                       width: 320, height: 20),
+                words: paragraph) { card, _ in
+            card.height > 100 ? nil : "cut to \(Int(card.height)) pt"
+        }
+        // Both languages on the card at once, each in its own half — that is what
+        // 对照 means, and it is the one thing a card with one block cannot fake:
+        // the words are set smaller and greyer above the line, the translation
+        // larger and darker below it.
+        examine("translation",
+                region: CGRect(x: screen.frame.midX - 160, y: screen.frame.midY - 15,
+                               width: 320, height: 30),
+                words: "The quick brown fox jumps over the lazy dog.",
+                translated: "敏捷的棕色狐狸跳过了那只懒狗。") { card, ink in
+            if card.height < 60 { return "only \(Int(card.height)) pt for two blocks" }
+            let above = NSRect(x: card.minX, y: card.midY, width: card.width, height: card.height / 2)
+            let below = NSRect(x: card.minX, y: card.minY, width: card.width, height: card.height / 2)
+            if ink(above) < 20 { return "nothing above the line" }
+            if ink(below) < 20 { return "nothing below the line" }
+            return nil
+        }
+        // A frame near the bottom of the screen: there is no room below it, so
+        // the card has to go above. The rule is "never on the frame", not "always
+        // below it", and the second one is what the first version would have
+        // done while looking perfectly correct in the middle of the screen.
+        examine("low frame", region: CGRect(x: screen.frame.midX - 160, y: screen.frame.minY + 30,
+                                           width: 320, height: 30),
+                words: "Clothespeg 123") { card, _ in
+            card.minY >= screen.frame.minY + 30 + 29 ? nil : "still below the frame"
+        }
+        // A frame 680 wide and four fifths of the screen tall, which is what the
+        // report of 2026-11-03 was: 560 points is too wide for either margin and
+        // too tall for above or below, so the old rule glued the card to the
+        // bottom of the display, across the frame's border, sharing the frame's
+        // left edge — 「既不居中也不对齐」. The card has to look for a margin at
+        // its narrower width instead. The assertions that decide are the
+        // universal ones above ("on top of the frame", "off the screen",
+        // "width"); this case is what puts them under that strain.
+        examine("big frame",
+                region: CGRect(x: screen.frame.midX - 340,
+                               y: screen.frame.minY + screen.frame.height * 0.1,
+                               width: 680, height: screen.frame.height * 0.8),
+                words: paragraph)
+        // Centred on the frame rather than sharing its left edge. A frame wider
+        // than the card is where the difference shows: one edge in line and a
+        // lot of nothing beside it is the report this answers.
+        examine("centred", region: CGRect(x: screen.frame.midX - 300, y: screen.frame.midY - 100,
+                                          width: 600, height: 200),
+                words: "Clothespeg 123") { card, _ in
+            let off = card.midX - screen.frame.width / 2
+            return abs(off) < 1.5 ? nil : "off centre by \(Int(off)) pt"
+        }
+        // The one case that has to cover the frame: a frame that is the whole
+        // screen. It goes into the frame's own corner, 12 points in — not glued
+        // to the bottom of the display while sharing the frame's left edge,
+        // which was the one position that read as an accident.
+        examine("whole screen", region: screen.frame.insetBy(dx: 2, dy: 2),
+                words: "Clothespeg 123", overlapping: true) { card, _ in
+            if abs(card.minX - 14) > 1.5 { return "not tucked into the frame's corner" }
+            if abs(card.minY - 14) > 1.5 { return "not tucked into the frame's corner" }
+            return nil
+        }
+        return "capture card: " + parts.joined(separator: ", ")
     }
 
     /// A picture with known words on it, for the reader to read.    ///
@@ -1359,7 +1709,7 @@ enum CaptureSelfTest {
     /// a picture of the one thing this harness exists to check.
     @MainActor
     static func render(to path: String, hovered: Bool, selected: Bool,
-                       aspect: CropAspect = .free, panel: Bool = false,
+                       aspect: CropAspect = .free, panel: String? = nil,
                        long: Int? = nil, read: String? = nil, note: String? = nil,
                        translated: String? = nil, armed: String? = nil,
                        appearance: String? = nil) -> String {
@@ -1385,7 +1735,10 @@ enum CaptureSelfTest {
             view.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
         }
         view.aspect = aspect
-        view.panelOpen = panel
+        // Which menu, not merely whether one: there are two now, and a
+        // photograph of "a panel" would be a photograph of whichever one the
+        // code happened to open.
+        if let panel { _ = view.openPanelForTesting(panel) }
         view.previewLong = long
         // The armed state is a 15% clay wash, and a wash is a thing to look at:
         // the harness can assert which chips are picked, but not whether the
@@ -1420,10 +1773,18 @@ enum CaptureSelfTest {
         }
         // A short, one-line-tall selection, to exercise the reading sheet's
         // "too short for a line" path that used to paint a blank panel.
-        if ProcessInfo.processInfo.environment["CLOTHESPEG_CAPTURE_SHORT"] != nil,
+        //
+        // The size is a knob rather than a constant because the question is not
+        // "does 30 points work" but "how short does the frame have to be before
+        // the words stop showing" — and the answer for a frame around one line
+        // of small type is 15–20, not 30. `=1` keeps the old 30×320.
+        if let short = ProcessInfo.processInfo.environment["CLOTHESPEG_CAPTURE_SHORT"],
            let sel = view.previewSelection {
-            view.previewSelection = CGRect(x: sel.minX, y: sel.midY - 15,
-                                           width: min(sel.width, 320), height: 30)
+            let env = ProcessInfo.processInfo.environment
+            let height = Double(env["CLOTHESPEG_CAPTURE_SHORT_H"] ?? "") ?? (short == "1" ? 30 : (Double(short) ?? 30))
+            let width = Double(env["CLOTHESPEG_CAPTURE_SHORT_W"] ?? "") ?? 320
+            view.previewSelection = CGRect(x: sel.minX, y: sel.midY - height / 2,
+                                           width: min(sel.width, width), height: height)
         }
 
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {

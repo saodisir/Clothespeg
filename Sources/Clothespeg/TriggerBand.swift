@@ -73,6 +73,44 @@ enum TriggerBand {
                       width: screen.frame.width, height: h)
     }
 
+    /// Whether a click at this point reached a menu bar, rather than merely
+    /// landing in the strip of screen one would take up.
+    ///
+    /// The band is arithmetic — how tall the menu bar is when it is there —
+    /// and arithmetic does not know what is drawn underneath it. A window that
+    /// fills the screen down to the menu bar puts its own first row a point
+    /// inside the band, so clicking the top of a remote desktop's picture was
+    /// read as reaching for a menu. That put the line away and left the
+    /// resting gesture suppressed until the pointer left the top edge, which
+    /// is exactly where the gesture needs it to stay. (ToDesk maximised, 4
+    /// November 2026: the band is thirty-five points, the bar is thirty-four.)
+    ///
+    /// So the question is asked of the window server instead of the geometry.
+    /// The topmost window where the click landed is the menu bar only when it
+    /// is the bar's own window, and a window sitting over it answers no.
+    static func isMenuBar(at point: NSPoint) -> Bool {
+        // The window server lists windows in a space whose origin is the top
+        // left of the main screen; AppKit measures from its bottom left.
+        guard let main = NSScreen.screens.first(where: { $0.frame.origin == .zero }) else { return false }
+        let cg = CGPoint(x: point.x, y: main.frame.maxY - point.y)
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                       kCGNullWindowID) as? [[String: Any]] else { return false }
+
+        var topmost = Int.min
+        for window in windows {
+            guard let box = window[kCGWindowBounds as String] as? [String: Any],
+                  let x = box["X"] as? Double, let y = box["Y"] as? Double,
+                  let width = box["Width"] as? Double, let height = box["Height"] as? Double,
+                  CGRect(x: x, y: y, width: width, height: height).contains(cg) else { continue }
+            topmost = max(topmost, window[kCGWindowLayer as String] as? Int ?? 0)
+        }
+        return topmost == menuBarLayer
+    }
+
+    /// The window server's layer for the menu bar itself. Above every app's
+    /// windows, which are zero, and above the Dock, which is twenty.
+    private static let menuBarLayer = 24
+
     /// How tall the top strip of that screen is: the menu bar, or the notch
     /// where it is deeper than the bar. With an auto-hiding menu bar the
     /// visible frame reaches the top, so the gap is zero and the system

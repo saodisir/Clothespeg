@@ -143,7 +143,10 @@
 "Invocation" = "呼出";
 "Language" = "语言";
 "Changes apply at once." = "改动立即生效，不用重启。";
-"Translate into" = "译成";
+/* The shortlist the capture bar's language menu offers — read as a list of names, not as one answer. */
+"Languages" = "语言清单";
+/* What replaces the "translate into" picker: the shortlist is the whole answer this page holds. */
+"The translate button's menu offers exactly these. Which one it uses is chosen there." = "「译」的下拉菜单里就是这几种；当前用哪一种，在那个菜单里选。";
 "Clean up" = "清理";
 "Clipboard cards" = "剪贴板文字";
 "Clear the clipboard?" = "清空剪贴板？";
@@ -331,8 +334,10 @@
 "Long · scroll down, Return when done" = "长图 · 往下滚动，回车完成";
 "Text · the words in the area" = "识别 · 取这块区域里的字";
 "Translate · the same words, another language" = "译 · 同一段字，另一种语言";
+"Language · which one a press translates into" = "语言 · 按一下译成哪一种";
 "Edit · take it and open the editor" = "编辑 · 截下来并打开编辑器";
 "Again · put the last frame back" = "重截 · 把上一次的框放回原位";
+"Capture · Return, a double-click, or this button · esc leaves without one" = "拍下来 · 回车、双击、点这里都行 · esc 直接离开";
 "Scroll up or down · Return when done" = "上下滚动都行 · 回车完成";
 "Drag the area that should keep growing" = "拖出要一直长下去的区域";
 /* 这一句曾经是全浮条最宽的一句（233pt），而它一年出现两次：浮条的宽度钉在
@@ -358,6 +363,7 @@
    而浮条的宽度钉在最长那句上：一年遇到两次的话，凭什么让另外 364 天留着空。 */
 "This Mac cannot translate between those two languages" = "这台 Mac 不支持这两种语言";
 "Those words are already in this language" = "已经是这种语言了 · 设置里可改";
+"More text — all of it is in the clipboard" = "还有更多 · 全部已在剪贴板";
 
 /* 剪贴板页 —— 「译」用哪种语言、哪个引擎、哪把钥匙 */
 "Translation" = "翻译";

@@ -106,7 +106,26 @@ fi
 # One fix in the editor: a colour is the pen's, not the mark's. Choosing black
 # from the well while a mark was still selected recoloured that mark and left
 # the pen red, so the same colour had to be chosen again for every annotation.
-VERSION="2.0.1"
+# 2.1.0 is the icon, and three things behind it. The plate used to hold one
+# card and a wooden peg — the picture of a clipboard, which this stopped being
+# a while ago: it takes pictures, keeps them clipped, and hangs notes beside
+# them. It now holds two cards, one a picture and one a page of words, with a
+# camera's corner marks around them, so the three things it does are visible
+# before anything is opened.
+#
+# The translate button gained a language. It used to mean one fixed answer; it
+# now carries a shortlist of ten, kept as language codes, and which one it uses
+# is chosen from the button's own menu — the settings page only says what the
+# menu offers. The button shows an arrow for it and no language name, because a
+# name at that size was a word nobody could read.
+#
+# Two things stopped happening twice. A capture is written into the folder the
+# screenshot inbox watches, so it arrived twice: one card, since the line keeps
+# one card per thing, but two pegs going in and two sounds. And a maximised
+# window whose first row sits a point inside the menu bar's strip answered for
+# the menu bar, so clicking it put the line away; the strip is now only the
+# cheap test and the window server is asked what the click reached.
+VERSION="2.1.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -190,7 +209,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>13</string>
+  <key>CFBundleVersion</key><string>14</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

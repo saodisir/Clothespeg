@@ -122,7 +122,12 @@ MainActor.assumeIsolated {
                                      selected: env["CLOTHESPEG_CAPTURE_SELECT"] != nil
                                         || env["CLOTHESPEG_CAPTURE_READ"] != nil,
                                      aspect: aspect,
-                                     panel: env["CLOTHESPEG_CAPTURE_PANEL"] != nil,
+                                     // `language` opens the shortlist; any
+                                     // other value opens the shapes, which is
+                                     // what this variable meant before there
+                                     // were two of them.
+                                     panel: env["CLOTHESPEG_CAPTURE_PANEL"]
+                                        .map { $0 == "language" ? "language" : "ratio" },
                                      long: env["CLOTHESPEG_CAPTURE_LONG"].flatMap(Int.init),
                                      read: env["CLOTHESPEG_CAPTURE_READ"],
                                      note: env["CLOTHESPEG_CAPTURE_NOTE"]

@@ -79,16 +79,33 @@ enum CaptureSymbol {
     /// word. The arrow it replaced said "down", which is half the story and
     /// reads as a download at 14 points.
     static let long = "scroll"
-    static let read = "text.viewfinder"
-    /// A bubble with a character in it, rather than `translate`.
+    /// A bubble with a character in it: the words inside the area come back as
+    /// words, which is a different promise from "this box is a box".
     ///
-    /// `translate` is two overlapping bubbles, and the rear one ends exactly in
-    /// the bottom right corner — which is where this bar puts the key. The `T`
-    /// landed on that bubble's outline and read as a smudge, reported as soon as
-    /// the keys moved into the corners. `character.bubble` is one bubble whose
-    /// tail is bottom *left*, so the corner the letter needs is empty, and it
-    /// still says "words, spoken in another language".
-    static let translate = "character.bubble"
+    /// Its two predecessors were both frames (`text.viewfinder`, `viewfinder`)
+    /// and a frame says nothing the selection's own border has not already
+    /// said — at 14 points it reads as "scan", which is a barcode. The letter
+    /// inside the bubble is the thing that is being read.
+    static let read = "character.bubble"
+    /// A globe of the eastern hemisphere: the one symbol in the row with no words
+    /// in it, which is the whole reason it is here.
+    ///
+    /// The book before it was the better idea and the worse answer.
+    /// `character.book.closed` draws whatever character the **system language**
+    /// uses — an `A` on an English Mac, 文 on this one — and AppKit offers no way
+    /// to ask for a particular variant: `NSImage.SymbolConfiguration(locale:)`
+    /// does not exist, so a toolbar drawn with it is a different icon for every
+    /// user. A symbol whose ink changes with the language of the person looking
+    /// at it cannot be judged at 14 points, because it was judged at another
+    /// size, in another language.
+    ///
+    /// `translate` (two overlapping bubbles) was the first answer, and its rear
+    /// bubble ends in the bottom right corner — exactly where the key goes: the
+    /// `T` read as a smudge. `character.bubble` followed it and had to be given
+    /// up when the reading button took that one over. Continents rather than the
+    /// plain `globe` because at 14 points a wireframe ball is a circle with
+    /// lines in it, and a place is what this button is about.
+    static let translate = "globe.asia.australia"
     /// A pencil over a scribble: writing on the picture, which is what the
     /// editor is for. Three earlier answers were all pictures of a pencil
     /// (`pencil`, `highlighter`); this one is the only one that shows a pencil
@@ -397,6 +414,24 @@ final class CaptureSurface: NSView {
         return nil
     }
 
+    /// The words as they were read, before a translation joined them.
+    ///
+    /// `shownText` is what gets copied — a translation, once there is one. This
+    /// one is what the card sets *above* the translation, because a translation
+    /// on its own cannot be checked by anyone who does not read both languages.
+    private var wordsText: String? {
+        if case .found(let text)? = readingState { return text }
+        return nil
+    }
+
+    /// Where the result card was put, in view coordinates.
+    ///
+    /// Written by `drawResultCard` because the placement is arithmetic over the
+    /// text it is about to draw, and read back by two people: the harness, which
+    /// has to sample inside it, and `mouseDown`, which must not treat a press on
+    /// the words as the start of a new frame.
+    private(set) var resultCard: NSRect = .zero
+
     /// The rectangle this capture is about, in screen coordinates.
     ///
     /// Handed out for one purpose: remembering what to do again. A `译` or a
@@ -635,12 +670,11 @@ final class CaptureSurface: NSView {
             let local = viewRect(rect)
             backdropImage.draw(in: local, from: local, operation: .copy, fraction: 1)
             if readingState != nil {
-                // The picture has become words. Showing them inside the region
-                // is the whole point of the confirmation step: the question
-                // "is this right" cannot be answered about text nobody has
-                // seen, and the region is the one place where the text sits on
-                // what it came from.
-                drawReading(local)
+                // The picture has become words. They are put on a card beside
+                // the frame rather than inside it: the frame is the thing they
+                // are checked against, and it is also, being whatever the hand
+                // drew, far too small to hold them.
+                drawResultCard(local)
                 drawBorder(local, strong: true)
             } else {
                 drawBorder(local, strong: selection != nil || previewSelection != nil)
@@ -775,65 +809,220 @@ final class CaptureSurface: NSView {
         cross.stroke()
     }
 
-    /// What was read, drawn inside the region it was read from.
+    /// What was read, on a card beside the frame rather than inside it.
     ///
-    /// A sheet rather than a floating panel: the words belong where the picture
-    /// was, so the eye compares them with what it remembers of the picture
-    /// without being told to. Truncated at the region's edge, because a reading
-    /// of a whole page will not fit in a 300-point box and shrinking the type to
-    /// fit would be a preview nobody can check.
+    /// Inside the frame was the first answer, and it failed for one reason: a
+    /// frame's width and height are whatever the hand happened to make them, so
+    /// the type had no fixed width to wrap into and no guaranteed height to sit
+    /// in. A frame drawn round one line of small type is 14–22 points tall —
+    /// shorter than a line of 12-point type, and short enough that `insetBy`
+    /// turns the text box into `NSRect.null`, after which not one glyph is
+    /// drawn; a frame drawn round a paragraph is forty points wide, so every
+    /// line comes out as `…`. Neither is a number to tune: the *container* was
+    /// making a typographic decision it knows nothing about (reported twice,
+    /// 2026-11-03: 不显示 twice, then 省略号).
     ///
-    /// The bar carries the count, so what is cut off is still accounted for.
-    private func drawReading(_ rect: NSRect) {
-        let sheet = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        CaptureInk.panel(effectiveAppearance).setFill()
-        sheet.fill()
-
-        let pad: CGFloat = 12
-        let box = rect.insetBy(dx: pad, dy: pad)
-        // A degenerate box (no room at all) has nothing to draw into; a short
-        // one — a single line of small text, say — still gets its one line,
-        // centred, rather than a blank panel with the words missing. The old
-        // `box.height > 18` test dropped exactly those: the sheet painted, the
-        // text did not, so a one-line read showed as an empty block.
-        guard box.width > 8 else { return }
-
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byTruncatingTail
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.93),
-            .paragraphStyle: style,
-        ]
-
+    /// The card is therefore its own surface with its own width — 340 to 560
+    /// points, whatever the frame is — placed *outside* the frame: below it when
+    /// there is room, above when there is not, to the side when neither, and
+    /// never on top of it, because the frame is the thing the words are checked
+    /// against. Longer text makes the card taller and the type wraps; nothing is
+    /// cut mid-sentence. The one case that still has to stop — more words than
+    /// the screen can hold — says so in a sentence rather than in an ellipsis.
+    ///
+    /// A translation is shown *with* the words it came from rather than instead
+    /// of them. Replacing them was a rule the old container forced ("twice the
+    /// words will not fit in the frame"); this one has room, and the question a
+    /// translation asks — what did it actually say — is only answerable with the
+    /// original still in sight.
+    private func drawResultCard(_ region: NSRect) {
         guard let state = readingState else { return }
+        let ink = CaptureInk.ink(effectiveAppearance)
+
+        // What the card says: one block, or two when a translation came back.
+        // Each block carries its own line height, because the original is set
+        // smaller than the translation on purpose — that difference is what says
+        // which is which without inventing a label to translate.
+        typealias Block = (text: String, attributes: [NSAttributedString.Key: Any], line: CGFloat)
+        var blocks: [Block] = []
         if translating {
-            draw(L("Translating…"), in: box, attributes: attributes, centred: true)
-            return
-        }
-        switch state {
-        case .going:
-            draw(L("Reading…"), in: box, attributes: attributes, centred: true)
-        case .nothing:
-            draw(L("No text found"), in: box, attributes: attributes, centred: true)
-        case .found:
-            guard let text = shownText else { return }
-            let lineHeight: CGFloat = 17
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-            let room = max(1, Int(box.height / lineHeight))
-            // Top-down when there is a line of headroom; centred when the box is
-            // shorter than one line, so a single short line still lands inside
-            // the sheet instead of above it.
-            let oneLineShort = box.height < lineHeight
-            for (index, line) in lines.prefix(room).enumerated() {
-                let y = oneLineShort
-                    ? box.minY + (box.height - lineHeight) / 2
-                    : box.maxY - CGFloat(index + 1) * lineHeight
-                (String(line) as NSString).draw(in: NSRect(x: box.minX, y: y + 4,
-                                                          width: box.width, height: lineHeight),
-                                                withAttributes: attributes)
+            blocks = [(L("Translating…"), Self.cardText(ink, size: 13, alpha: 0.93), 19)]
+        } else {
+            switch state {
+            case .going:
+                blocks = [(L("Reading…"), Self.cardText(ink, size: 13, alpha: 0.93), 19)]
+            case .nothing:
+                blocks = [(L("No text found"), Self.cardText(ink, size: 13, alpha: 0.93), 19)]
+            case .found:
+                let words = wordsText ?? ""
+                if let translation = translationText {
+                    blocks.append((words, Self.cardText(ink, size: 12, alpha: 0.5), 17))
+                    blocks.append((translation, Self.cardText(ink, size: 14, alpha: 0.95), 19))
+                } else {
+                    blocks.append((words, Self.cardText(ink, size: 13, alpha: 0.93), 19))
+                }
             }
         }
+
+        let padX: CGFloat = 16
+        let padY: CGFloat = 14
+        let between: CGFloat = 11
+        let noteLine: CGFloat = 16
+        let inset: CGFloat = 12
+        let gap: CGFloat = 10
+
+        // Width is the card's own, not the frame's — this is the whole point.
+        let inside = bounds.insetBy(dx: inset, dy: inset)
+        let available = max(bounds.width - inset * 2, 240)
+        let widest = min(560, available)
+
+        // What each block needs, and what it gets: a block that runs past the
+        // bottom of the screen is cut to whole lines and the rest is replaced by
+        // one sentence, because half a line of type is a worse answer than a
+        // clear "there is more".
+        //
+        // A function of the width, because the width is not settled until the
+        // placement is: narrower type is taller type, so "does the card fit
+        // beside the frame" can only be asked of the card that width produces.
+        func measure(_ width: CGFloat) -> (heights: [CGFloat], height: CGFloat, cut: Bool) {
+            let inner = width - padX * 2
+            let limit = max(160, bounds.height * 0.82) - padY * 2 - noteLine
+            var heights: [CGFloat] = []
+            var budget = limit
+            var cut = false
+            for (index, block) in blocks.enumerated() {
+                let rect = (block.text as NSString).boundingRect(
+                    with: NSSize(width: inner, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin], attributes: block.attributes)
+                let need = max(ceil(rect.height), block.line)
+                let separator: CGFloat = index == 0 ? 0 : between * 2 + 1
+                guard !cut else { heights.append(0); continue }
+                if separator + need <= budget {
+                    heights.append(need)
+                    budget -= separator + need
+                } else {
+                    let leftover = max(0, budget - separator)
+                    heights.append(max(0, (leftover / block.line).rounded(.down) * block.line))
+                    budget = 0
+                    cut = true
+                }
+            }
+            let content = heights.enumerated().reduce(CGFloat.zero) { total, pair in
+                total + pair.element + (pair.offset == 0 ? 0 : between * 2 + 1)
+            }
+            return (heights, padY * 2 + content + (cut ? noteLine : 0), cut)
+        }
+
+        // Centred on the frame rather than sharing its left edge. Sharing an
+        // edge only reads as alignment while the card is about the frame's
+        // width; with a frame 900 points wide and a card 560, one edge lines up
+        // and the other 340 points say nothing, which is the "既不居中也不对齐"
+        // of 2026-11-03. Centring is true at every width. Near a screen edge the
+        // clamp does the only thing left, and the card hugs the screen's inset
+        // instead of hanging over it.
+        func alignedX(_ width: CGFloat) -> CGFloat {
+            let centred = region.midX - width / 2
+            return min(max(centred, inside.minX), max(inside.minX, inside.maxX - width))
+        }
+
+        // The four places a card can go, in the order they are tried. A place
+        // counts only when the whole card lands on the screen, and the frame is
+        // never one of the places: it is the thing the words are checked
+        // against.
+        func place(_ width: CGFloat, _ height: CGFloat) -> NSRect? {
+            let x = alignedX(width)
+            let below = NSRect(x: x, y: region.minY - gap - height, width: width, height: height)
+            if below.minY >= inside.minY { return below }
+            let above = NSRect(x: x, y: region.maxY + gap, width: width, height: height)
+            if above.maxY <= inside.maxY { return above }
+            let y = min(max(region.midY - height / 2, inside.minY),
+                        max(inside.minY, inside.maxY - height))
+            let right = NSRect(x: region.maxX + gap, y: y, width: width, height: height)
+            if right.maxX <= inside.maxX { return right }
+            let left = NSRect(x: region.minX - gap - width, y: y, width: width, height: height)
+            if left.minX >= inside.minX { return left }
+            return nil
+        }
+
+        // Full width first. When the frame leaves no room on any side, the card
+        // tries again narrower: a tall narrow card in the margin still says where
+        // the words are, where the wide one had to cover the very thing being
+        // read (2026-11-03: a 685×680 frame on a 1737×1124 screen left 521 and
+        // 507 points either side — not enough for 560, plenty for 340, and the
+        // wide card ended up glued to the bottom edge across the frame's border).
+        var width = min(max(region.width, 340), widest)
+        var measured = measure(width)
+        var placed = place(width, measured.height)
+        if placed == nil, width > 340 {
+            // How wide the widest margin could ever be — not 340 on principle.
+            // A margin that holds 480 points should get 480: the card is the
+            // words of the picture next to it, and a 340 card in a 480 margin
+            // reads as a card that gave up.
+            let margins = max(inside.maxX - (region.maxX + gap), region.minX - gap - inside.minX)
+            width = max(340, min(width - 1, min(widest, margins)))
+            measured = measure(width)
+            placed = place(width, measured.height)
+        }
+        let card: NSRect
+        if let placed {
+            card = placed
+        } else {
+            // Nowhere at all, which means the frame is nearly the whole screen.
+            // Tucked into the frame's own corner — sharing an edge with the
+            // thing it is about and standing off it by the same 12 points the
+            // screen gets — rather than glued to the bottom of the display
+            // while sharing the frame's left edge, which was the one position
+            // that read as an accident.
+            let x = min(max(region.minX + inset, inside.minX),
+                        max(inside.minX, inside.maxX - width))
+            var y = region.minY + inset
+            if y + measured.height > inside.maxY {
+                y = max(inside.minY, region.maxY - inset - measured.height)
+            }
+            card = NSRect(x: x, y: y, width: width, height: measured.height)
+        }
+        let inner = width - padX * 2
+        resultCard = card
+        let surface = NSBezierPath(roundedRect: card, xRadius: 10, yRadius: 10)
+        CaptureInk.panel(effectiveAppearance).setFill()
+        surface.fill()
+        // One hairline, for the same reason the frame has one: a light card on a
+        // white page is a card with no edge.
+        ink.withAlphaComponent(0.14).setStroke()
+        surface.lineWidth = 1
+        surface.stroke()
+
+        var y = card.maxY - padY
+        for (index, block) in blocks.enumerated() where measured.heights[index] > 0 {
+            if index > 0 {
+                y -= between
+                ink.withAlphaComponent(0.14).setFill()
+                NSRect(x: card.minX + padX, y: y, width: inner, height: 1).fill()
+                y -= between + 1
+            }
+            let box = NSRect(x: card.minX + padX, y: y - measured.heights[index],
+                             width: inner, height: measured.heights[index])
+            (block.text as NSString).draw(with: box, options: [.usesLineFragmentOrigin],
+                                          attributes: block.attributes)
+            y -= measured.heights[index]
+        }
+        if measured.cut {
+            (L("More text — all of it is in the clipboard") as NSString)
+                .draw(with: NSRect(x: card.minX + padX, y: y - noteLine, width: inner, height: noteLine),
+                      options: [.usesLineFragmentOrigin],
+                      attributes: Self.cardText(ink, size: 11, alpha: 0.45))
+        }
+    }
+
+    /// The body type on the result card.
+    private static func cardText(_ ink: NSColor, size: CGFloat,
+                                 alpha: CGFloat) -> [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byWordWrapping
+        style.lineSpacing = 1
+        return [.font: NSFont.systemFont(ofSize: size),
+                .foregroundColor: ink.withAlphaComponent(alpha),
+                .paragraphStyle: style]
     }
 
     /// Whether a rectangle is being drawn right now, as opposed to adjusted.
@@ -867,6 +1056,29 @@ final class CaptureSurface: NSView {
         var divider = NSRect.zero
         var button = NSRect.zero
         var buttonText = ""
+        /// The chip that carries a menu: `译`, and the way to change what it
+        /// answers in without going to Settings.
+        ///
+        /// It is not a square and it is not a word either. The first draft made
+        /// it a 30-point symbol like the four beside it, and then there was no
+        /// way to reach the shortlist except Settings. The second draft put the
+        /// language on it, and that made the row 105 points wider to say
+        /// something that does not change — rejected the same evening by the
+        /// person using it: 「只要选中之后一般不会再变，所以这个按钮不需要显示
+        /// 中文或英文等语言类型。保留一个图标就可以。」
+        ///
+        /// So: the 30 points a chip has, plus 16 that are only the chevron. The
+        /// icon translates, the chevron opens the menu, and which language is in
+        /// force is said in the menu, in clay, where it is being looked for.
+        var language = NSRect.zero
+        /// The chevron end of that chip, which opens the menu instead of
+        /// translating. Narrower than the body on purpose: the thing a person
+        /// wants most of the time is the press that does not open anything.
+        var languageMenu = NSRect.zero
+        /// The rows of that menu, in the order they are drawn: language code
+        /// and where it sits. A code rather than a name, because a name is what
+        /// the code is for.
+        var languageRows: [(String, NSRect)] = []
         /// The second button: the one that turns the region into something that
         /// keeps growing. It is a button and not a key because "this area will
         /// keep growing" is a kind of capture, not a place — no gesture says it.
@@ -912,8 +1124,17 @@ final class CaptureSurface: NSView {
         /// a rectangle exists. It sits last because it is the only button here
         /// that does not change what the next drag means.
         var again = NSRect.zero
-        var keysText = ""
-        var keys = NSRect.zero
+        /// The checkmark at the far end of the row: take the picture.
+        ///
+        /// The same act as Return and a double-click, but pressable — asked for
+        /// by the person using it (2026-11-03): 「有人不想双击，就想点击一个按钮，
+        /// 明确确认这个步骤执行完了」. It stands where the word `esc` used to,
+        /// which is the point: that word was a legend and nothing else, drawn
+        /// and never hit-tested, so the last 27 points of a bar full of buttons
+        /// were the only place that could not be pressed — while the one act the
+        /// bar exists for had no button at all. A key legend is not worth the
+        /// end of a toolbar; the way out moved into this button's tool tip.
+        var confirm = NSRect.zero
         var panel = NSRect.zero
         var options: [(CropAspect, NSRect)] = []
     }
@@ -927,7 +1148,6 @@ final class CaptureSurface: NSView {
     private static let closeSize: CGFloat = 22
     private static let lineFont = NSFont.systemFont(ofSize: 11.5, weight: .regular)
     private static let buttonFont = NSFont.systemFont(ofSize: 11.5, weight: .medium)
-    private static let keysFont = NSFont.monospacedSystemFont(ofSize: 9.5, weight: .medium)
     private static let chipFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     /// The buttons are chips now, and the numbers are the editor's own: 30 × 26
     /// with four points between them, the same box `ToolChip` wears. Two bars in
@@ -935,14 +1155,41 @@ final class CaptureSurface: NSView {
     private static let chipWidth: CGFloat = 30
     private static let chipHeight: CGFloat = 26
     private static let chipGap: CGFloat = 4
+    /// The chevron's own strip at the right end of the language chip.
+    ///
+    /// Sixteen rather than the ratio chip's twenty, because there is no word
+    /// beside it to keep clear of: the whole chip is 46 points wide, and a
+    /// strip any narrower than this cannot be hit without aiming.
+    private static let languageMenuWidth: CGFloat = 16
     /// The key, in the corner, at the size of a footnote to a footnote — copied
     /// from `ToolChip.drawHint` for the same reason: it is a remark about the
     /// button, not a second label on it.
     private static let hintFont = NSFont.systemFont(ofSize: 6.5, weight: .semibold)
 
-    /// Whether the ratio panel is showing. Set by the button, cleared by a
-    /// choice or by any press outside it.
-    var panelOpen = false
+    /// Which menu is showing under the bar, if any.
+    ///
+    /// One value rather than two flags, because two flags is a state in which
+    /// both are true, and two panels cannot both be under a bar that is 34
+    /// points tall. Mutual exclusion is a property of the type here, not a rule
+    /// somebody has to remember in five places: opening one closes the other by
+    /// construction.
+    enum ShowingPanel {
+        case none, ratio, language
+    }
+
+    /// Set by a chip that carries a chevron, cleared by a choice or by any
+    /// press outside the panel.
+    var panel: ShowingPanel = .none
+
+    /// Whether anything is showing, for the places that only care about that.
+    var panelOpen: Bool { panel != .none }
+
+    /// The language a plain press of `译` translates into.
+    ///
+    /// Read when this overlay is built rather than on every frame: a capture is
+    /// a modal moment, so the shortlist cannot change underneath it, and
+    /// `bar()` is called by every hover, by every hit test and by the drawing.
+    var translationLanguage = TranslationTargets.current
 
     /// The geometry the tool tips were last registered for. See `refreshToolTips`.
     private var toolTipSignature = ""
@@ -1041,26 +1288,41 @@ final class CaptureSurface: NSView {
         }
         let lineWidth = measuredLines
             .map { textWidth($0, Self.lineFont) }.max() ?? 200
-        // The one chip that carries a value, and therefore the only one that is
-        // not a square: a symbol says "this is a shape", the word says *which*,
-        // the chevron says it opens a menu, and the key sits in the corner like
-        // every other chip's. Pinned to the widest title, so a chip that
-        // resizes as the shape changes does not move the five beside it.
+        // One chip carries a value and is therefore not a square: a symbol says
+        // "this is a shape", the word says *which*, the chevron says it opens a
+        // menu, and the key sits in the corner like every other chip's. Pinned
+        // to the widest title, so a chip that resizes as the shape changes does
+        // not move the four beside it.
         out.buttonText = aspect.title
         let valueWidth = (CropAspect.allCases
             .map { textWidth($0.title, Self.buttonFont) }.max() ?? 40)
         let buttonWidth = 8 + 13 + 5 + valueWidth + 3 + 9 + 8
+        // The language chip is not pinned to anything, because it has no word on
+        // it: a 30-point icon and a 16-point chevron, always. The value lives in
+        // the menu, where the current one is clay. A chip that spelled the
+        // language out was built first and rejected by the person using it, on
+        // the grounds that the answer does not change and the width did — it
+        // made the row 105 points wider for a fact nobody needs at the moment of
+        // pressing.
+        let languageChipWidth = Self.chipWidth + Self.languageMenuWidth
         // Every other chip is the same box, so one number each is all the row
-        // needs — and the keys live in their corners now, which is why the
-        // legend that used to spell them out is only the way out.
+        // needs — and the far end is a chip too now. The letter legend that used
+        // to spell `esc` there is gone with the last word it carried: the keys
+        // live in their corners, and the one that was left over was the one
+        // that could not be pressed.
         out.middleText = middleLabel
-        out.keysText = "esc"
-        let keysWidth = textWidth(out.keysText, Self.keysFont)
-        let chipCount = 4 + (againShown ? 1 : 0)
+        let confirmWidth = Self.chipWidth
+        let chipCount = 3 + (againShown ? 1 : 0)
 
+        // The two groups, measured the same way they are laid out below rather
+        // than as a count times a width: a formula that counts is a formula
+        // that has to be re-derived every time the row changes, and this row
+        // has now changed twice.
+        let valuesWidth = buttonWidth + Self.chipGap + languageChipWidth
+        let iconsWidth = CGFloat(chipCount) * Self.chipWidth
+            + CGFloat(max(0, chipCount - 1)) * Self.chipGap
         let width = Self.barPadding * 2 + lineWidth + Self.barGap + 1 + Self.barGap
-            + buttonWidth + CGFloat(chipCount) * (Self.chipGap + Self.chipWidth)
-            + Self.barGap + keysWidth
+            + valuesWidth + Self.barGap + iconsWidth + Self.barGap + confirmWidth
         // Above the Dock rather than at a fixed 24 points, which is where the
         // first draft put it and where the Dock then sat on top of it.
         let dockInset = max(0, screen.visibleFrame.minY - screen.frame.minY)
@@ -1073,21 +1335,31 @@ final class CaptureSurface: NSView {
         x += lineWidth + Self.barGap
         out.divider = NSRect(x: x, y: midY - 8, width: 1, height: 16)
         x += 1 + Self.barGap
-        // The run of chips: the ratio one first, then the four actions, ending on
-        // the one that hands the picture over. Four points between them and ten
-        // before the `esc` — the tight gap is what makes them read as one row of
-        // the same kind of thing, which is the whole reason for borrowing the
-        // editor's numbers.
+        // The row is in two groups, and the spacing says so: four points inside
+        // a group, ten across the seam. The first group is the two chips that
+        // carry a value and a chevron and are therefore asking a question; the
+        // second is the four that are only a symbol and an answer. Read as one
+        // undifferentiated run of six, a person has to know which kind each one
+        // is before pressing it — and the two kinds respond to different
+        // things: one opens a menu, the other does something at once.
         func chip(_ x: CGFloat, _ width: CGFloat) -> NSRect {
             NSRect(x: x, y: midY - Self.chipHeight / 2, width: width, height: Self.chipHeight)
         }
         out.button = chip(x, buttonWidth)
         x += buttonWidth + Self.chipGap
+        out.language = chip(x, languageChipWidth)
+        // The chevron's strip, cut off the right end: the icon keeps the 30
+        // points it would have had as a chip of its own, so pressing the icon
+        // feels exactly like pressing 长图 or 选文字, and the strip is the extra
+        // 16 points that were added beside it.
+        out.languageMenu = NSRect(x: out.language.maxX - Self.languageMenuWidth,
+                                  y: out.language.minY,
+                                  width: Self.languageMenuWidth,
+                                  height: out.language.height)
+        x += languageChipWidth + Self.barGap
         out.long = chip(x, Self.chipWidth)
         x += Self.chipWidth + Self.chipGap
         out.read = chip(x, Self.chipWidth)
-        x += Self.chipWidth + Self.chipGap
-        out.translate = chip(x, Self.chipWidth)
         x += Self.chipWidth + Self.chipGap
         // 重载 comes before 编辑. The row now ends on the button that hands the
         // picture over, so the last thing under the hand after choosing a shape
@@ -1098,16 +1370,18 @@ final class CaptureSurface: NSView {
             x += Self.chipWidth + Self.chipGap
         }
         out.edit = chip(x, Self.chipWidth)
-        // The keys slot starts a full gap past whichever chip is last, which is
-        // also where the pill is anchored below — one end for both, so a press
-        // meant for one cannot land on the other. 编辑 is always drawn and is
-        // now always last, so this no longer has to ask which chip that is.
-        x = out.edit.maxX + Self.barGap
-        // The pill and the ✕ hang off the far end of the slot the buttons share,
-        // which is the end 编辑 occupies. Anchored to `译` instead — where they
-        // were before these buttons existed — they would sit over a button that
-        // is no longer last, and the two would trade presses.
-        let lastButton = out.edit.maxX
+        // The checkmark takes the far end, in the same 30-point box as the six
+        // beside it and a full gap away from them: it is the only one here that
+        // ends the capture rather than describing it, and the gap is how the row
+        // says so without a divider.
+        out.confirm = chip(out.edit.maxX + Self.barGap, confirmWidth)
+        // What ends a reading hangs off the capsule's own right inset rather
+        // than off `编辑`. The two are the same point only while something was
+        // drawn beyond the buttons — a word was, until it went — and anchored to
+        // the last button the collapsed bar would end with a chip-wide hole and
+        // the one button that finishes a reading would be the only one in this
+        // app not touching the edge.
+        let lastButton = out.capsule.maxX - Self.barPadding
         out.middle = NSRect(x: out.button.minX, y: midY - 8,
                             width: lastButton - out.button.minX, height: 16)
         // Pinned to the far edge of the slot the buttons share. The height
@@ -1125,32 +1399,59 @@ final class CaptureSurface: NSView {
         out.close = NSRect(x: out.done.minX - Self.barGap - Self.closeSize,
                            y: midY - Self.closeSize / 2,
                            width: Self.closeSize, height: Self.closeSize)
-        // The way out, and the only key still spelled out: every button now
-        // carries its own letter in its corner, so a legend listing them would
-        // be the same fact told twice, in the place with the least room.
-        let shownKeys = textWidth(out.keysText, Self.keysFont)
-        out.keys = NSRect(x: x + keysWidth - shownKeys, y: midY - 7,
-                          width: shownKeys, height: 14)
 
         guard panelOpen, mode == .shot else { return out }
-        // Three by three: the nine shapes are exactly a square, and a menu of
-        // nine rows for something chosen by silhouette is a menu read as a list.
-        let chipWidth = (CropAspect.allCases
-            .map { textWidth($0.title, Self.chipFont) }.max() ?? 40) + 26
-        let chipHeight: CGFloat = 26
-        let space: CGFloat = 6
         let pad: CGFloat = 10
-        let panelWidth = pad * 2 + chipWidth * 3 + space * 2
-        let panelHeight = pad * 2 + chipHeight * 3 + space * 2
-        let panelX = min(max(8, out.button.midX - panelWidth + 16), bounds.width - panelWidth - 8)
-        out.panel = NSRect(x: panelX, y: out.capsule.maxY + 8,
-                           width: panelWidth, height: panelHeight)
-        for (index, option) in CropAspect.allCases.enumerated() {
-            let rect = NSRect(x: panelX + pad + CGFloat(index % 3) * (chipWidth + space),
-                              y: out.panel.maxY - pad - chipHeight
-                                - CGFloat(index / 3) * (chipHeight + space),
-                              width: chipWidth, height: chipHeight)
-            out.options.append((option, rect))
+        let rowHeight: CGFloat = 26
+        switch panel {
+        case .ratio:
+            // Three by three: the nine shapes are exactly a square, and a menu
+            // of nine rows for something chosen by silhouette is a menu read as
+            // a list.
+            let chipWidth = (CropAspect.allCases
+                .map { textWidth($0.title, Self.chipFont) }.max() ?? 40) + 26
+            let space: CGFloat = 6
+            let panelWidth = pad * 2 + chipWidth * 3 + space * 2
+            let panelHeight = pad * 2 + rowHeight * 3 + space * 2
+            let panelX = min(max(8, out.button.midX - panelWidth + 16),
+                             bounds.width - panelWidth - 8)
+            out.panel = NSRect(x: panelX, y: out.capsule.maxY + 8,
+                               width: panelWidth, height: panelHeight)
+            for (index, option) in CropAspect.allCases.enumerated() {
+                let rect = NSRect(x: panelX + pad + CGFloat(index % 3) * (chipWidth + space),
+                                  y: out.panel.maxY - pad - rowHeight
+                                    - CGFloat(index / 3) * (rowHeight + space),
+                                  width: chipWidth, height: rowHeight)
+                out.options.append((option, rect))
+            }
+        case .language:
+            // A list, not a grid: languages are read, and one row per language
+            // is the only arrangement in which "which am I on" is a glance
+            // rather than a scan. Only the shortlist is in it — a menu with all
+            // ten would be a menu with nine things in it nobody chose.
+            let codes = TranslationTargets.chosen
+            let names = codes.compactMap { TranslationCatalogue.named($0)?.name }
+            // Room for the tick on the right of the current one, which is
+            // drawn rather than laid out, so it cannot push anything.
+            let rowWidth = (names.map { textWidth($0, Self.chipFont) }.max() ?? 60) + 40
+            let space: CGFloat = 4
+            let panelWidth = pad * 2 + rowWidth
+            let panelHeight = pad * 2 + CGFloat(names.count) * rowHeight
+                + CGFloat(max(0, names.count - 1)) * space
+            // Hangs off its own chip's left edge, the way a menu does, and is
+            // pulled back inside the screen when that chip is near the edge.
+            let panelX = min(max(8, out.language.minX), bounds.width - panelWidth - 8)
+            out.panel = NSRect(x: panelX, y: out.capsule.maxY + 8,
+                               width: panelWidth, height: panelHeight)
+            for (index, code) in codes.enumerated() {
+                let rect = NSRect(x: panelX + pad,
+                                  y: out.panel.maxY - pad - rowHeight
+                                    - CGFloat(index) * (rowHeight + space),
+                                  width: rowWidth, height: rowHeight)
+                out.languageRows.append((code, rect))
+            }
+        case .none:
+            break
         }
         return out
     }
@@ -1252,20 +1553,56 @@ final class CaptureSurface: NSView {
     /// ask the live arithmetic rather than keep a copy of it. Two answers to
     /// "where is the button" is a button that is drawn in one place and pressed
     /// in another.
-    var shotBarOnScreen: (capsule: NSRect, ratio: NSRect, long: NSRect, read: NSRect,
-                          translate: NSRect, edit: NSRect, again: NSRect, keys: NSRect)? {
+    var shotBarOnScreen: (capsule: NSRect, ratio: NSRect, language: NSRect,
+                          languageMenu: NSRect, long: NSRect, read: NSRect,
+                          edit: NSRect, again: NSRect, confirm: NSRect)? {
         guard mode == .shot, readingState == nil else { return nil }
         let bar = bar()
         guard !bar.read.isEmpty else { return nil }
         let origin = screen.frame.origin
         return (bar.capsule.offsetBy(dx: origin.x, dy: origin.y),
                 bar.button.offsetBy(dx: origin.x, dy: origin.y),
+                bar.language.offsetBy(dx: origin.x, dy: origin.y),
+                bar.languageMenu.offsetBy(dx: origin.x, dy: origin.y),
                 bar.long.offsetBy(dx: origin.x, dy: origin.y),
                 bar.read.offsetBy(dx: origin.x, dy: origin.y),
-                bar.translate.offsetBy(dx: origin.x, dy: origin.y),
                 bar.edit.offsetBy(dx: origin.x, dy: origin.y),
                 bar.again.offsetBy(dx: origin.x, dy: origin.y),
-                bar.keys.offsetBy(dx: origin.x, dy: origin.y))
+                bar.confirm.offsetBy(dx: origin.x, dy: origin.y))
+    }
+
+    /// Opens a panel and says where its rows are, for the harness.
+    ///
+    /// A capture's panels are the one part of this bar a render cannot reach by
+    /// pressing: there is no pointer in a render, and these rows are the answer
+    /// to a question about settings that are on disk.
+    func openPanelForTesting(_ name: String) -> Bool {
+        switch name {
+        case "ratio": panel = .ratio
+        case "language": panel = .language
+        default: return false
+        }
+        needsDisplay = true
+        return true
+    }
+
+    /// The menu's rows as drawn: language code and where it sits, in screen
+    /// coordinates. Empty unless the language panel is open.
+    var languageRowsOnScreen: [(code: String, rect: NSRect)] {
+        guard panel == .language else { return [] }
+        let origin = screen.frame.origin
+        return bar().languageRows.map {
+            ($0.0, $0.1.offsetBy(dx: origin.x, dy: origin.y))
+        }
+    }
+
+    /// Which languages the menu would offer, without opening it.
+    var offeredLanguagesForTesting: [String] { TranslationTargets.chosen }
+
+    /// The chip's own width, so the harness can compare two answers.
+    var languageChipWidthOnScreen: CGFloat {
+        guard mode == .shot else { return 0 }
+        return bar().language.width
     }
 
     /// Where the reading state's pill and ✕ sit, in screen coordinates.
@@ -1439,12 +1776,14 @@ final class CaptureSurface: NSView {
             // appear and disappear while a read finishes.
             drawClose(bar.close, lit: closeHover)
         } else {
-            // Six chips from the editor's own vocabulary: symbol, key in the
-            // corner, no words. The words were the reason the capsule was wide
-            // enough to read as a paragraph with a toolbar on the end; a symbol
-            // says the same thing in 30 points, and the letter in the corner is
-            // the only part of this bar that a person has to be taught.
+            // Two kinds of chip, drawn in the order they are laid out: the two
+            // that carry a value and a chevron, then the four that are only a
+            // symbol with a key in the corner. The words were abandoned because
+            // the capsule was reading as a paragraph with a toolbar on the end;
+            // a symbol says the same thing in 30 points, and the letter in the
+            // corner is the only part of this bar a person has to be taught.
             drawRatioChip(bar.button)
+            drawLanguageChip(bar.language, menu: bar.languageMenu)
             // The armed chip fills, exactly the way the ratio chip fills when a
             // shape is locked. One rule for the whole bar: filled means "this
             // changes what the next drag means" — so pressing L, W or T has to
@@ -1454,8 +1793,6 @@ final class CaptureSurface: NSView {
             // looked like they had done nothing.
             drawChip(bar.long, symbol: CaptureSymbol.long, key: "L", picked: isPicked(.long))
             drawChip(bar.read, symbol: CaptureSymbol.read, key: "W", picked: isPicked(.read))
-            drawChip(bar.translate, symbol: CaptureSymbol.translate, key: "T",
-                     picked: isPicked(.translate))
             // 重载 before 编辑, the same order the row is laid out in. The one
             // that ends nothing comes first; the one that takes the picture away
             // is last, at the end of the row.
@@ -1477,35 +1814,74 @@ final class CaptureSurface: NSView {
             // is the one key that says what happens *after* the picture lands,
             // which is the whole difference between this button and Return.
             drawChip(bar.edit, symbol: CaptureSymbol.edit, key: "E")
+            // The checkmark, and the only filled chip in this row that is not
+            // saying "this mode is on". Clay is what this app uses for "this is
+            // the thing to press" — the same colour the pill wears when it ends
+            // a reading — so the one button that finishes the capture is the one
+            // painted like a button rather than drawn like a symbol. No key in
+            // its corner: Return already belongs to it, and the keys that are
+            // spelled out are the ones nobody would guess.
+            drawConfirmChip(bar.confirm)
         }
 
-        draw(bar.keysText, in: bar.keys,
-             attributes: [.font: Self.keysFont,
-                          .foregroundColor: CaptureInk.ink(effectiveAppearance)
-                              .withAlphaComponent(0.55)])
-
         guard panelOpen, mode == .shot else { return }
-        let panel = NSBezierPath(roundedRect: bar.panel, xRadius: 10, yRadius: 10)
+        let shape = NSBezierPath(roundedRect: bar.panel, xRadius: 10, yRadius: 10)
         NSGraphicsContext.saveGraphicsState()
         shadow.set()
         CaptureInk.panel(effectiveAppearance).setFill()
-        panel.fill()
+        shape.fill()
         NSGraphicsContext.restoreGraphicsState()
         CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.12).setStroke()
-        panel.lineWidth = 1
-        panel.stroke()
-        for (option, rect) in bar.options {
-            let chip = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-            let picked = option == aspect
-            (picked ? CDS.clayInk
-                    : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
-            chip.fill()
-            draw(option.title, in: rect,
-                 attributes: [.font: Self.chipFont,
-                              .foregroundColor: picked
-                                  ? CaptureInk.onClay
-                                  : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)],
-                 centred: true)
+        shape.lineWidth = 1
+        shape.stroke()
+        switch panel {
+        case .ratio:
+            for (option, rect) in bar.options {
+                let chip = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+                let picked = option == aspect
+                (picked ? CDS.clayInk
+                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
+                chip.fill()
+                draw(option.title, in: rect,
+                     attributes: [.font: Self.chipFont,
+                                  .foregroundColor: picked
+                                      ? CaptureInk.onClay
+                                      : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)],
+                     centred: true)
+            }
+        case .language:
+            // The current one is marked twice over: a clay wash on its row, and
+            // a tick on the right. The wash is what says "this is where you
+            // already are" from across the screen; the tick is what says it when
+            // the wash is a 7% tint on a light panel, which is nearly nothing —
+            // and a menu where the current item is nearly nothing is a menu that
+            // has to be read twice.
+            for (code, rect) in bar.languageRows {
+                let picked = code == translationLanguage
+                // The same faint wash the shapes get, on every row and not only
+                // the arrowed one: a menu whose rows are bare text has nothing
+                // saying where one row ends and the next begins, and this app's
+                // own panels already taught the other reading.
+                let row = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+                (picked ? CDS.clayInk
+                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
+                row.fill()
+                let name = TranslationCatalogue.named(code)?.name ?? code
+                draw(name, in: NSRect(x: rect.minX + 10, y: rect.minY,
+                                      width: rect.width - 40, height: rect.height),
+                     attributes: [.font: Self.chipFont,
+                                  .foregroundColor: picked
+                                      ? CaptureInk.onClay
+                                      : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)])
+                if picked, let tick = Self.glyph("checkmark", pointSize: 11,
+                                                 ink: CaptureInk.onClay) {
+                    tick.draw(in: NSRect(x: rect.maxX - 10 - tick.size.width,
+                                         y: rect.midY - tick.size.height / 2,
+                                         width: tick.size.width, height: tick.size.height))
+                }
+            }
+        case .none:
+            break
         }
     }
 
@@ -1546,13 +1922,14 @@ final class CaptureSurface: NSView {
     /// tinting belongs to `NSButton`'s cell, and there is no button here.
     /// `paletteColors` is the system's own way to say "draw this symbol in this
     /// colour" — one configuration instead of a compositing pass over a copy.
-    private static func glyph(_ symbol: String, pointSize: CGFloat, ink: NSColor) -> NSImage? {
-        let key = "\(symbol)-\(pointSize)-\(inkCacheKey(ink))"
+    private static func glyph(_ symbol: String, pointSize: CGFloat, ink: NSColor,
+                              weight: NSFont.Weight = .regular) -> NSImage? {
+        let key = "\(symbol)-\(pointSize)-\(weight.rawValue)-\(inkCacheKey(ink))"
         if let cached = glyphs[key] { return cached }
         guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else {
             return nil
         }
-        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
             .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))
         let image = base.withSymbolConfiguration(config) ?? base
         glyphs[key] = image
@@ -1654,6 +2031,32 @@ final class CaptureSurface: NSView {
         }
     }
 
+    /// The checkmark at the far end: clay, a tick, and nothing else.
+    ///
+    /// Not `drawChip` with another symbol, because one thing about it is
+    /// different in kind: it is the only chip in this row that is filled while
+    /// no mode is on. Filled means "this changes what the next drag means"
+    /// everywhere else in the bar — here it means "this is the button", which is
+    /// the other thing clay means in this app, the one the pill wears when it
+    /// ends a reading. No letter in the corner either: `Return` already belongs
+    /// to this act, and the keys that are spelled out are the ones nobody would
+    /// guess.
+    private func drawConfirmChip(_ rect: NSRect) {
+        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        CDS.clayInk.setFill()
+        box.fill()
+        // Semibold at this size: at 13 points a regular tick on clay is a hair,
+        // and the one button that ends the capture should not be the faintest
+        // mark in the row.
+        if let tick = Self.glyph("checkmark", pointSize: 12,
+                                 ink: CaptureInk.onClay, weight: .semibold) {
+            let size = tick.size
+            tick.draw(in: NSRect(x: rect.midX - size.width / 2,
+                                 y: rect.midY - size.height / 2,
+                                 width: size.width, height: size.height))
+        }
+    }
+
     /// The key, bottom right, in the faintest ink that still holds at 6.5 pt.
     ///
     /// Drawn last and over the symbol, which is how the editor's chips do it: on
@@ -1661,6 +2064,9 @@ final class CaptureSurface: NSView {
     /// beside it, and at this size that is the difference between a hint and a
     /// smudge. `onClay` is the one chip whose ground is clay rather than ink,
     /// and a white letter on clay is not a faint hint — it is an absent one.
+    /// `rightEdge` existed for the one chip that was two targets in one box with
+    /// a word in it. Nothing needs it now; kept as a parameter would be an
+    /// argument nobody passes.
     private func drawHint(_ key: String, in rect: NSRect, onClay: Bool = false) {
         let ink = onClay
             ? CaptureInk.onClay.withAlphaComponent(0.55)
@@ -1684,12 +2090,27 @@ final class CaptureSurface: NSView {
         // a button that was.
         guard !collapsed else { return nil }
         let bar = bar()
+        if bar.languageMenu.contains(local) {
+            return L("Language · which one a press translates into")
+        }
         if bar.button.contains(local) { return L("Ratio · the shape of the frame") }
         if bar.long.contains(local) { return L("Long · scroll down, Return when done") }
         if bar.read.contains(local) { return L("Text · the words in the area") }
-        if bar.translate.contains(local) { return L("Translate · the same words, another language") }
+        // The chip no longer says which language, and the menu is a press away
+        // rather than a glance — so the answer is here instead, where hovering
+        // costs nothing and looking is what a person is already doing.
+        if bar.language.contains(local) {
+            let name = TranslationCatalogue.named(translationLanguage)?.name ?? translationLanguage
+            return L("Translate · the same words, another language") + " · " + name
+        }
         if bar.edit.contains(local) { return L("Edit · take it and open the editor") }
         if againShown, bar.again.contains(local) { return L("Again · put the last frame back") }
+        // The way out is here now. It used to be a word at the end of the bar,
+        // said to everyone all the time; it is said to the person asking about
+        // this button instead, at the one moment they are asking.
+        if bar.confirm.contains(local) {
+            return L("Capture · Return, a double-click, or this button · esc leaves without one")
+        }
         return nil
     }
 
@@ -1760,6 +2181,56 @@ final class CaptureSurface: NSView {
         if showKeys { drawHint("R", in: rect, onClay: locked) }
     }
 
+    /// The language chip: one icon, one chevron, and the only chip in the row
+    /// that is two targets.
+    ///
+    /// The split is the point. Nine presses out of ten want the same language as
+    /// last time, and that press must not cost a menu; the tenth wants another
+    /// one, and that press must not cost a trip to Settings. So the icon
+    /// translates and the 16 points beside it open the shortlist.
+    ///
+    /// No hairline between the halves, unlike the first version: with no word
+    /// between them the two are four points apart, and a 1-point line in a gap
+    /// that narrow does not read as a seam — it reads as a crack. What says
+    /// "there is a menu here" is the chevron, which is the same drawn chevron
+    /// the ratio chip uses for the same reason.
+    ///
+    /// `T` sits in the icon's corner, not the chip's: the key does what the icon
+    /// does, and the corner of the whole box is inside the menu's strip.
+    private func drawLanguageChip(_ rect: NSRect, menu: NSRect) {
+        let armed = isPicked(.translate)
+        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        (armed ? CDS.clayInk
+               : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
+        box.fill()
+        let ink = armed ? CaptureInk.onClay
+                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
+        // Centred in the 30 points a chip has, so the icon lands exactly where
+        // 长图's and 选文字's do — the extra 16 are beside it, not around it.
+        let body = NSRect(x: rect.minX, y: rect.minY,
+                          width: rect.width - menu.width, height: rect.height)
+        if let image = Self.glyph(CaptureSymbol.translate, pointSize: 14, ink: ink) {
+            let size = image.size
+            image.draw(in: NSRect(x: body.midX - size.width / 2,
+                                  y: rect.midY - size.height / 2,
+                                  width: size.width, height: size.height))
+        }
+        // The same drawn chevron the ratio chip uses, at the same size: two
+        // chevrons in one bar that differ by half a point read as two different
+        // kinds of control, and 16 points has room for the wider one.
+        let chevron = NSBezierPath()
+        let centre = NSPoint(x: menu.midX, y: rect.midY + 1.5)
+        chevron.move(to: NSPoint(x: centre.x - 3.5, y: centre.y + 2))
+        chevron.line(to: NSPoint(x: centre.x, y: centre.y - 1.5))
+        chevron.line(to: NSPoint(x: centre.x + 3.5, y: centre.y + 2))
+        chevron.lineWidth = 1.4
+        chevron.lineCapStyle = .round
+        chevron.lineJoinStyle = .round
+        ink.setStroke()
+        chevron.stroke()
+        if showKeys { drawHint("T", in: body, onClay: armed) }
+    }
+
     // MARK: Converting
 
     /// A screen rectangle in this view's own space.
@@ -1782,11 +2253,11 @@ final class CaptureSurface: NSView {
     override func mouseDown(with event: NSEvent) {
         let local = convert(event.locationInWindow, from: nil)
         if readingState != nil {
-            // The bar is the only thing with an answer here. A press on the
-            // region would otherwise start a new rectangle under a result that
-            // is still being decided about — and the rectangle drawn by a press
-            // meant to dismiss something is the oldest way to lose work in this
-            // window.
+            // The bar is the only thing with an answer here, and the card is not
+            // a way to start a new rectangle: a press on the words would
+            // otherwise draw a frame under a result that is still being decided
+            // about — and the rectangle drawn by a press meant to dismiss
+            // something is the oldest way to lose work in this window.
             _ = takeBarClick(at: local)
             return
         }
@@ -1898,21 +2369,48 @@ final class CaptureSurface: NSView {
             return true
         }
         if panelOpen {
-            for (option, rect) in bar.options where rect.contains(local) {
-                aspect = option
-                panelOpen = false
-                needsDisplay = true
-                return true
+            let closed = panel
+            panel = .none
+            switch closed {
+            case .ratio:
+                for (option, rect) in bar.options where rect.contains(local) {
+                    aspect = option
+                    needsDisplay = true
+                    return true
+                }
+            case .language:
+                for (code, rect) in bar.languageRows where rect.contains(local) {
+                    translationLanguage = code
+                    TranslationTargets.current = code
+                    needsDisplay = true
+                    // The menu is not a setting here, it is the press: choosing
+                    // a language while an area is drawn is a person saying
+                    // "translate it into this", and making them press twice
+                    // would be the menu asking them to confirm what they just
+                    // said.
+                    if mode == .shot, reading == nil, selection != nil { armTranslate() }
+                    return true
+                }
+            case .none:
+                break
             }
             if bar.panel.contains(local) {
+                needsDisplay = true
                 return true          // the panel's own air, not a choice
             }
-            panelOpen = false
             needsDisplay = true
             return true              // the press spent itself dismissing the panel
         }
+        // The chevron end before the chip: it is inside it, and a menu that
+        // could not be opened because the body answered first is a menu that
+        // does not exist.
+        if bar.languageMenu.contains(local) {
+            panel = .language
+            needsDisplay = true
+            return true
+        }
         if bar.button.contains(local) {
-            panelOpen = true
+            panel = .ratio
             needsDisplay = true
             return true
         }
@@ -1924,7 +2422,7 @@ final class CaptureSurface: NSView {
             armRead()
             return true
         }
-        if bar.translate.contains(local) {
+        if bar.language.contains(local) {
             armTranslate()
             return true
         }
@@ -1945,6 +2443,12 @@ final class CaptureSurface: NSView {
             // capture down, and this view has to outlive the event it is
             // dispatching.
             DispatchQueue.main.async { [weak self] in self?.onAgain() }
+            return true
+        }
+        if bar.confirm.contains(local) {
+            // The same act as Return and a double-click, as a button. Deferred a
+            // turn for the same reason every other ending is.
+            DispatchQueue.main.async { [weak self] in self?.confirm() }
             return true
         }
         return bar.capsule.contains(local)
@@ -1968,6 +2472,10 @@ final class CaptureSurface: NSView {
             // was asked for last is the one the person means.
             readArmed = false
             translateArmed = false
+            // A menu about a value does not survive a decision about what the
+            // next drag means. The person has moved on, and a menu still hanging
+            // over the bar hides the chip that just lit.
+            panel = .none
             needsDisplay = true
         }
     }
@@ -1989,6 +2497,7 @@ final class CaptureSurface: NSView {
             readArmed = true
             longArmed = false
             translateArmed = false
+            panel = .none
             needsDisplay = true
         }
     }
@@ -2010,6 +2519,7 @@ final class CaptureSurface: NSView {
             translateArmed = true
             longArmed = false
             readArmed = false
+            panel = .none
             needsDisplay = true
         }
     }
@@ -2025,7 +2535,7 @@ final class CaptureSurface: NSView {
         readArmed = false
         longArmed = false
         translateArmed = false
-        panelOpen = false
+        panel = .none
         selection = rect
         hovered = nil
         reading = .going
@@ -2401,7 +2911,7 @@ final class CaptureSurface: NSView {
         longArmed = false
         readArmed = false
         translateArmed = false
-        panelOpen = false
+        panel = .none
         selection = rect
         hovered = nil
         window?.isOpaque = false
@@ -2732,7 +3242,7 @@ final class CaptureSurface: NSView {
         return out
     }
 
-    /// Closes the ratio panel if it is open, and says whether it did.
+    /// Closes whichever panel is open, and says whether it did.
     ///
     /// The controller's Escape hot key calls this too: the panel has to eat the
     /// key that would close it whether the key arrived as an event here or as a
@@ -2740,7 +3250,7 @@ final class CaptureSurface: NSView {
     @discardableResult
     func dismissPanel() -> Bool {
         guard panelOpen else { return false }
-        panelOpen = false
+        panel = .none
         needsDisplay = true
         return true
     }
@@ -2789,6 +3299,10 @@ final class CaptureSurface: NSView {
             let all = CropAspect.allCases
             let index = all.firstIndex(of: aspect).map { $0 + 1 } ?? 0
             aspect = all[index % all.count]
+            // The grid is a way of choosing a shape; cycling them is another.
+            // Left open, it would still be offering the nine while the person
+            // watches the chip change one at a time.
+            panel = .none
         case 37:                    // L — the region keeps growing downwards
             // The same act as the button beside the ratio one. A bare key rather
             // than a hot key, and the difference matters: choosing a mode only
