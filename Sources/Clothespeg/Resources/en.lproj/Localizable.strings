@@ -17,7 +17,6 @@
 "Open at login" = "Open at login";
 "Could not change the login setting" = "Could not change the login setting";
 "Sounds" = "Sounds";
-"Move to Trash" = "Move to Trash";
 "Move Clothespeg to the Applications folder and try again." = "Move Clothespeg to the Applications folder and try again.";
 "New note" = "New note";
 "The notes hang on the same line as what you copy" = "The notes hang on the same line as what you copy";
@@ -29,7 +28,8 @@
 /* GrabArea */
 "Copy" = "Copy";
 "Edit" = "Edit";
-"Open" = "Open";
+"Paste into Frontmost App" = "Paste into Frontmost App";
+"Remove Card" = "Remove Card";
 "Open in Browser" = "Open in Browser";
 "Markup" = "Markup";
 "Show in Finder" = "Show in Finder";
@@ -267,6 +267,8 @@
 "Highlighter" = "Highlighter";
 "Mosaic" = "Mosaic";
 "Number" = "Number";
+"Colour Picker" = "Colour Picker";
+"Click a pixel to label its colour value" = "Click a pixel to label its colour value";
 "Undo" = "Undo";
 "Redo" = "Redo";
 "Cancel" = "Cancel";
@@ -289,10 +291,13 @@
 "Closing now keeps the file as it was. The picture is copied aside before the first write." = "Closing now keeps the file as it was. The picture is copied aside before the first write.";
 "Click a mark on the picture to change it" = "Click a mark on the picture to change it";
 "Drag a frame on the picture, then double-click to crop" = "Drag a frame on the picture, then double-click to crop";
+"Drag the crop frame's grips, then double-click to apply" = "Drag the crop frame's grips, then double-click to apply";
 "Zoom" = "Zoom";
 "Zoom In" = "Zoom In";
 "Zoom Out" = "Zoom Out";
 "Zoom to Fit" = "Zoom to Fit";
+"Screen Actual Size" = "Screen Actual Size";
+"Pixel for pixel" = "1 px = 1 pt";
 "Show capture editor shortcuts" = "Show capture editor shortcuts";
 "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain.";
 
@@ -340,8 +345,8 @@
    as a picture. The button reuses the existing "Text" key. */
 "Reading…" = "Reading…";
 "No text found" = "No text found";
-"Confirm" = "Confirm";
 "characters" = "characters";
+"words" = "words";
 "Drag the area whose words you want" = "Drag the area whose words you want";
 "The words in this area" = "The words in this area";
 "Drag the area to translate" = "Drag the area to translate";
@@ -365,3 +370,32 @@
 "Did not work" = "Did not work";
 "If this API key is filled in, translation uses that key's model by default." = "If this API key is filled in, translation uses that key's model by default.";
 "Capture editor" = "Capture editor";
+"The colour at that pixel" = "The colour at that pixel";
+
+/* A note's voice recording */
+"Record" = "Record";
+"Recording" = "Recording";
+"Re-record" = "Re-record";
+"Re-recording clears the old one" = "Re-recording clears the old one.";
+"Stop" = "Stop";
+"Play" = "Play";
+"Remove recording" = "Remove recording";
+"Confirm" = "Confirm";
+"Pause" = "Pause";
+"Resume" = "Resume";
+"Paused" = "Paused";
+"Recording removed" = "Recording removed. Save the note to make it permanent.";
+"Microphone denied" = "Microphone access is off. Allow Clothespeg in System Settings to record a note.";
+"Recording failed" = "The recording could not be made. Try again.";
+"Watch recorded notes" = "Show only notes with a recording";
+"Watching recorded notes" = "Showing only notes with a recording";
+
+/* The notes pill's colour dots */
+"Watch %@ notes" = "Add %@ notes to the filter";
+"Stop watching %@ notes" = "Take %@ notes out of the filter";
+
+/* Microphone permission row */
+"Microphone" = "Microphone";
+"Not asked yet" = "Not asked yet";
+"Allow Microphone" = "Allow Microphone";
+"Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded." = "Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded.";

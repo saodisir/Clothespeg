@@ -17,7 +17,6 @@
 "Open at login" = "登录时打开";
 "Could not change the login setting" = "无法更改登录项设置";
 "Sounds" = "声音";
-"Move to Trash" = "移到废纸篓";
 "Move Clothespeg to the Applications folder and try again." = "请把 Clothespeg 移到「应用程序」文件夹后再试。";
 "New note" = "新建便签";
 "The notes hang on the same line as what you copy" = "便签和复制的内容挂在同一条绳子上";
@@ -29,7 +28,8 @@
 /* GrabArea */
 "Copy" = "复制";
 "Edit" = "编辑";
-"Open" = "打开";
+"Paste into Frontmost App" = "粘贴到当前应用";
+"Remove Card" = "摘卡";
 "Open in Browser" = "在浏览器中打开";
 "Markup" = "标注";
 "Show in Finder" = "在访达中显示";
@@ -264,6 +264,8 @@
 "Highlighter" = "荧光笔";
 "Mosaic" = "马赛克";
 "Number" = "序号";
+"Colour Picker" = "取色";
+"Click a pixel to label its colour value" = "在图片上点一下，标出这个像素的颜色值";
 "Crop" = "裁剪";
 "Move" = "移动";
 "Undo" = "撤销";
@@ -290,6 +292,7 @@
 "Closing now keeps the file as it was. The picture is copied aside before the first write." = "现在关掉，文件保持你打开时的样子。第一次写回前会先复制一份原图。";
 "Click a mark on the picture to change it" = "点一下图上的标记，就能改它的大小和颜色";
 "Drag a frame on the picture, then double-click to crop" = "拖出裁剪框，双击应用";
+"Drag the crop frame's grips, then double-click to apply" = "拖裁剪框上的手柄调整，双击应用";
 /* 红橙黄绿蓝已有词条（便签颜色），这里只补两个新的，同一个词只准有一个定义 */
 "Cyan" = "青色";
 "Purple" = "紫色";
@@ -298,6 +301,8 @@
 "Zoom In" = "放大";
 "Zoom Out" = "缩小";
 "Zoom to Fit" = "适合窗口";
+"Screen Actual Size" = "屏幕实际大小";
+"Pixel for pixel" = "像素 1:1";
 /* 这一条现在同时管编辑器和截图浮条：两处都是图标 + 角标快捷键。 */
 "Show capture editor shortcuts" = "显示截图编辑快捷键";
 "Each tool shows its letter key in the corner. Copy, Overwrite and the zoom keys use the usual ⌘ combinations and are left plain." = "每个工具的右下角会标出它的字母键。复制、覆盖、缩放用的是通用 ⌘ 组合键，不标。";
@@ -350,8 +355,8 @@
    按钮复用已有的 "Text"（=文字），这里只补状态句与计数。 */
 "Reading…" = "识别中…";
 "No text found" = "没有找到文字";
-"Confirm" = "确认";
 "characters" = "字";
+"words" = "词";
 "Drag the area whose words you want" = "拖出要文字的区域";
 "The words in this area" = "这块区域里的文字";
 "Drag the area to translate" = "拖动要翻译的区域";
@@ -377,3 +382,32 @@
 "Did not work" = "不可用";
 "If this API key is filled in, translation uses that key's model by default." = "如果填写了这个 API key，那就默认使用这个 API key 的模型做翻译。";
 "Capture editor" = "截图编辑器";
+"The colour at that pixel" = "这个像素的颜色";
+
+/* 便签录音 */
+"Record" = "录音";
+"Recording" = "录音";
+"Re-record" = "重录";
+"Re-recording clears the old one" = "重录会清除上一段录音";
+"Stop" = "停止";
+"Play" = "试听";
+"Remove recording" = "删除录音";
+"Confirm" = "确认";
+"Pause" = "暂停";
+"Resume" = "继续";
+"Paused" = "已暂停";
+"Recording removed" = "录音已删除，保存便签后才生效。";
+"Microphone denied" = "麦克风未授权，请在系统设置里允许 Clothespeg 使用麦克风。";
+"Recording failed" = "录音失败，请再试一次。";
+"Watch recorded notes" = "只看带录音的便签";
+"Watching recorded notes" = "正在只看带录音的便签";
+
+/* 便签胶囊上的颜色点 */
+"Watch %@ notes" = "把%@便签加入筛选";
+"Stop watching %@ notes" = "把%@便签移出筛选";
+
+/* 麦克风权限 */
+"Microphone" = "麦克风";
+"Not asked yet" = "尚未询问";
+"Allow Microphone" = "允许麦克风";
+"Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded." = "Clothespeg 只用麦克风做一件事：给便签录一段语音。录音文件存在这台 Mac 的便签目录旁边，不会上传。";

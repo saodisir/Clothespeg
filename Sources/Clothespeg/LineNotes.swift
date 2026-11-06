@@ -46,13 +46,21 @@ extension Line {
     /// during the sixth of a second a card spends falling would bring back a
     /// note that was taken down.
     ///
-    /// Nothing is asked about a file on disk, because a note has none, and
-    /// nothing is removed from the history, because a note was never in it.
-    /// This is the whole of what taking a note down involves.
+    /// Nothing is removed from the history, because a note was never in it.
+    /// A note with a voice does have a file on disk now, and that one goes
+    /// with the card rather than staying in the attic with no note to play
+    /// it. This is the whole of what taking a note down involves.
     func removeNote(_ id: UUID, quietly: Bool = false) {
         guard let i = notes.firstIndex(where: { $0.id == id }), !notes[i].falling else { return }
         notes[i].falling = true
         hitRects[id] = nil
+        if case .note(let note) = notes[i].payload,
+           let name = note.recording?.name {
+            MainActor.assumeIsolated {
+                if NotePlayer.shared.playingName == name { NotePlayer.shared.stop() }
+            }
+            RecordingStore.discard(name)
+        }
         // A lit card going down takes its light with it, and the system's
         // pending reminder goes with the save that follows.
         ringingNoteIDs.remove(id)
@@ -200,6 +208,9 @@ extension Line {
         // The clock is what lights a card, so a save that does not look at
         // it leaves a reminder that has just gone by unannounced.
         refreshRinging()
+        // A colour or a voice that no longer has a card behind it must not
+        // leave its switch lit: that switch is about to lose its dots.
+        pruneNoteFilters()
     }
 
     /// The notes come back as they were, newest first.
@@ -256,5 +267,8 @@ extension Line {
         if !UserDefaults.standard.bool(forKey: settled) {
             UserDefaults.standard.set(true, forKey: settled)
         }
+        // A remembered filter from a line that no longer has two colours,
+        // or no voice at all, is cleared before the line is ever drawn.
+        pruneNoteFilters()
     }
 }

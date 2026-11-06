@@ -88,6 +88,70 @@ enum NoteTint: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+/// One of the eight answers to "what colour is this note".
+///
+/// The system colour is a choice like any other, not the absence of one. A
+/// note that never picked a wash is still a white note, and the pill has to
+/// offer a dot for it: on a rope of white, yellow and red notes, leaving it
+/// out drew two dots where the eye counted three. `nil` maps to `.system`
+/// here and nowhere else, so the note's own file keeps meaning "no colour
+/// picked" and nothing about `Note` or its Codable has to change.
+enum NoteTintChoice: String, CaseIterable, Identifiable, Hashable {
+    case system
+    case cream, yellow, orange, red, green, blue, black
+
+    var id: String { rawValue }
+
+    init(_ tint: NoteTint?) {
+        self = tint.flatMap { NoteTintChoice(rawValue: $0.rawValue) } ?? .system
+    }
+
+    var tint: NoteTint? { NoteTint(rawValue: rawValue) }
+
+    var label: String {
+        self == .system ? L("System colour") : (tint?.label ?? "")
+    }
+
+    func background(in scheme: ColorScheme) -> Color {
+        NoteTint.background(for: tint, in: scheme)
+    }
+}
+
+/// The notes pill's two questions, as arithmetic the self-test can ask
+/// without a line or a window.
+enum NoteTintFilter {
+    /// Only the colours a card actually wears, in the palette's own order —
+    /// system first, then the seven a note can pick, the same order the
+    /// editor's swatches use.
+    static func available(_ tints: [NoteTint?]) -> [NoteTintChoice] {
+        let worn = Set(tints.map { NoteTintChoice($0) })
+        return NoteTintChoice.allCases.filter { worn.contains($0) }
+    }
+
+    /// The dots the pill draws.
+    ///
+    /// One colour in use is no choice at all. Filtering a line whose cards
+    /// are all the same colour cannot take a single card away, so the dot
+    /// would be a switch with no question behind it. A filter in that
+    /// state is cleared by `Line.pruneNoteFilters()` rather than kept alive
+    /// by an extra dot.
+    static func dots(_ tints: [NoteTint?]) -> [NoteTintChoice] {
+        let worn = available(tints)
+        return worn.count > 1 ? worn : []
+    }
+
+    /// Several colours picked at once are a union: one card need only wear
+    /// one of them. The voice switch is a separate question, and the two
+    /// are ANDed. An empty colour set asks for every colour; voice off asks
+    /// for any voice. Both narrowed leaves the cards that answer both.
+    static func keeps(tint: NoteTint?, hasVoice: Bool,
+                      colours: Set<NoteTintChoice>, voiceOnly: Bool) -> Bool {
+        if !colours.isEmpty && !colours.contains(NoteTintChoice(tint)) { return false }
+        if voiceOnly && !hasVoice { return false }
+        return true
+    }
+}
+
 // MARK: - The view
 
 /// One sheet, at whatever size it is given: the colour, and nothing else.

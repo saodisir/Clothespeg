@@ -94,6 +94,105 @@ MainActor.assumeIsolated {
         print(report)
         exit(0)
     }
+    // Note voice harness: `Note` is hand-written Codable, and a place
+    // forgotten in `tidied` or `toggling` costs a recording without ever
+    // costing a build. No microphone or window in the way here.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_NOTE_SELFTEST"] {
+        let report = NoteRecordingSelfTest.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Microphone probe: TCC answers for the responsible process, so a binary
+    // started from a shell answers for Terminal while the same binary started
+    // by LaunchServices answers for the app. Launch this one through
+    // `open -n --env CLOTHESPEG_MIC_PROBE=<path> -a Clothespeg.app` to read
+    // what the real app sees, without putting a permission dialog up.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_MIC_PROBE"] {
+        let report = MicrophoneProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // `open --env` does not reach a hardened-runtime app on this macOS, so the
+    // same probe also takes a one-shot request file: put the report path in
+    // it, then launch the app through LaunchServices as usual. The file is
+    // consumed on the first launch, so ordinary starts are untouched.
+    let micRequest = "/tmp/clothespeg-mic-probe.request"
+    if let request = try? String(contentsOfFile: micRequest, encoding: .utf8) {
+        let parts = request.split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        let path = parts.first ?? ""
+        let reportPath = path.isEmpty ? "/tmp/mic-probe.txt" : path
+        let shouldAsk = parts.dropFirst().contains("ask")
+        try? FileManager.default.removeItem(atPath: micRequest)
+        let report = MicrophoneProbe.run()
+        try? report.write(toFile: reportPath, atomically: true, encoding: .utf8)
+        print(report)
+        if shouldAsk { MicrophoneProbe.ask(reportPath: reportPath) }
+        exit(0)
+    }
+    // Recording probe: three seconds of real metering, on a plain thread and
+    // a plain run loop. If the wave moves here and not in the editor, the
+    // editor's timer is the fault rather than the microphone. Takes either an
+    // environment variable or a one-shot request file for LaunchServices.
+    let recRequest = "/tmp/clothespeg-rec-probe.request"
+    let recordingProbe = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_PROBE"]
+        ?? (try? String(contentsOfFile: recRequest, encoding: .utf8))
+            .flatMap { $0.split(separator: "\n").first.map(String.init) }
+    if let path = recordingProbe, !path.isEmpty {
+        try? FileManager.default.removeItem(atPath: recRequest)
+        let kind = (try? String(contentsOfFile: "/tmp/clothespeg-rec-mode", encoding: .utf8)) ?? ""
+        let report = kind.contains("concurrency")
+            ? RecordingProbe.runConcurrency() : RecordingProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_CONCURRENCY_PROBE"] {
+        let report = RecordingProbe.runConcurrency()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_APP_PROBE"] {
+        let report = RecordingProbe.runThroughRecorder()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_PAUSE_PROBE"] {
+        let report = RecordingProbe.runPause()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_PAUSE_APP_PROBE"] {
+        let report = RecordingProbe.runPauseThroughRecorder()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_VOLUME_PROBE"] {
+        let report = VolumeProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // The card's press-to-seek against a real recording on disk.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_REC_SEEK_PROBE"] {
+        let report = RecordingProbe.runSeek()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // The same chain from a real mouse event, without a microphone.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_NOTE_HIT_PROBE"] {
+        let report = RecordingProbe.runHit()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
     // Capture harness: everything the capture can be wrong about without a
     // pointer in the way — permission, window picking, the size of the grab,
     // and whether the crop lands where the rectangle said. Writes its lines to
@@ -117,6 +216,12 @@ MainActor.assumeIsolated {
         let env = ProcessInfo.processInfo.environment
         let aspect = env["CLOTHESPEG_CAPTURE_RATIO"]
             .flatMap { title in CropAspect.allCases.first { $0.title == title } } ?? .free
+        // A point in view coordinates, for a photograph of the colour loupe.
+        // `_TAKEN` moves it one step further, to the card and the check.
+        let colour = env["CLOTHESPEG_CAPTURE_COLOUR"].flatMap { raw -> NSPoint? in
+            let numbers = raw.split(separator: ",").compactMap(Double.init)
+            return numbers.count == 2 ? NSPoint(x: numbers[0], y: numbers[1]) : nil
+        }
         print(CaptureSelfTest.render(to: shot,
                                      hovered: env["CLOTHESPEG_CAPTURE_HOVER"] != nil,
                                      selected: env["CLOTHESPEG_CAPTURE_SELECT"] != nil
@@ -134,7 +239,12 @@ MainActor.assumeIsolated {
                                         .map { $0 == "1" ? LongStitcher.noteTooFast : $0 },
                                      translated: env["CLOTHESPEG_CAPTURE_TRANSLATED"],
                                      armed: env["CLOTHESPEG_CAPTURE_ARM"],
-                                     appearance: env["CLOTHESPEG_APPEARANCE"]))
+                                     appearance: env["CLOTHESPEG_APPEARANCE"],
+                                     colour: colour,
+                                     colourTaken: env["CLOTHESPEG_CAPTURE_COLOUR_TAKEN"] != nil,
+                                     synthetic: env["CLOTHESPEG_CAPTURE_SYNTHETIC"] != nil,
+                                     pale: env["CLOTHESPEG_CAPTURE_PALE"] != nil,
+                                     reveal: env["CLOTHESPEG_CAPTURE_REVEAL"].flatMap(Double.init)))
         exit(0)
     }
     let delegate = AppDelegate()

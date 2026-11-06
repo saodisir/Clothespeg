@@ -253,6 +253,23 @@ struct Note: Equatable {
     /// exactly the state the person comes back to.
     var remindAcked: Date? = nil
 
+    /// The note's one recording, when it has one.
+    ///
+    /// A name rather than a path: the file lives beside `Notes.json` in the
+    /// attic, and a path written down here would be a promise about where
+    /// the attic is that a move or a restore could break. Only one of these
+    /// fits on a note, so there is no list to migrate later.
+    struct Recording: Codable, Equatable {
+        /// The file's name inside the recordings folder.
+        var name: String
+        /// How long it runs, rounded to a whole second for the card's caption.
+        var seconds: Int
+        /// Twenty peak levels, in the order they were heard, for the card's bars.
+        var bars: [Int]
+    }
+
+    var recording: Recording? = nil
+
     enum RepeatRule: String, Codable, CaseIterable, Identifiable {
         case daily, weekly, monthly
 
@@ -271,7 +288,10 @@ struct Note: Equatable {
     /// Whether there is anything here worth keeping. A note of blank lines is
     /// not a note, and hanging one would put an empty card on the line that
     /// nothing can be done with.
-    var isBlank: Bool { items.allSatisfy(\.isBlank) }
+    /// A note of blank lines and no recording is not a note. A note with a
+    /// recording and not a word written is: the recording is the note, and
+    /// `hang` and `finish` both ask this before they let one onto the line.
+    var isBlank: Bool { items.allSatisfy(\.isBlank) && recording == nil }
 
     /// The prose line at the top, when the top line is prose.
     var titleItem: NoteItem? {
@@ -323,7 +343,8 @@ struct Note: Equatable {
         // that would bring a card back lit in the middle of a save.
         return Note(text: kept.joined(separator: "\n"), tint: tint,
                     remindAt: remindAt, remindRule: remindRule,
-                    remindFired: remindFired, remindAcked: remindAcked)
+                    remindFired: remindFired, remindAcked: remindAcked,
+                    recording: recording)
     }
 
     /// The note with the tick on one line flipped, or nil when that line has
@@ -341,7 +362,8 @@ struct Note: Equatable {
         // along, and so does the answer the reminder has already been given.
         return Note(text: lines.joined(separator: "\n"), tint: tint,
                     remindAt: remindAt, remindRule: remindRule,
-                    remindFired: remindFired, remindAcked: remindAcked)
+                    remindFired: remindFired, remindAcked: remindAcked,
+                    recording: recording)
     }
 }
 
@@ -380,7 +402,7 @@ extension Note: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, tint, remindAt, remindRule, remindFired, remindAcked
+        case text, tint, remindAt, remindRule, remindFired, remindAcked, recording
     }
 
     init(from decoder: Decoder) throws {
@@ -402,6 +424,10 @@ extension Note: Codable {
         self.remindRule = (try? container.decodeIfPresent(RepeatRule.self, forKey: .remindRule)) ?? nil
         self.remindFired = (try? container.decodeIfPresent(Bool.self, forKey: .remindFired)) ?? false
         self.remindAcked = try? container.decodeIfPresent(Date.self, forKey: .remindAcked)
+        // A recording written by an older version is a recording that was
+        // not there, and an unreadable one is no recording rather than a
+        // note that fails to load — the same tolerance the reminder uses.
+        self.recording = try? container.decodeIfPresent(Recording.self, forKey: .recording)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -420,6 +446,7 @@ extension Note: Codable {
         // The answered turn, only when there is one — the same rule as the
         // rest of the reminder: a note that has nothing to say writes nothing.
         try container.encodeIfPresent(remindAcked, forKey: .remindAcked)
+        try container.encodeIfPresent(recording, forKey: .recording)
     }
 
     /// The old list of lines, as one string.
@@ -502,6 +529,35 @@ enum NoteCardLayout {
     static let bottomPad: CGFloat = 10
     static let rowHeight: CGFloat = 16
     static let captionHeight: CGFloat = 18
+    /// The voice strip, between the last row of words and the caption. Fixed
+    /// rather than measured: the bars are a fixed number of fixed-width
+    /// marks, and a strip that grew with the recording would move the
+    /// caption the tick arithmetic already believes is where it is.
+    /// Twenty-eight, not twenty-four: the four extra points are breathing
+    /// room above and below the strip's own row. At twenty-four the bars
+    /// came within four points of both rules — the one above the strip and
+    /// the footer's — and the whole band read as squeezed between them.
+    static let recordingHeight: CGFloat = 28
+
+    /// The voice strip's track, measured once and shared by the view that
+    /// draws the bars and the view that takes the press. The bars used to
+    /// huddle at the left end and leave a blank stretch on the right; they
+    /// are now spread over this whole track, and every point of it names a
+    /// moment in the recording.
+    static let recordingSidePad: CGFloat = 10
+    static let recordingPlayWidth: CGFloat = 18
+    static let recordingPlayGap: CGFloat = 6
+    static let recordingClockWidth: CGFloat = 30
+    static var recordingTrackMinX: CGFloat {
+        recordingSidePad + recordingPlayWidth + recordingPlayGap
+    }
+    static var recordingTrackMaxX: CGFloat {
+        width - recordingSidePad - recordingClockWidth - recordingPlayGap
+    }
+    static var recordingTrackWidth: CGFloat {
+        recordingTrackMaxX - recordingTrackMinX
+    }
+
     static let boxSize: CGFloat = 9.5
     static let boxGap: CGFloat = 5
     /// The room a mark gets before the words start, whether the mark is a box,
@@ -617,7 +673,13 @@ enum NoteCardLayout {
             index += 1
         }
 
-        arrangement.fullHeight = y + captionHeight + bottomPad
+        // A recorded note is a taller card, not a card with fewer words on
+        // it: the strip takes its own 24 points and the rows keep every line
+        // they had. A note already at the ceiling stays there, and its strip
+        // is paid for out of the scroll instead — the same ceiling a long
+        // note has always had.
+        arrangement.fullHeight = y + (note.recording == nil ? 0 : recordingHeight)
+            + captionHeight + bottomPad
         arrangement.height = max(minHeight, min(maxHeight, arrangement.fullHeight))
         return arrangement
     }

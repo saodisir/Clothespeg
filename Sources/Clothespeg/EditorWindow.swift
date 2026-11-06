@@ -289,6 +289,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     /// The picture's size in pixels, for the harness that checks a crop landed.
     var previewPixelSize: CGSize { document?.pixelSize ?? .zero }
 
+    /// The frame waiting on the picture, for the harness that checks V did not
+    /// throw it away and that its grips moved it.
+    var previewCropRect: CGRect? { canvas.cropRect }
+
+    /// Harness: put a frame on the picture without a hand to drag one out, so
+    /// the state V adjusts can be photographed on its own.
+    func previewCrop(_ rect: CGRect?) { canvas.setCrop(rect) }
+
     /// What the text tool is set to, for the harness that checks whether a press
     /// on 斜体 reached the style at all.
     var previewTextStyle: ToolStyle { style(for: .text) }
@@ -301,6 +309,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 
     /// Harness: the percentage the bar is showing, as text.
     var previewZoomLabel: String { zoomLabel?.title ?? "no label" }
+
+    /// Harness: the titles the percentage button's menu would show.
+    var previewZoomMenuTitles: [String] { zoomMenu().items.map(\.title) }
 
     /// Harness: where a point in picture pixels lands in the window.
     func previewViewPoint(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
@@ -591,7 +602,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         middle.append(EditorSeparator())
         middle += chips([.select, .crop])
         middle.append(EditorSeparator())
-        middle += chips([.rectangle, .ellipse, .arrow, .pen, .highlight, .mosaic, .number, .text])
+        // The colour picker is the ninth mark: it reads a pixel rather than
+        // painting one, but its answer is a mark that lives on the picture with
+        // the others.
+        middle += chips([.rectangle, .ellipse, .arrow, .pen, .highlight, .mosaic, .number, .text,
+                         .eyedropper])
 
         // Fill belongs with the numbers, not with the ink: it is how the shape
         // is drawn, and the colour is what it is drawn with. It used to sit at
@@ -784,13 +799,19 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     /// the picture would have two plausible meanings and the wrong one wins.
     func select(_ tool: EditorTool) {
         currentTool = tool
+        // The picker's size is for this visit only: every press of I starts
+        // from the picture's own size, not from the last tag's multiplier.
+        if tool == .eyedropper { styles[.eyedropper] = tool.defaultStyle }
         // A drawer folded away belongs to the tool it was folded on. Choosing
         // another tool asks to see that tool's numbers.
         drawerFolded = false
         canvas.selected = nil
-        // Leaving the crop tool abandons a half-drawn crop: a frame you can no
-        // longer see the handles of is a frame you would apply by accident.
-        if tool != .crop, canvas.cropRect != nil { canvas.setCrop(nil) }
+        // V keeps the frame. The select tool is where a frame already drawn is
+        // nudged by its grips, so clearing it on the way there would make the
+        // very tool that is meant to adjust it the one that throws it away.
+        // Every other tool still abandons it: a frame whose grips are gone is a
+        // frame that could be applied by accident.
+        if tool != .crop, tool != .select, canvas.cropRect != nil { canvas.setCrop(nil) }
         for (each, chip) in toolButtons {
             chip.state = each == tool ? .on : .off
             chip.isPicked = each == tool
@@ -831,6 +852,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         case let shape as ShapeMark: return shape.shape == .rectangle ? .rectangle : .ellipse
         case is TextMark: return .text
         case is NumberedMark: return .number
+        case is ColourTagMark: return .eyedropper
         default: return nil
         }
     }
@@ -858,9 +880,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         let style = editing?.style ?? selected?.style ?? style(for: currentTool)
 
         // Colour belongs to anything that paints; the crop frame's shape belongs
-        // to the crop tool, which paints nothing — and outside the crop tool
-        // there is no crop frame to give a shape to.
-        let cropping = (tool == .crop)
+        // to the crop tool, which paints nothing. A frame left standing while V
+        // adjusts it still owns the ratio popup and the drawer, so the select
+        // tool counts as cropping for exactly as long as a frame is waiting.
+        // A picked mark wins: its own sliders are what the drawer is for then.
+        let cropping = (tool == .crop) || (tool == .select && canvas.cropRect != nil)
         let painting = !cropping && tool.supportsColour
         drawer.show(drawerSeamInk, painting)
         for dot in presetDots {
@@ -886,9 +910,16 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         // to do instead of standing there full of sliders that move nothing.
         let adjustable = fields.primary != nil || fields.secondary != nil
         drawer.show(stripHint, adjustable == false)
-        stripHint.stringValue = tool == .crop
-            ? L("Drag a frame on the picture, then double-click to crop")
-            : L("Click a mark on the picture to change it")
+        switch tool {
+        case .crop:
+            stripHint.stringValue = L("Drag a frame on the picture, then double-click to crop")
+        case .select where canvas.cropRect != nil:
+            stripHint.stringValue = L("Drag the crop frame's grips, then double-click to apply")
+        case .eyedropper:
+            stripHint.stringValue = L("Click a pixel to label its colour value")
+        default:
+            stripHint.stringValue = L("Click a mark on the picture to change it")
+        }
 
         primaryField = fields.primary ?? .width
         secondaryField = fields.secondary ?? .opacity
@@ -939,6 +970,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     /// (a mosaic: brush, block size) does not want a colour in between.
     private func fields(for tool: EditorTool) -> (primary: StyleField?, secondary: StyleField?) {
         switch tool {
+        case .eyedropper:
+            return (.tagScale, nil)
         case .select, .hand, .crop:
             return (nil, nil)
         case .rectangle, .ellipse:
@@ -1037,13 +1070,31 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     @objc private func zoomDoubleTapped() { canvas.setZoom(2) }
     @objc private func zoomQuadrupleTapped() { canvas.setZoom(4) }
 
+    /// The zoom at which one picture pixel lands on one screen *pixel* rather
+    /// than one screen point. `scale` is points per picture pixel, so on a 2x
+    /// display that is 0.5 and the bar reads 50%. This is a view setting only:
+    /// the picture's own coordinates, every mark and `flatten` keep scale 1 as
+    /// their export basis. Preview ("Define 100% scale as") and GIMP ("Dot for
+    /// dot") offer the same choice without redefining the document, and that
+    /// separation is why this is one menu item rather than a change to
+    /// `imageRect`.
+    static func screenActualZoom(for factor: CGFloat) -> CGFloat {
+        1 / max(factor, 1)
+    }
+
+    @objc private func zoomScreenTapped() {
+        let factor = zoomLabel.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor ?? 1
+        canvas.setZoom(Self.screenActualZoom(for: factor))
+    }
+
     /// The percentage opens the list of sizes worth returning to.
     ///
     /// A popup button cannot be the control here: it shows its own items, and
     /// "38%" — the size the picture happens to have been fitted to — is not one
     /// of them. So the number is a button, and the menu it drops is built each
     /// time, because the one thing in it that changes is which item is current.
-    @objc private func zoomMenuTapped() {
+    private func zoomMenu() -> NSMenu {
         let menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ key: String) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -1054,12 +1105,27 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         add(L("Zoom In"), #selector(zoomInTapped), "+")
         add(L("Zoom Out"), #selector(zoomOutTapped), "-")
         menu.addItem(.separator())
+        // A Retina screenshot has twice as many picture pixels as the screen
+        // had points, so "the size it appeared on screen" is not 100%. Offer
+        // that as its own rung, with the number it will land on, rather than
+        // quietly redefining what 100% means for every mark in the document.
+        let factor = zoomLabel.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor ?? 1
+        let screenPercent = Int((Self.screenActualZoom(for: factor) * 100).rounded())
+        // The fixed rungs stay. On a 2x screen the new one happens to land on
+        // 50%, but on a 1x screen it lands on 100%, and deleting 50% would
+        // take a rung away from exactly the people who need it.
+        add("\(L("Screen Actual Size")) · \(screenPercent)%", #selector(zoomScreenTapped), "")
         add("50%", #selector(zoomHalfTapped), "")
-        add("100%", #selector(zoomActualTapped), "0")
+        add("100% · \(L("Pixel for pixel"))", #selector(zoomActualTapped), "0")
         add("200%", #selector(zoomDoubleTapped), "")
         add("400%", #selector(zoomQuadrupleTapped), "")
-        menu.popUp(positioning: nil,
-                   at: NSPoint(x: 0, y: zoomLabel.bounds.height + 6), in: zoomLabel)
+        return menu
+    }
+
+    @objc private func zoomMenuTapped() {
+        zoomMenu().popUp(positioning: nil,
+                         at: NSPoint(x: 0, y: zoomLabel.bounds.height + 6), in: zoomLabel)
     }
 
     /// The press landed and the window is staying open, so something in the
@@ -1283,12 +1349,17 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
             document.undo()
             saved = false
             pruneSelection()
+            // Undoing a crop puts the old pixels back, and the title is where
+            // their size is written. Without this the title keeps reporting the
+            // cropped size while a crop frame can be drawn wider than it.
+            updateTitle()
             canvas.needsDisplay = true
             refreshControls()
         case .redo:
             document.redo()
             saved = false
             pruneSelection()
+            updateTitle()
             canvas.needsDisplay = true
             refreshControls()
         case .copyImage:
@@ -1381,7 +1452,26 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     enum Command { case undo, redo, copyImage, save, crop }
 
     var document: EditorDocument? { didSet { needsDisplay = true } }
-    var tool: EditorTool = .select
+    var tool: EditorTool = .select {
+        didSet {
+            // A loupe left behind by the colour picker is a stale answer about
+            // a pixel the pointer may have left. Drawing checks the tool too;
+            // forgetting the point as well means switching back starts clean.
+            if oldValue != tool, colourHover != nil { colourHover = nil }
+        }
+    }
+    /// Where the pointer is while the colour picker is in hand, in view points.
+    /// A drill can put it on a known pixel instead of waiting for a real move.
+    private var colourHover: NSPoint? {
+        didSet {
+            // Only the two small rectangles the loupe occupied or will occupy
+            // need repainting. A full redraw on every mouse move would drag the
+            // whole picture, marks and all, behind the pointer.
+            for point in [oldValue, colourHover].compactMap({ $0 }) {
+                setNeedsDisplay(ColourLoupe.rect(at: point, in: bounds))
+            }
+        }
+    }
     var style = ToolStyle()
     var onCommand: ((Command) -> Void)?
     var onChange: (() -> Void)?
@@ -1404,6 +1494,110 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     var onDragActive: ((Bool) -> Void)?
     /// The shape the crop frame is locked to, if any — width over height.
     var cropRatio: CGFloat?
+
+    /// What the hand is holding on a crop frame that V left standing. Both
+    /// cases remember the frame as it was at the press: a long drag measured
+    /// from the last mouse position would accumulate rounding, and a grip that
+    /// crosses the frame would leave no way back.
+    private enum CropGrab {
+        case move(CGRect, CGPoint)
+        case grip(Int, CGRect, CGPoint)
+
+        var original: CGRect {
+            switch self {
+            case let .move(rect, _), let .grip(_, rect, _): rect
+            }
+        }
+        var start: CGPoint {
+            switch self {
+            case let .move(_, point), let .grip(_, _, point): point
+            }
+        }
+    }
+    private var cropGrab: CropGrab?
+
+    /// The eight grips, numbered from the bottom-left along the bottom, then
+    /// the two sides, then the top: 0 1 2 / 3 4 / 5 6 7.
+    private static let cropGripSide: CGFloat = 9
+
+    private func cropFrame(_ crop: CGRect) -> NSRect {
+        let rect = imageRect
+        return NSRect(x: rect.minX + crop.minX * scale,
+                      y: rect.minY + crop.minY * scale,
+                      width: crop.width * scale,
+                      height: crop.height * scale)
+    }
+
+    /// Grips keep a constant size on screen; in picture pixels a nine-point
+    /// square would vanish on a 4K screenshot fitted to a small window.
+    private func cropGrips(_ frame: NSRect) -> [NSRect] {
+        let s = Self.cropGripSide
+        let xs = [frame.minX, frame.midX, frame.maxX]
+        let ys = [frame.minY, frame.midY, frame.maxY]
+        let corners = [(0, 0), (1, 0), (2, 0), (0, 1), (2, 1), (0, 2), (1, 2), (2, 2)]
+        return corners.map { (i, j) in
+            NSRect(x: xs[i] - s / 2, y: ys[j] - s / 2, width: s, height: s)
+        }
+    }
+
+    /// A press on a waiting frame belongs to the frame, not to whatever mark
+    /// happens to be underneath it. Returns whether a drag was started.
+    private func beginCropGrab(at point: CGPoint, view: NSPoint) -> Bool {
+        guard tool == .select, let crop = cropRect else { return false }
+        let frame = cropFrame(crop)
+        if let index = cropGrips(frame).firstIndex(where: {
+            $0.insetBy(dx: -3, dy: -3).contains(view)
+        }) {
+            cropGrab = .grip(index, crop, point)
+            return true
+        }
+        if frame.contains(view) {
+            cropGrab = .move(crop, point)
+            return true
+        }
+        return false
+    }
+
+    private func cropAfterGrab(_ grab: CropGrab, to point: CGPoint) -> CGRect {
+        let old = grab.original
+        let whole = CGRect(origin: .zero, size: document?.pixelSize ?? old.size)
+        let dx = point.x - grab.start.x
+        let dy = point.y - grab.start.y
+        guard case let .grip(index, _, _) = grab else {
+            // Moving keeps the size and stops at the edge of the picture; an
+            // intersection would quietly make the frame smaller instead.
+            let tx = min(max(dx, -old.minX), whole.width - old.maxX)
+            let ty = min(max(dy, -old.minY), whole.height - old.maxY)
+            return old.offsetBy(dx: tx, dy: ty)
+        }
+        var box = old
+        switch index {
+        case 0: box.origin.x += dx; box.size.width -= dx
+                box.origin.y += dy; box.size.height -= dy
+        case 1: box.origin.y += dy; box.size.height -= dy
+        case 2: box.size.width += dx
+                box.origin.y += dy; box.size.height -= dy
+        case 3: box.origin.x += dx; box.size.width -= dx
+        case 4: box.size.width += dx
+        case 5: box.origin.x += dx; box.size.width -= dx
+                box.size.height += dy
+        case 6: box.size.height += dy
+        default: box.size.width += dx
+                 box.size.height += dy
+        }
+        guard box.width >= 8, box.height >= 8 else { return old }
+        // With a ratio chosen, the corner that did not move is the anchor and
+        // height follows width, the same rule the drag that drew the frame
+        // used. Side grips keep their freedom: their one edge is the point of
+        // grabbing them rather than a corner.
+        if let ratio = cropRatio, ratio > 0, [0, 2, 5, 7].contains(index) {
+            let height = box.width / ratio
+            if index == 0 || index == 2 { box.origin.y = old.maxY - height }
+            else { box.origin.y = old.minY }
+            box.size.height = height
+        }
+        return box.intersection(whole)
+    }
 
     // MARK: Zoom
 
@@ -1522,6 +1716,7 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     /// it. Every change goes through here; the drag itself only moves
     /// `cropRect`, so the button does not flicker in mid-gesture.
     func setCrop(_ rect: CGRect?) {
+        cropGrab = nil
         cropRect = rect
         onCrop?(rect)
     }
@@ -1918,6 +2113,28 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     /// Harness: where the picture sits, for a drill that pushes it around.
     var previewImageOrigin: NSPoint { imageRect.origin }
 
+    /// Harness: put the loupe on a known picture pixel without a real mouse move.
+    func previewHover(x: CGFloat, y: CGFloat) {
+        colourHover = viewPoint(x: x, y: y)
+    }
+
+    /// Harness: what the loupe is reading right now, if it is reading anything.
+    /// The same conditions as the drawing path, so a drill that reports a hex
+    /// is reporting the hex a person would see.
+    var previewLoupeHex: String? {
+        guard tool == .eyedropper, let hover = colourHover, let document,
+              imageRect.contains(hover),
+              let near = ColourSampler.neighbourhood(in: document.source,
+                                                     around: imagePoint(hover), radius: 5)
+        else { return nil }
+        return ColourSampler.hex(near.centre)
+    }
+
+    /// Harness: the hex on the newest colour tag, or nil when there is none.
+    var previewLastColourHex: String? {
+        (document?.marks.last { $0 is ColourTagMark } as? ColourTagMark)?.hex
+    }
+
     /// The ground's texture: dots twelve points apart, a point and a half
     /// across, at a tenth of the label colour — a grid you notice only when
     /// you need it.
@@ -2002,6 +2219,10 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         let frame = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
         frame.lineWidth = 1
         frame.stroke()
+
+        // Last, so it sits over the marks: the loupe is the tool in hand, not
+        // part of the picture somebody is annotating.
+        drawColourLoupe(in: ctx)
     }
 
     /// The dashed box round the picked-up mark.
@@ -2036,12 +2257,10 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
     /// pixels sits in the corner, because that is the one number a crop is
     /// actually about.
     private func drawCrop() {
-        guard tool == .crop, let crop = cropRect, crop.width >= 1, crop.height >= 1 else { return }
+        guard tool == .crop || tool == .select,
+              let crop = cropRect, crop.width >= 1, crop.height >= 1 else { return }
         let rect = imageRect
-        let frame = NSRect(x: rect.minX + crop.minX * scale,
-                           y: rect.minY + crop.minY * scale,
-                           width: crop.width * scale,
-                           height: crop.height * scale)
+        let frame = cropFrame(crop)
 
         // One path, two subrects, even-odd: the picture outside the frame is
         // shaded and the frame itself is cut out of the shade.
@@ -2070,6 +2289,58 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         NSColor.black.withAlphaComponent(0.55).setFill()
         NSBezierPath(roundedRect: chip, xRadius: 3, yRadius: 3).fill()
         text.draw(at: origin)
+
+        // The grips are the whole reason V keeps the frame. Drawn only in the
+        // select tool: under C a press anywhere draws a new frame, so a grip
+        // there would promise a resize it cannot deliver.
+        if tool == .select {
+            for grip in cropGrips(frame) {
+                NSColor.black.withAlphaComponent(0.45).setFill()
+                NSBezierPath(roundedRect: grip.insetBy(dx: -1.5, dy: -1.5),
+                             xRadius: 3, yRadius: 3).fill()
+                NSColor.white.setFill()
+                NSBezierPath(roundedRect: grip, xRadius: 2, yRadius: 2).fill()
+            }
+        }
+    }
+
+    // MARK: - Colour loupe
+
+    /// The disc, its grid and the hex capsule are shared with the capture
+    /// overlay. `ColourLoupe` owns the drawing; this view owns only which
+    /// picture is being read and where the pointer is.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                      options: [.mouseMoved, .mouseEnteredAndExited,
+                                                .activeInKeyWindow, .inVisibleRect],
+                                      owner: self, userInfo: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard tool == .eyedropper else {
+            if colourHover != nil { colourHover = nil }
+            return
+        }
+        colourHover = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
+    override func mouseExited(with event: NSEvent) {
+        if colourHover != nil { colourHover = nil }
+    }
+
+    /// Eleven pixels around the pointer, read through the same loupe the
+    /// capture overlay uses.
+    private func drawColourLoupe(in ctx: CGContext) {
+        guard tool == .eyedropper, let hover = colourHover, let document,
+              imageRect.contains(hover),
+              let near = ColourSampler.neighbourhood(in: document.source,
+                                                     around: imagePoint(hover), radius: 5)
+        else { return }
+        ColourLoupe.draw(in: ctx, neighbourhood: near,
+                         centre: ColourLoupe.centre(for: hover, in: bounds))
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -2090,12 +2361,21 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
             NSCursor.closedHand.set()
             return
         }
-        let point = imagePoint(convert(event.locationInWindow, from: nil))
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = imagePoint(viewPoint)
         dragStart = point
         draft = nil
         dragged = false
         guard let document else { return }
         guard tool != .select else {
+            // A double-click on a waiting frame applies it, the same gesture C
+            // uses; a text mark underneath does not get the click first.
+            if event.clickCount == 2, let crop = cropRect,
+               cropFrame(crop).contains(viewPoint) {
+                onCommand?(.crop)
+                return
+            }
+            if beginCropGrab(at: point, view: viewPoint) { return }
             if event.clickCount == 2, let text = mark(at: point, in: document) as? TextMark {
                 beginTextEditing(text)
                 return
@@ -2109,6 +2389,24 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         // a moment ago.
         if tool == .crop {
             if event.clickCount == 2, cropRect != nil { onCommand?(.crop) }
+            return
+        }
+        // Under the picker, a click that lands on a tag already on the picture
+        // means "pick that one up", not "read this pixel again". The tag is a
+        // reading with a size of its own, and the only way to reach that size
+        // is to have it selected; layering a second tag over the first hid the
+        // one the hand was pointing at. V is not the only way in any more.
+        //
+        // `mark(at:)` answers the topmost mark, so a tag under an arrow is not
+        // picked — the same answer the cursor tool gives, and the same one the
+        // eye expects from what is visibly on top.
+        if tool == .eyedropper,
+           let tag = mark(at: point, in: document) as? ColourTagMark {
+            if selected !== tag {
+                selected = tag
+                onSelect?(tag)
+            }
+            needsDisplay = true
             return
         }
         if selected != nil {
@@ -2137,6 +2435,12 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         case .number:
             // Placed on the press, not dragged out: a numbered dot is a dot.
             draft = NumberedMark(center: point, style: style)
+        case .eyedropper:
+            // A reading, not a stroke. It still goes through `draft` like every
+            // other mark, so undo, selection and the redraw come for free.
+            guard let colour = ColourSampler.colour(at: point, in: document.source) else { return }
+            draft = ColourTagMark(anchor: point, colour: colour,
+                                  imageSize: document.pixelSize, style: style)
         case .select, .hand, .crop, .text:
             break
         }
@@ -2185,6 +2489,14 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
         onDragActive?(true)
         let point = imagePoint(convert(event.locationInWindow, from: nil))
 
+        if let grab = cropGrab {
+            cropRect = cropAfterGrab(grab, to: point)
+            onCrop?(cropRect)
+            dragged = true
+            needsDisplay = true
+            return
+        }
+
         if tool == .crop {
             cropRect = cropBox(from: start, to: point)
             dragged = true
@@ -2207,6 +2519,11 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
                 NSCursor.closedHand.set()
             }
             selected.translated(by: delta)
+            // A colour tag is a reading, not a drawing: once its anchor has
+            // moved, the hex has to be taken again from the pixel underneath.
+            if let tag = selected as? ColourTagMark, let source = document?.source {
+                tag.resample(from: source)
+            }
             dragStart = point
             needsDisplay = true
             return
@@ -2265,6 +2582,15 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
             onDragActive?(false)
             return
         }
+        if cropGrab != nil {
+            // Adjusting a frame is not an edit yet: nothing has been cut, so
+            // the document must not be marked dirty and offered for saving.
+            cropGrab = nil
+            dragged = false
+            onDragActive?(false)
+            needsDisplay = true
+            return
+        }
         onDragActive?(false)
         if tool == .crop {
             let moved = dragged
@@ -2311,7 +2637,7 @@ final class EditorCanvasView: NSView, NSTextViewDelegate {
             return hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y) >= 3
         case let stroke as PointsMark:
             return stroke.points.isEmpty == false
-        case is NumberedMark:
+        case is NumberedMark, is ColourTagMark:
             return true
         default:
             return false

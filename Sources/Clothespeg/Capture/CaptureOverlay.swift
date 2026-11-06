@@ -17,6 +17,26 @@ enum CaptureLevels {
     static let button = NSWindow.Level(rawValue: overlay.rawValue + 1)
 }
 
+/// The words on a result card arrive from the top down, one line at a time.
+///
+/// Arithmetic over elapsed time rather than a per-line animation object: a
+/// window full of timers is a window nobody can debug. Keeping the rule here
+/// also means the harness can ask "is row 0 ahead of row 3 at 50 ms" without
+/// starting an animation on a view that has no window, and a flat staircase
+/// (all lines at once) fails a plain comparison.
+enum ResultReveal {
+    static let stagger: TimeInterval = 0.045
+    static let fade: TimeInterval = 0.18
+
+    static func alpha(row: Int, elapsed: TimeInterval) -> CGFloat {
+        CGFloat(min(1, max(0, (elapsed - Double(row) * stagger) / fade)))
+    }
+
+    static func duration(rows: Int) -> TimeInterval {
+        Double(max(0, rows - 1)) * stagger + fade + 0.03
+    }
+}
+
 /// The window the whole capture happens in: one per screen, sized to it,
 /// above everything, and the only thing on screen that can take a key.
 ///
@@ -74,6 +94,9 @@ enum CaptureTarget {
 /// `NSImage(systemSymbolName:)` on every self-test run, which is the only way to
 /// find out before somebody opens the bar and sees five empty squares.
 enum CaptureSymbol {
+    /// An eyedropper. The same symbol the editor's colour picker wears, so
+    /// the two doors are recognisably the same reading.
+    static let colour = "eyedropper"
     static let ratio = "aspectratio"
     /// A scroll: the one picture that says "longer than the screen" without a
     /// word. The arrow it replaced said "down", which is half the story and
@@ -122,7 +145,7 @@ enum CaptureSymbol {
     /// is on screen but nothing has been taken yet".
     static let again = "rectangle.dashed"
     /// In the order they are drawn, which is also the order they are read.
-    static let all = [ratio, long, read, translate, again, edit]
+    static let all = [ratio, long, read, colour, translate, again, edit]
 }
 
 /// What the capture draws and what it hears.
@@ -333,8 +356,8 @@ final class CaptureSurface: NSView {
     /// Harness only: the translation of those words, as if one had come back.
     var previewTranslation: String?
 
-    /// Harness only: the sheet of words, having come in through `识别` — the
-    /// pill says `确认` because that is what pressing it does.
+    /// Harness only: the sheet of words, having come in through `识别`.
+    /// The pill is the same check whichever door the words came through.
     func showReadingForTesting(_ text: String?) {
         previewReading = text
         readingPurpose = .hang
@@ -342,7 +365,7 @@ final class CaptureSurface: NSView {
     }
 
     /// Harness only: the same sheet, having come in through `译` — the words in
-    /// the other language and a pill that says `复制`.
+    /// the other language, and the same check at the end of the bar.
     func showTranslationForTesting(_ text: String, from words: String?) {
         previewReading = words
         readingPurpose = .translate
@@ -399,6 +422,47 @@ final class CaptureSurface: NSView {
     /// What the region is showing, in the harness or for real.
     private var readingState: Reading? { reading ?? previewReading.map { .found($0) } }
 
+    /// A colour reading is a state of its own, not a fourth `armed` flag.
+    /// Those three are for a drag: `mouseUp` clears all of them on a plain
+    /// click, and a colour is chosen by exactly such a click. Aiming holds no
+    /// rectangle at all — the input is one pixel — so a region that happens
+    /// to be on screen has nothing to say about it.
+    private var colourAiming = false
+    private var colourResult: (point: NSPoint, colour: NSColor)?
+    /// Where the pointer is while aiming, in view points.
+    private var colourHover: NSPoint?
+    /// The card drawn for the colour, in view points. Handed to the harness
+    /// rather than recomputed there: two copies of the placement would be two
+    /// answers to "is the answer where the pixel was".
+    private var colourCard: NSRect?
+    /// The swatch inside that card. Handed out rather than recomputed in the
+    /// harness: whether its rim can be seen is a question about the drawn
+    /// rectangle, not about a second copy of the layout arithmetic.
+    private var colourSwatch: NSRect?
+    var colourCardForTesting: NSRect? { colourCard }
+    var colourSwatchForTesting: NSRect? { colourSwatch }
+    /// The value in the collapsed bar's middle slot, for the harness. The
+    /// sentence beside it already has `lineForTesting`.
+    var middleForTesting: String { bar().middleText }
+    var colourHexForTesting: String? {
+        colourResult.map { ColourSampler.hex($0.colour) }
+    }
+    var colourAimingForTesting: Bool { colourAiming }
+    var hasColourResultForTesting: Bool { colourResult != nil }
+
+    /// What the last aiming repaint asked AppKit to redraw. Two small
+    /// rectangles here is the trail bug coming back, so the self test reads it.
+    private var lastDirtyForTesting: [NSRect] = []
+    var dirtyForTesting: [NSRect] { lastDirtyForTesting }
+    func moveColourForTesting(_ point: NSPoint) { moveColourHover(to: point) }
+
+    /// Either door that ends with an answer on a card and a check on the bar.
+    private var hasResult: Bool { readingState != nil || colourResult != nil }
+
+    /// The colour value, on its way out. Nothing is written and nothing is
+    /// named: the controller puts it on the pasteboard and hangs one text card.
+    var onFinishColour: (String) -> Void = { _ in }
+
     /// The translated words, wherever they came from.
     private var translationText: String? { translation ?? previewTranslation }
 
@@ -432,6 +496,65 @@ final class CaptureSurface: NSView {
     /// the words as the start of a new frame.
     private(set) var resultCard: NSRect = .zero
 
+    // MARK: The answer arriving
+
+    /// When the words on the card last changed. The reveal restarts on a change
+    /// of *content*, not on a change of state: a paragraph and its translation
+    /// are two answers, while a repaint caused by the pointer or the appearance
+    /// is not one. A loading line is not an answer either, so it arrives whole.
+    private var resultRevealStart: TimeInterval?
+    private var resultRevealKey: String?
+    private var resultRevealRows = 0
+    private var revealTimer: Timer?
+
+    private func noteReveal(key: String, rows: Int, animated: Bool) {
+        resultRevealRows = rows
+        // A view without a window is the harness or an off-screen preview.
+        // Neither should start a clock: they take one still picture, and a
+        // half-faded one would turn every pixel assertion into a coin toss.
+        guard animated, window != nil, resultRevealKey != key else { return }
+        resultRevealKey = key
+        resultRevealStart = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                let elapsed = now - (self.resultRevealStart ?? now)
+                if elapsed < ResultReveal.duration(rows: self.resultRevealRows) {
+                    self.setNeedsDisplay(self.resultCard.insetBy(dx: -2, dy: -2))
+                } else {
+                    // One last whole repaint at alpha 1, then the clock stops.
+                    self.stopReveal()
+                    self.needsDisplay = true
+                }
+            }
+        }
+        stopReveal()
+        RunLoop.main.add(timer, forMode: .common)
+        revealTimer = timer
+    }
+
+    private func revealAlpha(_ row: Int) -> CGFloat {
+        guard window != nil, let start = resultRevealStart else { return 1 }
+        return ResultReveal.alpha(
+            row: row, elapsed: ProcessInfo.processInfo.systemUptime - start)
+    }
+
+    /// Whether this frame is one of the fading ones. Outside the animation the
+    /// card is drawn once, exactly as it always was: clipping a block into
+    /// strips would leave hairline seams at the strip edges on a static card,
+    /// and the pixel checks would start measuring the seams instead of the ink.
+    private var isRevealing: Bool {
+        guard window != nil, let start = resultRevealStart else { return false }
+        return ProcessInfo.processInfo.systemUptime - start
+            < ResultReveal.duration(rows: resultRevealRows)
+    }
+
+    private func stopReveal() {
+        revealTimer?.invalidate()
+        revealTimer = nil
+    }
+
     /// The rectangle this capture is about, in screen coordinates.
     ///
     /// Handed out for one purpose: remembering what to do again. A `译` or a
@@ -461,7 +584,9 @@ final class CaptureSurface: NSView {
     /// out on the right: true while a long capture runs, and while a reading is
     /// waiting to be answered. Deliberately not `growing`, which is about the
     /// picture made of frames and drives the transparent window as well.
-    private var collapsed: Bool { mode == .long || readingState != nil || previewLong != nil }
+    private var collapsed: Bool {
+        mode == .long || readingState != nil || colourResult != nil || previewLong != nil
+    }
 
     /// Set only by the layout harness, which has no pointer to hover and no
     /// hand to drag. Ordinary runs leave both nil and the two live answers —
@@ -512,6 +637,7 @@ final class CaptureSurface: NSView {
 
     deinit {
         pointerWatch?.invalidate()
+        revealTimer?.invalidate()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -549,6 +675,10 @@ final class CaptureSurface: NSView {
         // clock left running on a surface nobody is looking at keeps taking
         // screenshots of the desktop for nobody.
         stopSampling()
+        // The capture is over, or has become a long one: a clock that keeps
+        // repainting a card nobody is looking at is the same mistake the
+        // sampling clock used to make.
+        stopReveal()
     }
 
     private func tick() {
@@ -557,10 +687,39 @@ final class CaptureSurface: NSView {
             return
         }
         lastPointer = pointer
+        if colourAiming {
+            let local = NSPoint(x: pointer.x - screen.frame.minX,
+                                y: pointer.y - screen.frame.minY)
+            moveColourHover(to: local)
+            // The bar still has a ✕ to press, and the arrow is what says so.
+            if bar().capsule.contains(local) {
+                NSCursor.arrow.set()
+            } else {
+                NSCursor.crosshair.set()
+            }
+            return
+        }
         // Held down, the pointer is doing something to the frame; a window
         // lighting up under it would be a second answer to the same gesture.
         guard !pressing else { return }
         refreshHover()
+    }
+
+    /// Pointer movement while aiming. Pulled out of `tick()` so the harness can
+    /// move the loupe without a live mouse and still walk the same repaint.
+    ///
+    /// The whole screen is the dirty rectangle. The first version repainted
+    /// only the two loupe rectangles and left a ring drawn on the pointer
+    /// behind at every step — a trail of white dots. That ring has since moved
+    /// to the result card, but the full repaint stays: this state is one flat
+    /// dim over the whole screen plus a moving disc, and a partial repaint is
+    /// one more thing to keep in step if anything is ever added to it.
+    /// `ColourLoupe.rect` is for the editor, where the loupe really is the
+    /// only thing that moves.
+    private func moveColourHover(to local: NSPoint) {
+        colourHover = local
+        lastDirtyForTesting = [bounds]
+        needsDisplay = true
     }
 
     private func refreshHover() {
@@ -666,17 +825,29 @@ final class CaptureSurface: NSView {
         context.setFillColor(NSColor.black.withAlphaComponent(0.56).cgColor)
         context.fill(bounds)
 
+        // A colour reading has no rectangle to explain. The dimming stays flat
+        // all the way across, the loupe or the card is the only thing on it,
+        // and the check on the bar is the only way out.
+        if colourAiming || colourResult != nil {
+            if colourAiming { drawColourAim(in: context) } else { drawColourCard() }
+            drawBar()
+            return
+        }
+
         if let rect = highlightedRect {
             let local = viewRect(rect)
-            backdropImage.draw(in: local, from: local, operation: .copy, fraction: 1)
             if readingState != nil {
-                // The picture has become words. They are put on a card beside
-                // the frame rather than inside it: the frame is the thing they
-                // are checked against, and it is also, being whatever the hand
-                // drew, far too small to hold them.
+                // The answer is the only thing left lit. Lifting the chosen
+                // rectangle back out of the dimming would leave a bright frame
+                // around a small card — the bigger the frame, the more of the
+                // screen insists on being looked at — and drawing its edge would
+                // give the card a border it can never cover. Once the words are
+                // on the card the frame has no job left: the dimming stays flat,
+                // the card is the whole result, and the size of the frame stops
+                // being something the picture has to explain.
                 drawResultCard(local)
-                drawBorder(local, strong: true)
             } else {
+                backdropImage.draw(in: local, from: local, operation: .copy, fraction: 1)
                 drawBorder(local, strong: selection != nil || previewSelection != nil)
                 drawSize(rect, over: local)
                 // After the drag, not during it: under a moving hand eight dots
@@ -809,7 +980,7 @@ final class CaptureSurface: NSView {
         cross.stroke()
     }
 
-    /// What was read, on a card beside the frame rather than inside it.
+    /// What was read, on a card laid over the frame it came from.
     ///
     /// Inside the frame was the first answer, and it failed for one reason: a
     /// frame's width and height are whatever the hand happened to make them, so
@@ -820,21 +991,28 @@ final class CaptureSurface: NSView {
     /// drawn; a frame drawn round a paragraph is forty points wide, so every
     /// line comes out as `…`. Neither is a number to tune: the *container* was
     /// making a typographic decision it knows nothing about (reported twice,
-    /// 2026-11-03: 不显示 twice, then 省略号).
+    /// 2026-11-03: 不显示 twice, then 省略号). So the card is its own surface
+    /// with its own width — 340 to 560 points, whatever the frame is — and
+    /// that has not changed.
     ///
-    /// The card is therefore its own surface with its own width — 340 to 560
-    /// points, whatever the frame is — placed *outside* the frame: below it when
-    /// there is room, above when there is not, to the side when neither, and
-    /// never on top of it, because the frame is the thing the words are checked
-    /// against. Longer text makes the card taller and the type wraps; nothing is
-    /// cut mid-sentence. The one case that still has to stop — more words than
-    /// the screen can hold — says so in a sentence rather than in an ellipsis.
+    /// What changed on 2026-11-04 is where that surface goes. It used to be
+    /// placed outside the frame and never on it, because the frame was the thing
+    /// the words were checked against. The card now carries the original above
+    /// the translation, so the check happens on the card itself; putting it
+    /// anywhere else only sends the eye to two places. On the frame first,
+    /// centred on it. The four margins stay as a fallback for a frame so close
+    /// to a screen edge that the card would have to slide away from it, and a
+    /// frame that is the whole screen still tucks the card into its corner.
+    /// Longer text makes the card taller and the type wraps; nothing is cut
+    /// mid-sentence. The one case that still has to stop — more words than the
+    /// screen can hold — says so in a sentence rather than in an ellipsis.
     ///
     /// A translation is shown *with* the words it came from rather than instead
     /// of them. Replacing them was a rule the old container forced ("twice the
     /// words will not fit in the frame"); this one has room, and the question a
     /// translation asks — what did it actually say — is only answerable with the
-    /// original still in sight.
+    /// original still in sight. Both are on the card at once, with no gesture
+    /// that switches between them.
     private func drawResultCard(_ region: NSRect) {
         guard let state = readingState else { return }
         let ink = CaptureInk.ink(effectiveAppearance)
@@ -925,12 +1103,23 @@ final class CaptureSurface: NSView {
             return min(max(centred, inside.minX), max(inside.minX, inside.maxX - width))
         }
 
-        // The four places a card can go, in the order they are tried. A place
-        // counts only when the whole card lands on the screen, and the frame is
-        // never one of the places: it is the thing the words are checked
-        // against.
+        // On the frame first, then the four margins as a fallback. A place
+        // counts only when the whole card lands on the screen. "On the frame"
+        // means the card still covers the frame's centre after the screen-edge
+        // clamp; near an edge the clamp can slide it far enough away that the
+        // answer would sit somewhere else, and then an honest margin is better
+        // than a card pretending to be in place. A frame that is the whole
+        // screen keeps its old corner placement instead.
         func place(_ width: CGFloat, _ height: CGFloat) -> NSRect? {
             let x = alignedX(width)
+            let centre = NSPoint(x: region.midX, y: region.midY)
+            let wholeScreen = region.width >= inside.width && region.height >= inside.height
+            if !wholeScreen {
+                let y = min(max(region.midY - height / 2, inside.minY),
+                            max(inside.minY, inside.maxY - height))
+                let over = NSRect(x: x, y: y, width: width, height: height)
+                if over.contains(centre) { return over }
+            }
             let below = NSRect(x: x, y: region.minY - gap - height, width: width, height: height)
             if below.minY >= inside.minY { return below }
             let above = NSRect(x: x, y: region.maxY + gap, width: width, height: height)
@@ -944,12 +1133,14 @@ final class CaptureSurface: NSView {
             return nil
         }
 
-        // Full width first. When the frame leaves no room on any side, the card
-        // tries again narrower: a tall narrow card in the margin still says where
-        // the words are, where the wide one had to cover the very thing being
-        // read (2026-11-03: a 685×680 frame on a 1737×1124 screen left 521 and
-        // 507 points either side — not enough for 560, plenty for 340, and the
-        // wide card ended up glued to the bottom edge across the frame's border).
+        // Full width first. The on-frame place takes it in nearly every case;
+        // when it cannot (a frame at a screen edge, or one that is the whole
+        // screen) the card tries again narrower: a tall narrow card in the margin
+        // still says where the words are, where the wide one would have to be
+        // tucked into a corner (2026-11-03: a 685×680 frame on a 1737×1124
+        // screen left 521 and 507 points either side — not enough for 560, plenty
+        // for 340, and the wide card ended up glued to the bottom edge across
+        // the frame's border).
         var width = min(max(region.width, 340), widest)
         var measured = measure(width)
         var placed = place(width, measured.height)
@@ -983,6 +1174,31 @@ final class CaptureSurface: NSView {
         }
         let inner = width - padX * 2
         resultCard = card
+
+        // The answer arrives from the top down. Only real words do this:
+        // "Reading…" and "Translating…" are states, not answers, and fading
+        // them in would make a loading line look like a result.
+        let animated: Bool
+        if translating {
+            animated = false
+        } else {
+            switch state {
+            case .found: animated = true
+            case .going, .nothing: animated = false
+            }
+        }
+        let key = blocks.map { $0.text }.joined(separator: "\u{1}")
+        let rows = blocks.enumerated().reduce(0) { total, pair in
+            let height = measured.heights[pair.offset]
+            guard height > 0 else { return total }
+            return total + max(1, Int(ceil(height / pair.element.line)))
+        }
+        noteReveal(key: key, rows: rows, animated: animated)
+        // One answer for the whole frame: asking the clock again on every line
+        // could draw half a card striped and half of it whole.
+        let animating = isRevealing
+        let ctx = NSGraphicsContext.current?.cgContext
+
         let surface = NSBezierPath(roundedRect: card, xRadius: 10, yRadius: 10)
         CaptureInk.panel(effectiveAppearance).setFill()
         surface.fill()
@@ -993,6 +1209,7 @@ final class CaptureSurface: NSView {
         surface.stroke()
 
         var y = card.maxY - padY
+        var row = 0
         for (index, block) in blocks.enumerated() where measured.heights[index] > 0 {
             if index > 0 {
                 y -= between
@@ -1002,8 +1219,33 @@ final class CaptureSurface: NSView {
             }
             let box = NSRect(x: card.minX + padX, y: y - measured.heights[index],
                              width: inner, height: measured.heights[index])
-            (block.text as NSString).draw(with: box, options: [.usesLineFragmentOrigin],
-                                          attributes: block.attributes)
+            let strips = max(1, Int(ceil(measured.heights[index] / block.line)))
+            if animating, let ctx {
+                // One strip per line, top first. The block is drawn whole into
+                // each strip, with the clip and the global alpha doing the work:
+                // the text is never re-typeset, so a line break cannot move
+                // while its line is fading in.
+                for strip in 0..<strips {
+                    let slice = NSRect(x: box.minX,
+                                       y: box.maxY - CGFloat(strip + 1) * block.line,
+                                       width: box.width, height: block.line)
+                        .intersection(box)
+                    let alpha = revealAlpha(row)
+                    row += 1
+                    guard !slice.isEmpty, alpha > 0 else { continue }
+                    ctx.saveGState()
+                    ctx.clip(to: slice)
+                    ctx.setAlpha(alpha)
+                    (block.text as NSString).draw(with: box,
+                                                  options: [.usesLineFragmentOrigin],
+                                                  attributes: block.attributes)
+                    ctx.restoreGState()
+                }
+            } else {
+                (block.text as NSString).draw(with: box, options: [.usesLineFragmentOrigin],
+                                              attributes: block.attributes)
+                row += strips
+            }
             y -= measured.heights[index]
         }
         if measured.cut {
@@ -1023,6 +1265,118 @@ final class CaptureSurface: NSView {
         return [.font: NSFont.systemFont(ofSize: size),
                 .foregroundColor: ink.withAlphaComponent(alpha),
                 .paragraphStyle: style]
+    }
+
+    /// A point in view space to the same point in the frozen backdrop's
+    /// pixels. The view is in screen points, the backdrop at backing scale,
+    /// and both count y from the bottom — the same arithmetic `crop` uses,
+    /// and the same one `ColourSampler` expects.
+    private func colourImagePoint(_ viewPoint: NSPoint) -> CGPoint {
+        let scale = CGFloat(backdrop.width) / max(bounds.width, 1)
+        return CGPoint(x: viewPoint.x * scale, y: viewPoint.y * scale)
+    }
+
+    private func colourNeighbourhood(at viewPoint: NSPoint) -> ColourSampler.Neighbourhood? {
+        ColourSampler.neighbourhood(in: backdrop,
+                                    around: colourImagePoint(viewPoint), radius: 5)
+    }
+
+    /// While aiming: only the shared loupe. The system crosshair already marks
+    /// the exact pixel, and the ring that used to sit under the pointer was a
+    /// second cursor nobody asked for. That ring belongs to the answer: it
+    /// comes back on the card's tether once a pixel has been taken, where it
+    /// says "this pixel" instead of "here I am".
+    private func drawColourAim(in ctx: CGContext) {
+        guard colourAiming, let hover = colourHover, bounds.contains(hover),
+              let near = colourNeighbourhood(at: hover) else { return }
+        ColourLoupe.draw(in: ctx, neighbourhood: near,
+                         centre: ColourLoupe.centre(for: hover, in: bounds))
+    }
+
+    /// After a click: one card with a swatch and the value, tethered to the
+    /// pixel it came from. Point-sized, not picture-pixel-sized — the editor's
+    /// tag is drawn into the image's own coordinates, this one is drawn on
+    /// the overlay in screen points.
+    private func drawColourCard() {
+        guard let result = colourResult else { return }
+        let hex = ColourSampler.hex(result.colour)
+        let ink = CaptureInk.ink(effectiveAppearance)
+        let text = NSAttributedString(string: hex, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: ink,
+        ])
+        // Sized from what it carries, with a floor. The old 168 × 56 card with
+        // a 32 pt swatch and 15 pt digits was the largest thing on a screen
+        // whose only job was to hand over seven characters. Everything here is
+        // in points: the editor's tag is drawn in the image's own pixel
+        // coordinates and must not be copied into this view.
+        let padding: CGFloat = 10
+        let side: CGFloat = 24
+        let gap: CGFloat = 10
+        let size = NSSize(width: max(124, padding * 2 + side + gap + ceil(text.size().width)),
+                          height: 44)
+        let interior = bounds.insetBy(dx: 12, dy: 12)
+        let wanted = NSPoint(x: result.point.x + 18, y: result.point.y + 18)
+        let x = min(max(wanted.x, interior.minX),
+                    max(interior.minX, interior.maxX - size.width))
+        let y = min(max(wanted.y, interior.minY),
+                    max(interior.minY, interior.maxY - size.height))
+        let card = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        colourCard = card
+
+        // A pale line under a dark one, so the tether survives on any picture.
+        let leader = NSBezierPath()
+        leader.move(to: NSPoint(x: card.minX + 8, y: card.minY + 8))
+        leader.line(to: result.point)
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        leader.lineWidth = 3
+        leader.stroke()
+        NSColor.black.withAlphaComponent(0.75).setStroke()
+        leader.lineWidth = 1.2
+        leader.stroke()
+        let ring = NSRect(x: result.point.x - 5, y: result.point.y - 5,
+                          width: 10, height: 10)
+        let pale = NSBezierPath(ovalIn: ring)
+        NSColor.white.setStroke()
+        pale.lineWidth = 2
+        pale.stroke()
+        let dark = NSBezierPath(ovalIn: ring.insetBy(dx: 1, dy: 1))
+        NSColor.black.withAlphaComponent(0.8).setStroke()
+        dark.lineWidth = 1
+        dark.stroke()
+
+        let surface = NSBezierPath(roundedRect: card, xRadius: 8, yRadius: 8)
+        CaptureInk.panel(effectiveAppearance).setFill()
+        surface.fill()
+        ink.withAlphaComponent(0.14).setStroke()
+        surface.lineWidth = 1
+        surface.stroke()
+
+        let swatch = NSRect(x: card.minX + padding, y: card.midY - side / 2,
+                            width: side, height: side)
+        let swatchPath = NSBezierPath(roundedRect: swatch, xRadius: 4, yRadius: 4)
+        (result.colour.usingColorSpace(.sRGB) ?? result.colour).setFill()
+        swatchPath.fill()
+        colourSwatch = swatch
+        // Two strokes: a dark one outside, a pale one inside. A `#F8F8F8`
+        // swatch on the light card and a near-black one on the dark card each
+        // disappear into their own surface with a single stroke, and the pair
+        // gives one of them an edge in either appearance. The white-only rim
+        // that was here was invisible against the white panel — the whole
+        // reason this card got a border.
+        NSColor.black.withAlphaComponent(0.55).setStroke()
+        swatchPath.lineWidth = 2
+        swatchPath.stroke()
+        let inner = NSBezierPath(roundedRect: swatch.insetBy(dx: 1.25, dy: 1.25),
+                                 xRadius: 3, yRadius: 3)
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        inner.lineWidth = 1
+        inner.stroke()
+
+        let textX = swatch.maxX + gap
+        let room = card.maxX - padding - textX
+        text.draw(at: NSPoint(x: textX + max(0, (room - text.size().width) / 2),
+                              y: card.midY - text.size().height / 2))
     }
 
     /// Whether a rectangle is being drawn right now, as opposed to adjusted.
@@ -1087,6 +1441,9 @@ final class CaptureSurface: NSView {
         /// picture of it. A button for the same reason 长图 is one — "this area
         /// is a thing to be read" is a kind of capture, and no gesture says it.
         var read = NSRect.zero
+        /// The fourth button: read one pixel's colour instead of a picture of
+        /// the area. The only button here whose answer needs no rectangle.
+        var colour = NSRect.zero
         /// The middle of the bar while a long capture runs, where the two
         /// buttons were: one number, and the pill that ends the capture.
         var middle = NSRect.zero
@@ -1096,7 +1453,6 @@ final class CaptureSurface: NSView {
         /// the Return that ends it is a key borrowed from the page, and a
         /// borrowed key should not be the only way out.
         var done = NSRect.zero
-        var doneText = ""
         /// The ✕ beside it: leaving without a picture, for the same audience.
         /// Asked for after living with the pill for an hour — the only other way
         /// to abandon a long capture was to finish it and delete the card.
@@ -1221,6 +1577,11 @@ final class CaptureSurface: NSView {
         L("This Mac cannot translate between those two languages")
     }
     private var lineTranslateNoop: String { L("Those words are already in this language") }
+    /// The colour answer, in the same two slots the words use: a sentence on
+    /// the line, the value in the middle. The bar was empty between its ✕ and
+    /// ✓ after the old wordy Done pill went away, which read as a control with
+    /// nothing to control.
+    private var lineColour: String { L("The colour at that pixel") }
 
     private func textWidth(_ text: String, _ font: NSFont) -> CGFloat {
         (text as NSString).size(withAttributes: [.font: font]).width
@@ -1240,7 +1601,7 @@ final class CaptureSurface: NSView {
     /// and slide the pill away from that hand.
     private var measuredLines: [String] {
         [lineSettled, lineWholeScreen, lineWindow, lineWaiting, lineArmed, lineReadArmed,
-         lineTranslateArmed,
+         lineTranslateArmed, lineColour,
          lineGrowing, lineReading, lineTranslating, lineTranslated, lineTranslateFailed,
          lineTranslateNoop, lineTranslateUnsure, lineTranslateUnsupported,
          longNote ?? "", previewNote ?? ""] + LongStitcher.notes
@@ -1268,6 +1629,16 @@ final class CaptureSurface: NSView {
             out.lineText = lineTranslateNoop
         } else if readingState != nil {
             out.lineText = translationText == nil ? lineReading : lineTranslated
+        } else if colourResult != nil {
+            // The answer is on the card; the bar says what it is and repeats
+            // the value, in the same two slots a reading uses for its sentence
+            // and character count. An empty stretch between ✕ and ✓ reads as a
+            // control with nothing to control.
+            out.lineText = lineColour
+        } else if colourAiming {
+            // Still pointing: no sentence yet. An instruction here was tried
+            // and rejected; the crosshair and the loupe are enough.
+            out.lineText = ""
         } else if growing {
             out.lineText = lineGrowing
         } else if readArmed {
@@ -1312,7 +1683,7 @@ final class CaptureSurface: NSView {
         // that could not be pressed.
         out.middleText = middleLabel
         let confirmWidth = Self.chipWidth
-        let chipCount = 3 + (againShown ? 1 : 0)
+        let chipCount = 4 + (againShown ? 1 : 0)
 
         // The two groups, measured the same way they are laid out below rather
         // than as a count times a width: a formula that counts is a formula
@@ -1361,6 +1732,8 @@ final class CaptureSurface: NSView {
         x += Self.chipWidth + Self.chipGap
         out.read = chip(x, Self.chipWidth)
         x += Self.chipWidth + Self.chipGap
+        out.colour = chip(x, Self.chipWidth)
+        x += Self.chipWidth + Self.chipGap
         // 重载 comes before 编辑. The row now ends on the button that hands the
         // picture over, so the last thing under the hand after choosing a shape
         // is the one that finishes the job; 重载 sits one place earlier because
@@ -1392,10 +1765,13 @@ final class CaptureSurface: NSView {
         // pill is absent while a reading is still going, and a ✕ that stood in
         // one place and then moved is a ✕ to miss at the only moment it is
         // wanted.
-        out.doneText = doneLabel
-        let doneWidth = textWidth(out.doneText, Self.buttonFont) + 26
-        out.done = NSRect(x: lastButton - doneWidth, y: midY - 13,
-                          width: doneWidth, height: 26)
+        // The pill is the same check the icon row ends on: one chip, one shape,
+        // whatever the line beside it says. Its width used to follow a word, so
+        // a language with a longer word moved the button under a hand already
+        // reaching for it; a fixed chip cannot.
+        out.done = NSRect(x: lastButton - Self.chipWidth,
+                          y: midY - Self.chipHeight / 2,
+                          width: Self.chipWidth, height: Self.chipHeight)
         out.close = NSRect(x: out.done.minX - Self.barGap - Self.closeSize,
                            y: midY - Self.closeSize / 2,
                            width: Self.closeSize, height: Self.closeSize)
@@ -1462,32 +1838,24 @@ final class CaptureSurface: NSView {
     /// it has to compare against is the text on the screen behind it, which is
     /// measured in points too.
     private var middleLabel: String {
+        // The same slot a reading fills with its length. A hex is what this
+        // answer *is*, and the bar was empty without it.
+        if let colourResult { return ColourSampler.hex(colourResult.colour) }
         if translating { return "" }
-        if let translationText { return "\(translationText.count) \(L("characters"))" }
+        // The unit belongs to the script, not to the tool: an English result
+        // counts words, a Chinese or Japanese one counts characters.
+        if let translationText { return ResultCount.label(for: translationText) }
         if let state = readingState {
             switch state {
             case .going: return L("Reading…")
             case .nothing: return L("No text found")
-            case .found(let text): return "\(text.count) \(L("characters"))"
+            case .found(let text): return ResultCount.label(for: text)
             }
         }
         if let previewLong { return "\(previewLong) pt" }
         guard mode == .long, stitcher.count > 0 else { return "" }
         let points = Int((Double(stitcher.height) / screen.backingScaleFactor).rounded())
         return "\(points) pt"
-    }
-
-    /// What the pill says, which is what pressing it does.
-    ///
-    /// `完成` ends a picture that keeps growing, `确认` agrees with words that
-    /// will hang on the line, `复制` takes a translation away. Three acts, three
-    /// words, and the pill is the only place any of them is named.
-    private var doneLabel: String {
-        if readingPurpose == .translate {
-            return copyable ? L("Copy") : L("Done")
-        }
-        if let state = readingState, case .found = state { return L("Confirm") }
-        return L("Done")
     }
 
     /// Whether there is something to take away.
@@ -1499,24 +1867,26 @@ final class CaptureSurface: NSView {
     /// reported.
     private var copyable: Bool {
         guard !translating else { return false }
+        if colourResult != nil { return true }
         if case .found = readingState { return true }
         return false
     }
 
-    /// Whether there is anything for the pill to do.
+    /// Whether there is anything for the check to do.
     ///
-    /// Ending a long capture always is. Confirming words only once they exist:
-    /// while the read is still going there is nothing to agree with, and when it
-    /// found nothing a pill saying `完成` would be a pill that lies. Copying a
-    /// translation only once it has arrived, for the same reason — while the
-    /// engine is working there is nothing to take away, and saying so is the
-    /// line's job.
+    /// Ending a long capture always is. Taking words away only once they exist:
+    /// while the read is still going there is nothing to take, and a check
+    /// agreeing with an answer not yet given would be a check that lies.
+    /// The three words this pill used to wear — `完成`, `确认`, `复制` — all
+    /// described the same act, so the line beside it says which one it is
+    /// and the check says only "go".
     private var pillLive: Bool {
         // `growing` rather than `mode == .long`: the harness has no long mode to
         // be in — it sets `previewLong` and renders the same bar — and a pill
         // that exists on a real screen and not in a picture of one is a preview
         // that cannot be trusted about the one thing it is for.
         if growing { return true }
+        if colourResult != nil { return true }
         if let state = readingState, case .found = state {
             return readingPurpose == .translate ? copyable : true
         }
@@ -1555,7 +1925,8 @@ final class CaptureSurface: NSView {
     /// in another.
     var shotBarOnScreen: (capsule: NSRect, ratio: NSRect, language: NSRect,
                           languageMenu: NSRect, long: NSRect, read: NSRect,
-                          edit: NSRect, again: NSRect, confirm: NSRect)? {
+                          colour: NSRect, edit: NSRect, again: NSRect,
+                          confirm: NSRect)? {
         guard mode == .shot, readingState == nil else { return nil }
         let bar = bar()
         guard !bar.read.isEmpty else { return nil }
@@ -1566,6 +1937,7 @@ final class CaptureSurface: NSView {
                 bar.languageMenu.offsetBy(dx: origin.x, dy: origin.y),
                 bar.long.offsetBy(dx: origin.x, dy: origin.y),
                 bar.read.offsetBy(dx: origin.x, dy: origin.y),
+                bar.colour.offsetBy(dx: origin.x, dy: origin.y),
                 bar.edit.offsetBy(dx: origin.x, dy: origin.y),
                 bar.again.offsetBy(dx: origin.x, dy: origin.y),
                 bar.confirm.offsetBy(dx: origin.x, dy: origin.y))
@@ -1747,29 +2119,13 @@ final class CaptureSurface: NSView {
                  centred: true)
 
             // The one pressable thing that changes what happens, and the only
-            // way forward that does not need a keyboard. Clay because it is the
-            // thing to press. The ring on hover is the only pointer feedback
-            // this app can give here: while a long capture runs it is not
-            // frontmost, and a background app is not allowed to set the cursor,
-            // so the pill has to say "pressable" by looking different.
-            if pillLive {
-                let pill = NSBezierPath(roundedRect: bar.done, xRadius: 7, yRadius: 7)
-                CDS.clayInk.setFill()
-                pill.fill()
-                if doneHover {
-                    // White on clay in both appearances: the ring is drawn on the
-                    // pill rather than on the bar, so the bar's ink is not its
-                    // ink — a near-black ring on clay in light mode would read as
-                    // a pressed border rather than as "this is the thing".
-                    NSColor.white.withAlphaComponent(0.55).setStroke()
-                    pill.lineWidth = 1.5
-                    pill.stroke()
-                }
-                draw(bar.doneText, in: bar.done,
-                     attributes: [.font: Self.buttonFont,
-                                  .foregroundColor: CaptureInk.onClay],
-                     centred: true)
-            }
+            // way forward that does not need a keyboard. It is the same clay
+            // check the icon row ends on: a long capture, a reading and a
+            // translation all end by handing something over, so one shape says
+            // all three. The hover ring is the only pointer feedback this app
+            // can give here: while a long capture runs it is not frontmost, and
+            // a background app is not allowed to set the cursor.
+            if pillLive { drawConfirmChip(bar.done, hover: doneHover) }
 
             // The ✕, which is never the thing to do and is always available. It
             // is drawn whether or not the pill is, so the way out does not
@@ -1793,6 +2149,8 @@ final class CaptureSurface: NSView {
             // looked like they had done nothing.
             drawChip(bar.long, symbol: CaptureSymbol.long, key: "L", picked: isPicked(.long))
             drawChip(bar.read, symbol: CaptureSymbol.read, key: "W", picked: isPicked(.read))
+            drawChip(bar.colour, symbol: CaptureSymbol.colour, key: "I",
+                     picked: isPicked(.colour))
             // 重载 before 编辑, the same order the row is laid out in. The one
             // that ends nothing comes first; the one that takes the picture away
             // is last, at the end of the row.
@@ -1821,7 +2179,9 @@ final class CaptureSurface: NSView {
             // painted like a button rather than drawn like a symbol. No key in
             // its corner: Return already belongs to it, and the keys that are
             // spelled out are the ones nobody would guess.
-            drawConfirmChip(bar.confirm)
+            // No check while aiming: there is nothing to take yet, and a clay
+            // button that answers nothing is a button that looks broken.
+            if !colourAiming { drawConfirmChip(bar.confirm) }
         }
 
         guard panelOpen, mode == .shot else { return }
@@ -1961,6 +2321,7 @@ final class CaptureSurface: NSView {
         case .long: return longArmed
         case .read: return readArmed
         case .translate: return translateArmed
+        case .colour: return colourAiming || colourResult != nil
         }
     }
 
@@ -1968,7 +2329,7 @@ final class CaptureSurface: NSView {
     /// capture by taking it, the other by putting a frame back, and neither
     /// changes what the next drag means.
     enum Choice: String, CaseIterable {
-        case ratio, long, read, translate
+        case ratio, long, read, translate, colour
     }
 
     /// The filled chips, for the harness.
@@ -1996,12 +2357,25 @@ final class CaptureSurface: NSView {
         case "long": longArmed = true
         case "read": readArmed = true
         case "translate": translateArmed = true
+        case "colour": colourAiming = true
+            colourHover = colourHover ?? NSPoint(x: bounds.midX, y: bounds.midY)
         // Not an arming either, but it has to be holdable for a photograph:
         // `restore` is what normally lights this, and a preview has no click.
         case "again": againShowing = true
         default: break
         }
     }
+
+    /// Harness only: the picker in hand, with the loupe on a known point. A
+    /// render has no pointer to move, and a click has to land on the same
+    /// pixel the magnifier is showing.
+    func aimColourForTesting(_ point: NSPoint) {
+        armColour()
+        colourHover = point
+        needsDisplay = true
+    }
+    func takeColourForTesting(_ point: NSPoint) { takeColour(at: point) }
+    func finishColourForTesting() { finishResult() }
 
     /// A chip: the rounded box, its symbol, and its key.
     ///
@@ -2036,12 +2410,13 @@ final class CaptureSurface: NSView {
     /// Not `drawChip` with another symbol, because one thing about it is
     /// different in kind: it is the only chip in this row that is filled while
     /// no mode is on. Filled means "this changes what the next drag means"
-    /// everywhere else in the bar — here it means "this is the button", which is
-    /// the other thing clay means in this app, the one the pill wears when it
-    /// ends a reading. No letter in the corner either: `Return` already belongs
-    /// to this act, and the keys that are spelled out are the ones nobody would
-    /// guess.
-    private func drawConfirmChip(_ rect: NSRect) {
+    /// everywhere else in the bar — here it means "this is the button". No
+    /// letter in the corner either: `Return` already belongs to this act.
+    ///
+    /// The same shape is drawn again at `bar.done` once a reading is in hand.
+    /// Those two never appear together — the icon row is replaced by the line
+    /// and the check — so there is one check in the app, not two kinds of one.
+    private func drawConfirmChip(_ rect: NSRect, hover: Bool = false) {
         let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
         CDS.clayInk.setFill()
         box.fill()
@@ -2054,6 +2429,13 @@ final class CaptureSurface: NSView {
             tick.draw(in: NSRect(x: rect.midX - size.width / 2,
                                  y: rect.midY - size.height / 2,
                                  width: size.width, height: size.height))
+        }
+        if hover {
+            // White on clay in both appearances: a near-black ring in light
+            // mode would read as a pressed border rather than as "this is it".
+            NSColor.white.withAlphaComponent(0.55).setStroke()
+            box.lineWidth = 1.5
+            box.stroke()
         }
     }
 
@@ -2096,6 +2478,9 @@ final class CaptureSurface: NSView {
         if bar.button.contains(local) { return L("Ratio · the shape of the frame") }
         if bar.long.contains(local) { return L("Long · scroll down, Return when done") }
         if bar.read.contains(local) { return L("Text · the words in the area") }
+        // The button's name and nothing more. No sentence explaining when to
+        // press it: the loupe answers that the moment it is pressed.
+        if bar.colour.contains(local) { return L("Colour Picker") }
         // The chip no longer says which language, and the menu is a press away
         // rather than a glance — so the answer is here instead, where hovering
         // costs nothing and looking is what a person is already doing.
@@ -2252,13 +2637,19 @@ final class CaptureSurface: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let local = convert(event.locationInWindow, from: nil)
-        if readingState != nil {
+        if hasResult {
             // The bar is the only thing with an answer here, and the card is not
             // a way to start a new rectangle: a press on the words would
             // otherwise draw a frame under a result that is still being decided
             // about — and the rectangle drawn by a press meant to dismiss
             // something is the oldest way to lose work in this window.
             _ = takeBarClick(at: local)
+            return
+        }
+        if colourAiming {
+            // One click, one pixel. No drag, no frame, and no second press to
+            // say "yes" to the pixel — the check on the bar says that instead.
+            takeColour(at: local)
             return
         }
         if mode == .long {
@@ -2345,7 +2736,7 @@ final class CaptureSurface: NSView {
         // Deferred a turn, like the long capture's own branch: closing the
         // window from inside an event this view is dispatching pulls the view
         // out from under the dispatch.
-        if readingState != nil {
+        if hasResult {
             // Said with the geometry: "the copy button does nothing" is the same
             // report for a press that missed the pill and a press the pill
             // refused, and only one of those is worth fixing.
@@ -2364,7 +2755,7 @@ final class CaptureSurface: NSView {
                 // because a 50-point pill that must be hit to the point is a
                 // button that works most of the time — which is exactly how
                 // this one was reported.
-                DispatchQueue.main.async { [weak self] in self?.finishReading() }
+                DispatchQueue.main.async { [weak self] in self?.finishResult() }
             }
             return true
         }
@@ -2422,6 +2813,10 @@ final class CaptureSurface: NSView {
             armRead()
             return true
         }
+        if bar.colour.contains(local) {
+            armColour()
+            return true
+        }
         if bar.language.contains(local) {
             armTranslate()
             return true
@@ -2446,6 +2841,9 @@ final class CaptureSurface: NSView {
             return true
         }
         if bar.confirm.contains(local) {
+            // Nothing is drawn there while aiming, but a press reaching this
+            // geometry from a stale hit test must not take a picture either.
+            if colourAiming { return true }
             // The same act as Return and a double-click, as a button. Deferred a
             // turn for the same reason every other ending is.
             DispatchQueue.main.async { [weak self] in self?.confirm() }
@@ -2522,6 +2920,56 @@ final class CaptureSurface: NSView {
             panel = .none
             needsDisplay = true
         }
+    }
+
+    /// The colour door has one order only: choose it, then point at a pixel.
+    /// A rectangle already on the screen is not an input to this reading — it
+    /// says nothing about which pixel was meant — so it is dropped rather
+    /// than reinterpreted as its centre or as an average of its contents.
+    private func armColour() {
+        guard mode == .shot, reading == nil, colourResult == nil else { return }
+        colourAiming = true
+        colourResult = nil
+        colourCard = nil
+        selection = nil
+        hovered = nil
+        longArmed = false
+        readArmed = false
+        translateArmed = false
+        panel = .none
+        // The pointer was already somewhere when the key was pressed; a timer
+        // that only reports movement would leave the loupe absent until the
+        // hand moved, which is the same lesson `beginTracking` exists for.
+        colourHover = lastPointer.map { pointer in
+            NSPoint(x: pointer.x - screen.frame.minX, y: pointer.y - screen.frame.minY)
+        }
+        needsDisplay = true
+    }
+
+    /// One click, one pixel. The answer waits on a card until the check agrees.
+    private func takeColour(at local: NSPoint) {
+        guard colourAiming, bounds.contains(local),
+              let colour = ColourSampler.colour(at: colourImagePoint(local), in: backdrop)
+        else { return }
+        colourAiming = false
+        colourResult = (local, colour)
+        colourHover = nil
+        // The pointer has answered its question; nothing is being watched for
+        // a frame any more, and a live hover under a result is a second answer.
+        endTracking()
+        needsDisplay = true
+    }
+
+    /// The answer, on its way out. A colour and a reading end in the same
+    /// place — the pasteboard and one text card — but they must not be
+    /// confused on the way: a colour that went through `finishReading` would
+    /// be handed to the words' door.
+    private func finishResult() {
+        if let result = colourResult {
+            onFinishColour(ColourSampler.hex(result.colour))
+            return
+        }
+        finishReading()
     }
 
     /// Starts reading a region, and takes the bar into the state that answers
@@ -2854,6 +3302,11 @@ final class CaptureSurface: NSView {
     /// only callers, and a public `take` would be a fourth way to end a capture
     /// invented by whoever called it next.
     private func confirm() {
+        // A colour still being aimed at, or already read, has no picture to
+        // take. Every entrance to this method — Return, the check, a double
+        // click — has to agree, or one of them silently photographs the whole
+        // screen instead of handing over the value.
+        guard !colourAiming, colourResult == nil else { return }
         switch target {
         case .window(let window): onPick(window)
         case .region(let rect): onFinish(rect)
@@ -3278,10 +3731,13 @@ final class CaptureSurface: NSView {
             guard mode == .shot, reading == nil else { return }
             selectScreen()
         case 36, 76:                // Return, keypad Enter
-            if reading != nil {
+            // Aiming has no answer yet; agreeing with nothing would take a
+            // picture of the whole screen instead.
+            if colourAiming { return }
+            if hasResult {
                 // Agreeing with what was read. The one key that means "yes" in
                 // this window, and here it does not take a picture.
-                finishReading()
+                finishResult()
                 return
             }
             if mode == .long {
@@ -3326,6 +3782,12 @@ final class CaptureSurface: NSView {
             // choice is still open.
             guard mode == .shot, reading == nil else { return }
             armTranslate()
+        case 34:                    // I — one pixel's colour, not a region
+            // The same bare-key rule as `L`, `W` and `T`. `I` is what the
+            // editor's eyedropper answers to, so the two doors also agree on
+            // the hand that opens them.
+            guard mode == .shot, reading == nil, colourResult == nil else { return }
+            armColour()
         case 0:                     // A — the last frame, back where it was
             // The one key on this bar that ends the capture and takes nothing:
             // it puts the frame back and waits for Return like any other frame.

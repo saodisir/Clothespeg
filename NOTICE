@@ -25,9 +25,19 @@ also the company whose Developer ID a release is signed with, which keeps the
 copyright and the signature on the same party.
 
 Selling Clothespeg, or any other use for a commercial purpose, is not granted by
-the PolyForm Noncommercial License. It requires a separate commercial licence
-from VIZWISE (HONGKONG) LIMITED. Contact the licensor before selling or
-distributing it for a commercial purpose.
+the PolyForm Noncommercial License. A copy obtained from this repository is
+therefore for noncommercial use only, as that licence defines it.
+
+Commercial use at work is available through the Mac App Store edition: buying
+that edition grants the purchaser the right to use Clothespeg for commercial
+purposes, licensed by VIZWISE (HONGKONG) LIMITED under the App Store's standard
+licence terms. Organisations should obtain that edition rather than a copy from
+this repository.
+
+Reselling Clothespeg, embedding it in a commercial product, or redistributing
+the source for a commercial purpose is not covered by an App Store purchase.
+Those uses still require a separate commercial licence from VIZWISE (HONGKONG)
+LIMITED.
 
 This file records the provenance of the fork. It is not itself a licence.
 

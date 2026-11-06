@@ -31,6 +31,7 @@ enum CaptureSelfTest {
         lines.append(longLine())
         lines.append(MainActor.assumeIsolated { doneLine() })
         lines.append(MainActor.assumeIsolated { textLine() })
+        lines.append(countLine())
         lines.append(languageLine())
         lines.append(MainActor.assumeIsolated { againLine() })
         lines.append(MainActor.assumeIsolated { chooseLine() })
@@ -38,6 +39,8 @@ enum CaptureSelfTest {
         lines.append(MainActor.assumeIsolated { languagesLine() })
         lines.append(MainActor.assumeIsolated { styleLine() })
         lines.append(MainActor.assumeIsolated { cardLine() })
+        lines.append(MainActor.assumeIsolated { revealLine() })
+        lines.append(MainActor.assumeIsolated { colourLine() })
         lines.append(keysLine())
         if #available(macOS 15.0, *) {
             lines.append(MainActor.assumeIsolated { TranslateProbe.line() })
@@ -348,15 +351,25 @@ enum CaptureSelfTest {
         }
 
         guard let short = bar(1240) else {
-            return "capture done: MISSING (a growing bar should carry a Done pill)"
+            return "capture done: MISSING (a growing bar should carry a Done check)"
+        }
+        // The ordinary bar's own check is the yardstick: the check that ends a
+        // reading must be that chip, not a pill whose width followed a word.
+        let plain = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+        plain.frame = NSRect(origin: .zero, size: screen.frame.size)
+        plain.selectForTesting(CGRect(x: screen.frame.midX - 100, y: screen.frame.midY - 60,
+                                     width: 200, height: 120))
+        guard let chip = plain.shotBarOnScreen?.confirm else {
+            return "capture done: MISSING (no check on the icon row to compare with)"
         }
         let inside = short.capsule.contains(short.done)
         let onScreen = screen.frame.contains(short.capsule)
-        let sized = short.done.height == 26 && short.done.width >= 44
+        let sized = short.done.width == chip.width && short.done.height == chip.height
         var parts: [String] = []
-        parts.append("pill \(Int(short.done.width))×\(Int(short.done.height)) "
+        parts.append("check \(Int(short.done.width))×\(Int(short.done.height)) "
             + (inside && onScreen && sized ? "ok"
-               : "WRONG (inside \(inside), on screen \(onScreen), sized \(sized))"))
+               : "WRONG (inside \(inside), on screen \(onScreen), "
+                 + "same box as the bar's check \(sized))"))
 
         // The way out, beside the way on. Inside the capsule, clear of the pill,
         // round, and smaller than it — a ✕ the size of the pill would be a second
@@ -563,8 +576,8 @@ enum CaptureSelfTest {
         parts.append("asks by itself " + (chosen && asked == "one\ntwo" ? "ok"
             : "WRONG (chose \(chosen), asked \(asked ?? "nothing"))"))
 
-        // And the pill hands the translation over — the only useful way out of
-        // this door, and the reason it says 复制 rather than 确认.
+        // And the check hands the translation over — the only useful way out of
+        // this door. It no longer says 复制 or 确认: both were this one act.
         door.showTranslation("一\n二")
         if let pill = door.readingBarOnScreen {
             _ = door.takeBarClickForTesting(
@@ -1069,7 +1082,7 @@ enum CaptureSelfTest {
         //
         // 译 is not in this list any more: it carries a value now, so it is the
         // second member of the values group and is checked with 比例 below.
-        var chips = [bar.long, bar.read]
+        var chips = [bar.long, bar.read, bar.colour]
         if !bar.again.isEmpty { chips.append(bar.again) }
         chips.append(bar.edit)
         let boxes = chips.allSatisfy { $0.width == 30 && $0.height == 26 }
@@ -1142,7 +1155,8 @@ enum CaptureSelfTest {
         // which is the state those keys exist for — with a frame already drawn
         // they act on it at once and there is no arming to see.
         var armed: [String] = []
-        let wanted: [(UInt16, String)] = [(37, "long"), (13, "read"), (17, "translate")]
+        let wanted: [(UInt16, String)] = [(37, "long"), (13, "read"),
+                                          (17, "translate"), (34, "colour")]
         for (code, name) in wanted {
             let fresh = CaptureSurface(backdrop: blank, screen: screen, windows: [])
             fresh.frame = NSRect(origin: .zero, size: screen.frame.size)
@@ -1378,8 +1392,9 @@ enum CaptureSelfTest {
     /// checked here rather than argued about:
     ///
     /// - a card exists at all,
-    /// - it does not sit on the frame it belongs to (the frame is what the words
-    ///   are being checked against),
+    /// - it covers the centre of the frame it belongs to (2026-11-04: the card
+    ///   carries both languages, so it sits on the words rather than beside
+    ///   them; only a frame that is the whole screen is allowed a corner),
     /// - it is inside the screen,
     /// - its width is the card's own 340–560 rather than the frame's,
     /// - it has ink in it — counted, not assumed.
@@ -1387,6 +1402,57 @@ enum CaptureSelfTest {
     /// 14, 20 and 24 are the heights a frame round one line of small type comes
     /// to; 40 is a comfortable line; 60×60 is a word circled tightly; and the
     /// long paragraph is the case that used to be one line and an ellipsis.
+    /// The staircase the words arrive on. A flat reveal — every line at once —
+    /// is exactly the thing being avoided, so this check has to be able to fail
+    /// without a window, a timer or a screenshot in the middle of an animation.
+    private static func revealLine() -> String {
+        let earlyTop = ResultReveal.alpha(row: 0, elapsed: 0.05)
+        let earlyFourth = ResultReveal.alpha(row: 3, elapsed: 0.05)
+        let midSecond = ResultReveal.alpha(row: 1, elapsed: 0.10)
+        let doneTop = ResultReveal.alpha(row: 0, elapsed: 1)
+        let doneFourth = ResultReveal.alpha(row: 3, elapsed: 1)
+        let ordered = earlyTop > earlyFourth && earlyFourth == 0
+            && midSecond > 0 && midSecond < 1
+            && doneTop == 1 && doneFourth == 1
+        let duration = ResultReveal.duration(rows: 4)
+        let ends = duration >= ResultReveal.fade && duration < 1
+        return "capture reveal: " + (ordered && ends
+            ? String(format: "top first, all in %.2f s ok", duration)
+            : "WRONG (top \(earlyTop), fourth \(earlyFourth), second \(midSecond), "
+                + "done \(doneTop)/\(doneFourth), \(duration) s)")
+    }
+
+    /// The number in the middle of the bar answers "how long is this reading",
+    /// and "19 characters" over four English words is not an answer. English
+    /// and Spanish are counted in words; Chinese and Japanese, whose scripts
+    /// have no spaces between words, stay on characters. The expected unit is
+    /// looked up here rather than spelled out, so the check holds whichever
+    /// language the app happens to be running in.
+    private static func countLine() -> String {
+        let wanted: [(String, Int, Bool)] = [
+            ("The quick brown fox", 4, true),
+            ("Hola, ¿cómo estás?", 3, true),
+            ("Hello, world!", 2, true),
+            ("敏捷的棕色狐狸跳过了懒狗", 12, false),
+            ("素早い茶色の狐が怠け者の犬を飛び越えた", 19, false),
+            ("Clothespeg 剪贴板", 14, false),
+        ]
+        var wrong: [String] = []
+        for (text, number, inWords) in wanted {
+            let expected = "\(number) \(inWords ? L("words") : L("characters"))"
+            let said = ResultCount.label(for: text)
+            if said != expected { wrong.append("[\(text)] → \(said), expected \(expected)") }
+        }
+        if ResultCount.label(for: "   ") != "" { wrong.append("blank is not empty") }
+        let punctuation = "3 \(L("characters"))"
+        if ResultCount.label(for: "!!!") != punctuation {
+            wrong.append("punctuation fell back to \(ResultCount.label(for: "!!!"))")
+        }
+        return "capture count: " + (wrong.isEmpty
+            ? "en/es/punctuation in words, zh/ja/mixed in characters ok"
+            : "WRONG (" + wrong.joined(separator: "; ") + ")")
+    }
+
     @MainActor
     private static func cardLine() -> String {
         guard let screen = NSScreen.main, let blank = blankImage() else {
@@ -1395,7 +1461,7 @@ enum CaptureSelfTest {
         var parts: [String] = []
 
         func examine(_ name: String, region: CGRect, words: String?, translated: String? = nil,
-                     overlapping: Bool = false,
+                     allowOutside: Bool = false,
                      extra: ((NSRect, (NSRect) -> Int) -> String?)? = nil) {
             let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
             view.frame = NSRect(origin: .zero, size: screen.frame.size)
@@ -1445,7 +1511,8 @@ enum CaptureSelfTest {
             let frame = CGRect(x: region.minX - screen.frame.minX, y: region.minY - screen.frame.minY,
                                width: region.width, height: region.height)
             if card.isEmpty { trouble.append("no card") }
-            if card.intersects(frame), !overlapping { trouble.append("on top of the frame") }
+            let centre = NSPoint(x: frame.midX, y: frame.midY)
+            if !allowOutside, !card.contains(centre) { trouble.append("not over the frame") }
             if !NSRect(x: 0, y: 0, width: view.bounds.width, height: view.bounds.height)
                 .insetBy(dx: -1, dy: -1).contains(card) { trouble.append("off the screen") }
             if card.width < 339 || card.width > 561 { trouble.append("width \(Int(card.width))") }
@@ -1492,14 +1559,32 @@ enum CaptureSelfTest {
             if ink(below) < 20 { return "nothing below the line" }
             return nil
         }
-        // A frame near the bottom of the screen: there is no room below it, so
-        // the card has to go above. The rule is "never on the frame", not "always
-        // below it", and the second one is what the first version would have
-        // done while looking perfectly correct in the middle of the screen.
+        // 2026-11-04: the answer sits where the words were read, and both
+        // languages are still on it. A card that slipped back outside the frame,
+        // or one that dropped the original on the way, fails here by name.
+        examine("on frame",
+                region: CGRect(x: screen.frame.midX - 160, y: screen.frame.midY - 12,
+                               width: 320, height: 24),
+                words: "The quick brown fox jumps over the lazy dog.",
+                translated: "敏捷的棕色狐狸跳过了那只懒狗。") { card, ink in
+            let centre = NSPoint(x: screen.frame.width / 2,
+                                 y: screen.frame.midY - screen.frame.minY)
+            if !card.contains(centre) { return "answer is not where the words were" }
+            if card.height < 60 { return "only \(Int(card.height)) pt for two blocks" }
+            let above = NSRect(x: card.minX, y: card.midY, width: card.width, height: card.height / 2)
+            let below = NSRect(x: card.minX, y: card.minY, width: card.width, height: card.height / 2)
+            if ink(above) < 20 { return "nothing above the line" }
+            if ink(below) < 20 { return "nothing below the line" }
+            return nil
+        }
+        // A frame near the bottom of the screen: the card has to stay over it
+        // even when the screen-edge clamp pulls at its y. This is the case that
+        // would have gone above the frame under the old rule, and it is the one
+        // that decides whether "on the frame" survives a clamp at all.
         examine("low frame", region: CGRect(x: screen.frame.midX - 160, y: screen.frame.minY + 30,
                                            width: 320, height: 30),
                 words: "Clothespeg 123") { card, _ in
-            card.minY >= screen.frame.minY + 30 + 29 ? nil : "still below the frame"
+            card.contains(NSPoint(x: screen.frame.width / 2, y: 45)) ? nil : "slid off the low frame"
         }
         // A frame 680 wide and four fifths of the screen tall, which is what the
         // report of 2026-11-03 was: 560 points is too wide for either margin and
@@ -1507,7 +1592,7 @@ enum CaptureSelfTest {
         // bottom of the display, across the frame's border, sharing the frame's
         // left edge — 「既不居中也不对齐」. The card has to look for a margin at
         // its narrower width instead. The assertions that decide are the
-        // universal ones above ("on top of the frame", "off the screen",
+        // universal ones above ("not over the frame", "off the screen",
         // "width"); this case is what puts them under that strain.
         examine("big frame",
                 region: CGRect(x: screen.frame.midX - 340,
@@ -1523,17 +1608,373 @@ enum CaptureSelfTest {
             let off = card.midX - screen.frame.width / 2
             return abs(off) < 1.5 ? nil : "off centre by \(Int(off)) pt"
         }
-        // The one case that has to cover the frame: a frame that is the whole
-        // screen. It goes into the frame's own corner, 12 points in — not glued
-        // to the bottom of the display while sharing the frame's left edge,
-        // which was the one position that read as an accident.
+        // The one frame allowed not to have its centre covered: one that is the
+        // whole screen. Centring a card on it would put the answer in the middle
+        // of everything, so it keeps the corner, 12 points in — not glued to
+        // the bottom of the display while sharing the frame's left edge, which
+        // was the one position that read as an accident.
         examine("whole screen", region: screen.frame.insetBy(dx: 2, dy: 2),
-                words: "Clothespeg 123", overlapping: true) { card, _ in
+                words: "Clothespeg 123", allowOutside: true) { card, _ in
             if abs(card.minX - 14) > 1.5 { return "not tucked into the frame's corner" }
             if abs(card.minY - 14) > 1.5 { return "not tucked into the frame's corner" }
             return nil
         }
+
+        // 2026-11-04: once the words are on the card the frame has no job left.
+        // Geometry cannot see a bright rectangle brought back around a small
+        // card, so this reads pixels. With a 900-point frame, a point well
+        // inside it, one well outside, and the edge where the clay line used to
+        // be must all be the same dimmed ground. Lifting the selection again
+        // makes the first one white; drawing the frame again lights the edge.
+        do {
+            let view = CaptureSurface(backdrop: blank, screen: screen, windows: [])
+            view.frame = NSRect(origin: .zero, size: screen.frame.size)
+            view.appearance = NSAppearance(named: .aqua)
+            let big = CGRect(x: screen.frame.midX - 450, y: screen.frame.midY - 300,
+                             width: 900, height: 600)
+            view.selectForTesting(big)
+            view.showTranslationForTesting("敏捷的棕色狐狸跳过了那只懒狗。",
+                                            from: "The quick brown fox jumps over the lazy dog.")
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                parts.append("flat ground WRONG (nothing drawn)")
+                return "capture card: " + parts.joined(separator: ", ")
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+
+            func luminance(_ at: NSPoint) -> CGFloat? {
+                let x = Int(at.x * scale)
+                let y = Int((view.bounds.height - at.y) * scale)
+                guard let colour = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return nil }
+                return 0.2126 * colour.redComponent
+                    + 0.7152 * colour.greenComponent + 0.0722 * colour.blueComponent
+            }
+
+            // The card is at most 560 wide and centred, so 24 points inside a
+            // 900-point frame is clear of it even on the frame's middle row.
+            let left = big.minX - screen.frame.minX
+            let row = big.midY - screen.frame.minY
+            let inside = luminance(NSPoint(x: left + 24, y: row))
+            let outside = luminance(NSPoint(x: max(4, left - 40), y: row))
+            var edgeDelta: CGFloat = 0
+            if let outside {
+                for dx in stride(from: -4.0, through: 4.0, by: 1.0) {
+                    if let value = luminance(NSPoint(x: left + dx, y: row)) {
+                        edgeDelta = max(edgeDelta, abs(value - outside))
+                    }
+                }
+            }
+            if let inside, let outside {
+                let even = abs(inside - outside) < 0.06 && edgeDelta < 0.12
+                parts.append("flat ground " + (even ? "ok"
+                    : String(format: "WRONG (inside %.2f, outside %.2f, edge Δ%.2f)",
+                             inside, outside, edgeDelta)))
+            } else {
+                parts.append("flat ground WRONG (could not read the pixels)")
+            }
+        }
         return "capture card: " + parts.joined(separator: ", ")
+    }
+
+    /// The colour door: one chip, one bare key, one pixel, one value.
+    ///
+    /// The picture is two known halves rather than a fixture, so a y flip, a
+    /// colour-space conversion, or a sample taken from the dimmed overlay
+    /// instead of the frozen backdrop all come back as the wrong hex.
+    @MainActor
+    private static func colourLine() -> String {
+        guard let screen = NSScreen.main, let twoTone = twoToneImage(for: screen) else {
+            return "capture colour: no screen"
+        }
+        let box = NSRect(origin: .zero, size: screen.frame.size)
+        var parts: [String] = []
+
+        func fresh() -> CaptureSurface {
+            let view = CaptureSurface(backdrop: twoTone, screen: screen, windows: [])
+            view.frame = box
+            view.appearance = NSAppearance(named: .aqua)
+            return view
+        }
+        /// A whole repaint into a bitmap, and one luminance read out of it.
+        /// Shared so the ring and rim checks ask the same question of the same
+        /// pixels rather than each growing their own copy of the top-down flip.
+        func pixels(_ view: CaptureSurface) -> NSBitmapImageRep? {
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                return nil
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            return rep
+        }
+        func luminance(_ rep: NSBitmapImageRep, in view: CaptureSurface,
+                       at point: NSPoint) -> CGFloat? {
+            let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+            let x = Int(point.x * scale)
+            let y = Int((view.bounds.height - point.y) * scale)
+            guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return nil }
+            return 0.2126 * c.redComponent + 0.7152 * c.greenComponent
+                + 0.0722 * c.blueComponent
+        }
+
+        // 1. The key and the chip agree. A frame already on screen is dropped
+        // rather than reinterpreted: this door has one order only.
+        let armed = fresh()
+        armed.selectForTesting(NSRect(x: 90, y: 90, width: 260, height: 160))
+        guard let iKey = press(34, "i") else {
+            return "capture colour: WRONG (no key event)"
+        }
+        armed.keyDown(with: iKey)
+        let lit = armed.pickedChipsForTesting == ["colour"] && armed.colourAimingForTesting
+        parts.append("I armed " + (lit ? "ok"
+            : "WRONG (\(armed.pickedChipsForTesting), aiming \(armed.colourAimingForTesting))"))
+
+        // 2. Geometry cannot see a bright rectangle come back, so read pixels.
+        // 90,90 260×160 is the frame that was chosen before `I`.
+        func flat(_ view: CaptureSurface, label: String) {
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                parts.append("\(label) WRONG (nothing drawn)")
+                return
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let scale = CGFloat(rep.pixelsWide) / max(view.bounds.width, 1)
+            func luminance(_ at: NSPoint) -> CGFloat? {
+                let x = Int(at.x * scale)
+                let y = Int((view.bounds.height - at.y) * scale)
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return nil }
+                return 0.2126 * c.redComponent + 0.7152 * c.greenComponent
+                    + 0.0722 * c.blueComponent
+            }
+            let inside = luminance(NSPoint(x: 110, y: 170))
+            let outside = luminance(NSPoint(x: 400, y: 170))
+            let edge = luminance(NSPoint(x: 90, y: 170))
+            if let inside, let outside, let edge {
+                let even = abs(inside - outside) < 0.08 && abs(edge - outside) < 0.12
+                parts.append("\(label) " + (even ? "ok"
+                    : String(format: "WRONG (inside %.2f, outside %.2f, edge %.2f)",
+                             inside, outside, edge)))
+            } else {
+                parts.append("\(label) WRONG (could not read the pixels)")
+            }
+        }
+        flat(armed, label: "aiming flat")
+
+        // 3. Two known pixels, one in each half: the y direction has to be
+        // right, and the value has to be the frozen backdrop's, not the dim.
+        let upper = NSPoint(x: 320, y: screen.frame.height - 120)
+        let lower = NSPoint(x: 320, y: 120)
+        let wantedUpper = ColourSampler.colour(at: upper, in: twoTone).map(ColourSampler.hex)
+        let wantedLower = ColourSampler.colour(at: lower, in: twoTone).map(ColourSampler.hex)
+        let result = fresh()
+        result.aimColourForTesting(upper)
+        result.takeColourForTesting(upper)
+        let gotUpper = result.colourHexForTesting
+        let second = fresh()
+        second.aimColourForTesting(lower)
+        second.takeColourForTesting(lower)
+        let gotLower = second.colourHexForTesting
+        let exact = gotUpper == wantedUpper && gotLower == wantedLower
+            && wantedUpper == "#0000FF" && wantedLower == "#FF0000"
+        parts.append("sample \(gotUpper ?? "nil")/\(gotLower ?? "nil") "
+            + (exact ? "ok" : "WRONG (wanted #0000FF/#FF0000)"))
+
+        // 3b. A moved loupe repaints the whole screen. The ring that first
+        // forced this now lives on the result card, but a partial repaint is
+        // still the wrong answer for a state that dims the entire screen, and
+        // two small rectangles is exactly the shape the trail bug had.
+        let moved = fresh()
+        moved.aimColourForTesting(upper)
+        moved.moveColourForTesting(lower)
+        let dirty = moved.dirtyForTesting
+        let whole = dirty.count == 1 && dirty[0].contains(box)
+        parts.append("whole repaint " + (whole ? "ok"
+            : "WRONG (dirty \(dirty.map { "\(Int($0.width))×\(Int($0.height))" }))"))
+
+        // 3c. The disc that was too big on a real screen. A ceiling rather
+        // than an exact copy of the number, so a smaller design still passes.
+        let disc = 2 * ColourLoupe.radius
+        parts.append("loupe \(Int(disc))pt " + (disc <= 104 ? "ok"
+            : "WRONG (wanted at most 104)"))
+
+        // 4. The card is on screen, and the ground under it is still flat.
+        flat(result, label: "result flat")
+        if let card = result.colourCardForTesting {
+            let onScreen = box.insetBy(dx: 8, dy: 8).contains(card)
+            // The 168 × 56 first pass read as a panel rather than a value.
+            let small = card.width <= 140 && card.height <= 48
+            parts.append("card " + (onScreen && small ? "ok"
+                : "WRONG (on screen \(onScreen), \(Int(card.width))×\(Int(card.height)))"))
+        } else {
+            parts.append("card WRONG (never drawn)")
+        }
+
+        // 5. The check hands over the value and nothing else. A colour that
+        // reached `onFinish` would have photographed the screen instead.
+        var taken: [String] = []
+        var pictures = 0
+        result.onFinishColour = { taken.append($0) }
+        result.onFinish = { _ in pictures += 1 }
+        result.finishColourForTesting()
+        let handed = taken == [gotUpper ?? ""] && pictures == 0
+        parts.append("check " + (handed ? "ok"
+            : "WRONG (took \(taken), pictures \(pictures))"))
+
+        // 6. Return agrees with the check; while aiming it takes nothing.
+        let byKey = fresh()
+        byKey.aimColourForTesting(upper)
+        byKey.takeColourForTesting(upper)
+        var fromKey: [String] = []
+        var keyPictures = 0
+        byKey.onFinishColour = { fromKey.append($0) }
+        byKey.onFinish = { _ in keyPictures += 1 }
+        guard let enter = press(36, "\r") else {
+            return "capture colour: WRONG (no Return event)"
+        }
+        byKey.keyDown(with: enter)
+        let aiming = fresh()
+        aiming.aimColourForTesting(upper)
+        var aimingTook: [String] = []
+        var aimingPictures = 0
+        aiming.onFinishColour = { aimingTook.append($0) }
+        aiming.onFinish = { _ in aimingPictures += 1 }
+        aiming.keyDown(with: enter)
+        let keys = fromKey == [gotUpper ?? ""] && keyPictures == 0
+            && aimingTook.isEmpty && aimingPictures == 0
+        parts.append("return " + (keys ? "ok"
+            : "WRONG (result \(fromKey)/\(keyPictures), aiming \(aimingTook)/\(aimingPictures))"))
+
+        // 7. The value that leaves really is on a pasteboard carrying this
+        // app's own-write mark, or the watcher hangs a second card of it.
+        let pb = NSPasteboard(name: NSPasteboard.Name("app.clothespeg.colourSelftest"))
+        CaptureController.put(gotUpper ?? "", on: pb)
+        let readBack = pb.string(forType: .string)
+        let marked = pb.string(forType: ClipboardWatcher.ourWrite) == "1"
+        parts.append("pasteboard " + (readBack == gotUpper && marked ? "ok"
+            : "WRONG (read \(readBack ?? "nil"), marked \(marked))"))
+
+        // 8. The white dot is not a second cursor. While aiming the pointer
+        // sits on plain dimmed pixels; after the click the ring is there on
+        // the card's tether. Reading the same two points in both states is
+        // what makes "gone" and "back" one check instead of two guesses.
+        let aimed = fresh()
+        aimed.aimColourForTesting(upper)
+        let ringPoint = NSPoint(x: upper.x + 5, y: upper.y)
+        let groundPoint = NSPoint(x: upper.x + 12, y: upper.y)
+        if let aimRep = pixels(aimed), let resultRep = pixels(result),
+           let aimRing = luminance(aimRep, in: aimed, at: ringPoint),
+           let aimGround = luminance(aimRep, in: aimed, at: groundPoint),
+           let resultRing = luminance(resultRep, in: result, at: ringPoint),
+           let resultGround = luminance(resultRep, in: result, at: groundPoint) {
+            let quiet = abs(aimRing - aimGround) < 0.12
+            let shown = resultRing - resultGround > 0.3
+            parts.append("rings " + (quiet && shown ? "ok"
+                : String(format: "WRONG (aim %.2f/%.2f, result %.2f/%.2f)",
+                         aimRing, aimGround, resultRing, resultGround)))
+        } else {
+            parts.append("rings WRONG (could not read the pixels)")
+        }
+
+        // 9. A near-white swatch on the near-white card: only the rim can
+        // separate them. This is the `#F8F8F8` screenshot that asked for a
+        // border, read as pixels against the panel a few points to its left.
+        guard let paleImage = nearWhiteImage(for: screen) else {
+            parts.append("border WRONG (no near-white picture)")
+            return "capture colour: " + parts.joined(separator: ", ")
+        }
+        let pale = CaptureSurface(backdrop: paleImage, screen: screen, windows: [])
+        pale.frame = box
+        pale.appearance = NSAppearance(named: .aqua)
+        let palePoint = NSPoint(x: 420, y: screen.frame.height - 200)
+        pale.aimColourForTesting(palePoint)
+        pale.takeColourForTesting(palePoint)
+        if let rep = pixels(pale), let swatch = pale.colourSwatchForTesting,
+           let card = pale.colourCardForTesting,
+           let rim = luminance(rep, in: pale,
+                               at: NSPoint(x: swatch.minX, y: swatch.midY)),
+           let panel = luminance(rep, in: pale,
+                                 at: NSPoint(x: card.minX + 4, y: card.midY)) {
+            parts.append("border " + (panel - rim > 0.2 ? "ok"
+                : String(format: "WRONG (panel %.2f, rim %.2f)", panel, rim)))
+        } else {
+            parts.append("border WRONG (could not read the pixels)")
+        }
+
+        // 10. The collapsed bar is not empty: one sentence on the line and
+        // the value in the middle, the same two slots a reading fills. Reading
+        // them through `bar()` means the check covers what is actually drawn.
+        let barView = fresh()
+        barView.aimColourForTesting(upper)
+        barView.takeColourForTesting(upper)
+        let said = barView.lineForTesting
+        let value = barView.middleForTesting
+        let filled = !said.isEmpty && value == (gotUpper ?? "")
+        parts.append("bar " + (filled ? "ok"
+            : "WRONG (line [\(said)], middle [\(value)])"))
+
+        return "capture colour: " + parts.joined(separator: ", ")
+    }
+
+    /// A synthetic desktop for a photograph of the colour door: flat panels
+    /// of known colour at backing scale, so the loupe has an exact hex to
+    /// read and the picture does not depend on what the live screen was doing.
+    private static func previewPicture(for screen: NSScreen) -> CGImage? {
+        let unit: CGFloat = 2
+        let w = Int((screen.frame.width * unit).rounded())
+        let h = Int((screen.frame.height * unit).rounded())
+        guard w > 0, h > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        func fill(_ rect: CGRect, _ r: CGFloat, _ g: CGFloat, _ b: CGFloat) {
+            ctx.setFillColor(red: r, green: g, blue: b, alpha: 1)
+            ctx.fill(rect)
+        }
+        fill(CGRect(x: 0, y: 0, width: w, height: h), 0.96, 0.96, 0.95)
+        fill(CGRect(x: 120 * unit, y: 300 * unit,
+                    width: 640 * unit, height: 420 * unit), 0.16, 0.36, 0.55)
+        fill(CGRect(x: 800 * unit, y: 300 * unit,
+                    width: 420 * unit, height: 420 * unit), 0.85, 0.32, 0.26)
+        fill(CGRect(x: 1240 * unit, y: 300 * unit,
+                    width: 300 * unit, height: 420 * unit), 0.24, 0.48, 0.33)
+        fill(CGRect(x: 120 * unit, y: 120 * unit,
+                    width: 1420 * unit, height: 140 * unit), 0.99, 0.99, 0.98)
+        return ctx.makeImage()
+    }
+
+    /// A screen-sized picture whose top half is pure blue and bottom half pure
+    /// red, one pixel per point so the view-to-backdrop arithmetic is 1:1.
+    private static func twoToneImage(for screen: NSScreen) -> CGImage? {
+        let w = Int(screen.frame.width.rounded())
+        let h = Int(screen.frame.height.rounded())
+        guard w > 0, h > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        ctx.setFillColor(red: 0, green: 0, blue: 1, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: h / 2, width: w, height: h - h / 2))
+        ctx.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h / 2))
+        return ctx.makeImage()
+    }
+
+    /// The picture that asked for a border: a near-white window background
+    /// (`#F8F8F8`) behind a white result card, where a white-only swatch rim
+    /// disappears and the colour cannot be told from the surface it sits on.
+    private static func nearWhiteImage(for screen: NSScreen) -> CGImage? {
+        let w = Int(screen.frame.width.rounded())
+        let h = Int(screen.frame.height.rounded())
+        guard w > 0, h > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        let value: CGFloat = 248.0 / 255.0
+        ctx.setFillColor(red: value, green: value, blue: value, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
 
     /// A picture with known words on it, for the reader to read.    ///
@@ -1712,19 +2153,35 @@ enum CaptureSelfTest {
                        aspect: CropAspect = .free, panel: String? = nil,
                        long: Int? = nil, read: String? = nil, note: String? = nil,
                        translated: String? = nil, armed: String? = nil,
-                       appearance: String? = nil) -> String {
-        guard ScreenGrab.hasAccess else { return "capture preview: NOT GRANTED, nothing to draw" }
+                       appearance: String? = nil, colour: NSPoint? = nil,
+                       colourTaken: Bool = false, synthetic: Bool = false,
+                       pale: Bool = false, reveal: TimeInterval? = nil) -> String {
         guard let screen = NSScreen.main else { return "capture preview: no screen" }
-
-        let box = ImageBox()
-        let group = DispatchGroup()
-        group.enter()
-        Task.detached {
-            box.image = try? await ScreenGrab.screenImage(of: screen)
-            group.leave()
+        let image: CGImage
+        if synthetic {
+            // `_PALE` is the near-white desktop that made the swatch vanish
+            // into the card; the ordinary synthetic picture is three dark
+            // panels, which would show a border for the wrong reason.
+            let made = pale ? nearWhiteImage(for: screen) : previewPicture(for: screen)
+            guard let made = made else {
+                return "capture preview: the synthetic picture failed"
+            }
+            image = made
+        } else {
+            guard ScreenGrab.hasAccess else {
+                return "capture preview: NOT GRANTED, nothing to draw"
+            }
+            let box = ImageBox()
+            let group = DispatchGroup()
+            group.enter()
+            Task.detached {
+                box.image = try? await ScreenGrab.screenImage(of: screen)
+                group.leave()
+            }
+            _ = group.wait(timeout: .now() + 20)
+            guard let grabbed = box.image else { return "capture preview: the grab failed" }
+            image = grabbed
         }
-        _ = group.wait(timeout: .now() + 20)
-        guard let image = box.image else { return "capture preview: the grab failed" }
 
         let view = CaptureSurface(backdrop: image, screen: screen, windows: [])
         view.frame = NSRect(origin: .zero, size: screen.frame.size)
@@ -1745,14 +2202,20 @@ enum CaptureSelfTest {
         // picked one still reads as a button.
         view.armForTesting(armed)
         // The two states are two doors now, and a photograph has to show the
-        // one that was asked for: a translation with 确认 on the pill would be a
-        // picture of a card this app no longer makes.
+        // one that was asked for: a translation shown as a bare reading would
+        // be a picture of a card this app no longer makes.
         if let translated {
             view.showTranslationForTesting(translated, from: read)
         } else {
             view.showReadingForTesting(read)
         }
         view.previewNote = note
+        // A render has no pointer to move, so the loupe is put on the point
+        // directly. `_TAKEN` answers the click as well, for the card and check.
+        if let colour {
+            view.aimColourForTesting(colour)
+            if colourTaken { view.takeColourForTesting(colour) }
+        }
         if selected {
             // Drawn through the same arithmetic the hand goes through, rather
             // than by setting a rectangle directly: a harness that builds its
@@ -1785,6 +2248,20 @@ enum CaptureSelfTest {
             let width = Double(env["CLOTHESPEG_CAPTURE_SHORT_W"] ?? "") ?? 320
             view.previewSelection = CGRect(x: sel.minX, y: sel.midY - height / 2,
                                            width: min(sel.width, width), height: height)
+        }
+
+        // A still of the answer part-way through arriving. The reveal only
+        // starts when the view has a window, so an off-screen host is the
+        // smallest thing that makes a preview show what the real screen shows.
+        // One warm-up draw sets the clock; the picture below is taken later.
+        if let reveal {
+            let host = NSWindow(contentRect: view.bounds, styleMask: .borderless,
+                                backing: .buffered, defer: false)
+            host.contentView = view
+            if let warm = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: warm)
+            }
+            Thread.sleep(forTimeInterval: max(0, reveal))
         }
 
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {

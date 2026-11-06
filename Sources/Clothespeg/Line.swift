@@ -472,6 +472,82 @@ final class Line: ObservableObject {
         }
     }
 
+    /// Whether the notes deck is looking at the notes with a voice alone.
+    ///
+    /// A note is the one card the pill never used to narrow: it has no kind,
+    /// no app it came from and no day it arrived on. A recording is the
+    /// first thing a note *has* rather than *is*, so this switch rides on
+    /// the pill beside the counter, with two states and no words — the same
+    /// shape as the pin. Remembered, so a line left looking at voices comes
+    /// back that way.
+    @Published var showingRecordings: Bool = UserDefaults.standard.bool(forKey: "lineRecordingsOnly") {
+        didSet {
+            guard showingRecordings != oldValue else { return }
+            UserDefaults.standard.set(showingRecordings, forKey: "lineRecordingsOnly")
+            panToNewest()
+        }
+    }
+
+    /// Which note colours the notes deck is looking at. Empty means all.
+    ///
+    /// A set, not one answer: two dots lit at once are a union, so a card
+    /// wearing either one stays. The voice switch is a separate question
+    /// and the two are ANDed — two colours and a voice leave the cards of
+    /// those colours that carry a recording. Remembered like every other
+    /// way of looking at the line.
+    @Published var showingTints: Set<NoteTintChoice> = Line.restoreNoteTints() {
+        didSet {
+            guard showingTints != oldValue else { return }
+            Line.saveNoteTints(showingTints)
+            panToNewest()
+        }
+    }
+
+    private static func restoreNoteTints() -> Set<NoteTintChoice> {
+        let stored = UserDefaults.standard.stringArray(forKey: "lineNoteTints") ?? []
+        return Set(stored.compactMap { NoteTintChoice(rawValue: $0) })
+    }
+
+    private static func saveNoteTints(_ tints: Set<NoteTintChoice>) {
+        let defaults = UserDefaults.standard
+        if tints.isEmpty { defaults.removeObject(forKey: "lineNoteTints") }
+        else { defaults.set(tints.map(\.rawValue).sorted(), forKey: "lineNoteTints") }
+        // The one-answer key the first build of this filter wrote.
+        defaults.removeObject(forKey: "lineNoteTint")
+    }
+
+    /// The colour dots the pill draws: one per colour a note actually wears
+    /// — the system colour included — but none at all while the line has
+    /// only one colour. Read from `notes`, not `matching`, so a filter can
+    /// never hide the dots that turn it off or add another.
+    var pillTints: [NoteTintChoice] {
+        NoteTintFilter.dots(
+            notes.filter { !$0.falling }.map { $0.payload.note?.tint })
+    }
+
+    /// A filter with nothing left to choose between is not a filter.
+    ///
+    /// When the last card of a second colour goes, or the last recording
+    /// is removed, the switch for it would stay lit with nothing behind
+    /// it — and a switch whose dots have been taken away cannot be turned
+    /// off. Clear both here rather than keeping dead dots on the pill.
+    /// Called on every write to the notes and every restore, the only two
+    /// moments the line's colours and voices can change.
+    func pruneNoteFilters() {
+        let worn = Set(notes.filter { !$0.falling }
+            .map { NoteTintChoice($0.payload.note?.tint) })
+        if worn.count <= 1 && !showingTints.isEmpty { showingTints = [] }
+        if !hasRecordings && showingRecordings { showingRecordings = false }
+    }
+
+    /// Whether any note on the line has a voice. A voice switch with no
+    /// voice anywhere on the line has nothing to find, so the pill leaves
+    /// it out — unless it is the one thing keeping the line narrowed, in
+    /// which case it has to stay so it can be switched off.
+    var hasRecordings: Bool {
+        notes.contains { !$0.falling && $0.payload.note?.recording != nil }
+    }
+
     /// What is being looked for, or nothing. Deliberately not remembered
     /// across a relaunch: a filter is a way of looking and belongs to the
     /// session, and a search is a question being asked right now — yesterday's
@@ -570,9 +646,22 @@ final class Line: ObservableObject {
     /// the line are three questions about a copy. What answers them is left
     /// alone rather than cleared, so switching back to the clipboard finds the
     /// line looking at what it was looking at.
+    ///
+    /// A voice is the one exception, and it is a question about the note
+    /// itself rather than about where it came from. It gets one filter on
+    /// the notes deck and none of the clipboard's.
     var matching: [Pegged] {
         let live = onLine.filter { !$0.falling }
-        guard deck == .clipboard else { return live }
+        guard deck == .clipboard else {
+            guard showingRecordings || !showingTints.isEmpty else { return live }
+            return live.filter { item in
+                let note = item.payload.note
+                return NoteTintFilter.keeps(tint: note?.tint,
+                                            hasVoice: note?.recording != nil,
+                                            colours: showingTints,
+                                            voiceOnly: showingRecordings)
+            }
+        }
         var cards = live
         // The pin rides beside the kinds: both may narrow at once, and either
         // alone is enough.
@@ -596,11 +685,14 @@ final class Line: ObservableObject {
     /// which narrows the way the others do even though it wears its own
     /// button.
     ///
-    /// Never true for the notes deck, which is the reason the pill there is a
-    /// counter and two arrows rather than a row of controls that would have
-    /// nothing behind them.
+    /// The notes deck has two things that narrow it: the voice switch and
+    /// the colour dots. This is what keeps the pill on screen when a filter
+    /// leaves fewer cards than fit on one page — otherwise the line would
+    /// hide the very switches that are looking at it, and there would be no
+    /// way to turn them off.
     var narrows: Bool {
-        deck == .clipboard && (filterHidesSomething || !activeQuery.isEmpty || dateRange != nil || showingPinned)
+        if deck == .notes { return showingRecordings || !showingTints.isEmpty }
+        return filterHidesSomething || !activeQuery.isEmpty || dateRange != nil || showingPinned
     }
 
     /// Whether the filter is hiding anything at all. When it is not, the

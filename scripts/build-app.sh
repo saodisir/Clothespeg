@@ -125,7 +125,7 @@ fi
 # window whose first row sits a point inside the menu bar's strip answered for
 # the menu bar, so clicking it put the line away; the strip is now only the
 # cheap test and the window server is asked what the click reached.
-VERSION="2.1.0"
+VERSION="2.2.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -209,12 +209,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>14</string>
+  <key>CFBundleVersion</key><string>15</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Clothespeg uses the microphone to record a voice memo on a note.</string>
 </dict>
 </plist>
 PLIST
@@ -266,15 +267,22 @@ if [ -n "$SIGN_IDENTITY" ] && ! security find-identity -v -p codesigning 2>/dev/
   exit 1
 fi
 
+# Both builds are hardened, so both need Audio Input on the *binary*. An
+# entitlements file sitting in scripts/ proves nothing; the microphone
+# request is refused before TCC can ask if the signature has no such key.
+# Lite has its own (sandbox + file access) and the regular build has only
+# this one.
+if [ "$LITE" = "1" ]; then
+  ENTITLEMENTS="scripts/ClothespegLite.entitlements"
+else
+  ENTITLEMENTS="scripts/Clothespeg.entitlements"
+fi
+
 if [ -n "$IDENTITY" ]; then
   # The Lite build signs with its entitlements, so the sandbox the store
   # expects is really on the binary; the entitlements themselves are the
   # sandbox and the folder access a watched folder needs.
-  if [ "$LITE" = "1" ]; then
-    codesign --force --options runtime --timestamp --entitlements scripts/ClothespegLite.entitlements --sign "$IDENTITY" "$APP"
-  else
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
-  fi
+  codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
   # Ask the binary, not the script. An ad-hoc signature looks identical from
   # here and is the one that stops opening anywhere else.
   #
@@ -288,11 +296,7 @@ if [ -n "$IDENTITY" ]; then
   fi
   echo "Signed with $IDENTITY (team ${SIGNED_TEAM:-none}, hardened runtime + secure timestamp)"
 else
-  if [ "$LITE" = "1" ]; then
-    codesign --force --deep --entitlements scripts/ClothespegLite.entitlements --sign - "$APP" >/dev/null
-  else
-    codesign --force --deep --sign - "$APP" >/dev/null
-  fi
+  codesign --force --deep --entitlements "$ENTITLEMENTS" --sign - "$APP" >/dev/null
   echo "Signed ad hoc (no Developer ID in this keychain)"
   # Said out loud, because a release that is ad hoc is not the thing to
   # publish and nothing else in the build will say so.
@@ -301,4 +305,13 @@ else
     echo "      To publish one, export SIGN_IDENTITY with the certificate to release under."
   fi
 fi
+# An entitlements file in scripts/ is not proof that the *binary* carries it.
+# Ask the signature, and stop the build rather than shipping another app that
+# silently loses its microphone request.
+SIGNED_ENTITLEMENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null || true)"
+case "$SIGNED_ENTITLEMENTS" in
+  *com.apple.security.device.audio-input*) ;;
+  *) echo "ERROR: $APP has no audio-input entitlement on its signature." >&2
+     exit 1 ;;
+esac
 echo "Built $APP"

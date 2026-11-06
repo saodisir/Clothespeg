@@ -506,7 +506,7 @@ struct GeneralPage: View {
             }
 
             // What it does and what it leaves out, said together: a switch
-            // that promises "shortcuts" and then shows letters on eleven
+            // that promises "shortcuts" and then shows letters on some
             // buttons but not on the four that use ⌘ reads as half done,
             // unless it says why first. The switch itself lives on the
             // Clipboard page now, next to the capture's other answers.
@@ -1695,6 +1695,7 @@ struct PermissionsPage: View {
                     permissionRow(granted: trusted)
                     ScreenRecordingPermissionRow()
                     NotificationPermissionRow()
+                    MicrophonePermissionRow()
                 }
 
                 // The bug-judging corner, in the Flyring house shape: the
@@ -1877,6 +1878,89 @@ private struct ScreenRecordingPermissionRow: View {
         granted = ScreenRecordingPermission.request()
         asked = true
         busy = false
+    }
+}
+
+/// The microphone row: the one permission the recording feature cannot work
+/// without, and the one place a refusal can be undone.
+///
+/// macOS shows its prompt once. If it was answered no — or never appeared
+/// because the app was in the background when it asked — the recording
+/// panel alone cannot recover. So this row says which state the line is in
+/// and offers the one action that still works, checked every second because
+/// the granting happens in another app.
+private struct MicrophonePermissionRow: View {
+    @State private var state: MicrophonePermission.State = MicrophonePermission.state
+    @State private var busy = false
+
+    private var granted: Bool { state == .granted }
+
+    private var badge: String {
+        switch state {
+        case .granted: return L("Granted")
+        case .denied: return L("Not granted")
+        case .undetermined: return L("Not asked yet")
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "mic")
+                .foregroundColor(granted ? .green : .orange)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(L("Microphone"))
+                        .font(.callout)
+                        .fontWeight(.medium)
+                    Label(badge,
+                          systemImage: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(granted ? .green : .orange)
+                }
+                Text(L("Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded."))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if state == .denied {
+                    Text(L("After granting it, macOS asks you to open Clothespeg again — a permission only reaches a process that started after it was given."))
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                if !granted {
+                    // Only macOS gets a say in which button is here. `hasAsked`
+                    // is a note we wrote ourselves, and a first request that
+                    // failed for a reason in the signature left it set: the
+                    // row then hid "Allow Microphone" forever, even after TCC
+                    // had gone back to undetermined and was willing to ask.
+                    if state == .undetermined {
+                        Button(L("Allow Microphone")) { ask() }
+                            .buttonStyle(CDSPillButtonStyle())
+                            .disabled(busy)
+                    } else {
+                        Button(L("Open System Settings")) {
+                            MicrophonePermission.openSettings()
+                        }
+                        .buttonStyle(CDSPillButtonStyle())
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .task {
+            while !Task.isCancelled {
+                state = MicrophonePermission.state
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func ask() {
+        busy = true
+        Task { @MainActor in
+            _ = await MicrophonePermission.request()
+            state = MicrophonePermission.state
+            busy = false
+        }
     }
 }
 

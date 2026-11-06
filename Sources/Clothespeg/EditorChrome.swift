@@ -349,8 +349,8 @@ final class ToolChip: NSButton {
     /// semibold is what survives being drawn over a 17-point symbol.
     ///
     /// Placed from `bounds`, which is the same 30 × 26 on every chip because
-    /// `alignmentRectInsets` is zero — that is what makes eleven corners one
-    /// line instead of eleven corners at eleven heights.
+    /// `alignmentRectInsets` is zero — that is what puts every corner on one
+    /// line instead of one line per button height.
     private func drawHint(_ text: String) {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 6.5, weight: .semibold),

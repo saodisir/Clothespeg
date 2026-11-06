@@ -4,7 +4,7 @@ import CoreText
 /// Which tool is in the hand.
 ///
 /// The order is the toolbar's order, left to right, and the single-key
-/// shortcuts follow it: V, G, R, O, A, P, H, M, N, T, C. Letters rather than
+/// shortcuts follow it: V, G, R, O, A, P, H, M, N, T, C, I. Letters rather than
 /// numbers because the hand is already on the picture and the letters are what
 /// the tools are called — a number has to be remembered, a letter is read off
 /// the symbol.
@@ -13,7 +13,7 @@ import CoreText
 /// starts ready to draw puts a rectangle on the picture for every click that
 /// was meant to be a look.
 enum EditorTool: String, CaseIterable {
-    case select, hand, rectangle, ellipse, arrow, pen, highlight, mosaic, number, text, crop
+    case select, hand, rectangle, ellipse, arrow, pen, highlight, mosaic, number, text, crop, eyedropper
 
     var symbol: String {
         switch self {
@@ -41,6 +41,9 @@ enum EditorTool: String, CaseIterable {
         // Chinese word inside a bundle that ships zh-Hans. See `EditorInk.textGlyph`.
         case .text: "character.cursor.ibeam"
         case .crop: "crop"
+        // Samples one pixel of the picture and writes down what it saw; it does
+        // not choose an ink, which is why it is not a colour wheel.
+        case .eyedropper: "eyedropper"
         }
     }
 
@@ -64,6 +67,7 @@ enum EditorTool: String, CaseIterable {
         case .number: L("Number")
         case .text: L("Text")
         case .crop: L("Crop")
+        case .eyedropper: L("Colour Picker")
         }
     }
 
@@ -84,6 +88,9 @@ enum EditorTool: String, CaseIterable {
         case .number: "n"
         case .text: "t"
         case .crop: "c"
+        // Free: the highlighter owns H and the grab owns G. I is read off the
+        // eyedropper (ink), not borrowed from a tool that was here first.
+        case .eyedropper: "i"
         }
     }
 
@@ -328,6 +335,245 @@ func contrastInk(for color: NSColor) -> NSColor {
         + 0.587 * resolved.greenComponent
         + 0.114 * resolved.blueComponent
     return luminance > 0.65 ? .black : .white
+}
+
+// MARK: - Colour tag
+
+/// Picture pixels, read once and written down beside the picture.
+///
+/// `point` is in picture pixels with a bottom-left origin, as `imagePoint`
+/// and every mark are; `CGImage.cropping(to:)` counts its rows from the top.
+/// The bytes are drawn into an explicit sRGB bitmap rather than asked of an
+/// `NSBitmapImageRep`: the latter assumes a calibrated RGB space and its
+/// `colorAt` silently translates pure blue into `#0433FF`. Reading the bytes
+/// keeps the hex equal to the one a browser or a design tool would show.
+enum ColourSampler {
+    /// `(2 * radius + 1)` pixels square, upright, with the colour in the middle.
+    /// Pixels past the edge of the picture come back transparent.
+    struct Neighbourhood {
+        var image: CGImage
+        var centre: NSColor
+    }
+
+    static func colour(at point: CGPoint, in image: CGImage) -> NSColor? {
+        neighbourhood(in: image, around: point, radius: 0)?.centre
+    }
+
+    static func neighbourhood(in image: CGImage, around point: CGPoint,
+                              radius: Int) -> Neighbourhood? {
+        guard radius >= 0 else { return nil }
+        let x = Int(point.x)
+        let y = image.height - 1 - Int(point.y)
+        guard x >= 0, y >= 0, x < image.width, y < image.height else { return nil }
+        let side = radius * 2 + 1
+        // Cropping shares the image's pixels, so this is cheap enough to run on every mouse move.
+        let wanted = CGRect(x: x - radius, y: y - radius, width: side, height: side)
+        let available = wanted.intersection(CGRect(x: 0, y: 0,
+                                                     width: image.width, height: image.height))
+        guard !available.isEmpty,
+              let crop = image.cropping(to: available),
+              let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                  bytesPerRow: side * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.setBlendMode(.copy)
+        // Crop rects are y-down; the context is y-up.
+        let offsetX = available.minX - wanted.minX
+        let offsetY = available.minY - wanted.minY
+        ctx.draw(crop, in: CGRect(x: offsetX,
+                                   y: CGFloat(side) - offsetY - available.height,
+                                   width: available.width, height: available.height))
+        guard let upright = ctx.makeImage() else { return nil }
+        // The middle pixel is in the middle of the buffer whichever way its rows run.
+        let pixel = data.advanced(by: (radius * side + radius) * 4)
+            .assumingMemoryBound(to: UInt8.self)
+        // Un-premultiply, so a translucent pixel reports its own colour.
+        let alpha = Int(pixel[3])
+        func channel(_ value: UInt8) -> CGFloat {
+            alpha == 0 ? 0 : CGFloat(min(255, (Int(value) * 255 + alpha / 2) / alpha)) / 255
+        }
+        return Neighbourhood(
+            image: upright,
+            centre: NSColor(srgbRed: channel(pixel[0]), green: channel(pixel[1]),
+                            blue: channel(pixel[2]), alpha: CGFloat(alpha) / 255))
+    }
+
+    static func hex(_ colour: NSColor) -> String {
+        let resolved = colour.usingColorSpace(.sRGB) ?? colour
+        func byte(_ component: CGFloat) -> Int {
+            Int((min(max(component, 0), 1) * 255).rounded())
+        }
+        return String(format: "#%02X%02X%02X",
+                      byte(resolved.redComponent), byte(resolved.greenComponent),
+                      byte(resolved.blueComponent))
+    }
+}
+
+/// A swatch and its hex, pinned to the pixel it came from.
+///
+/// The colour is a snapshot, not a reference to the pen: choosing another ink
+/// afterwards must not repaint a value somebody has already read. The label sits
+/// up and to the right of its anchor with a leader back to it, so the pixel is
+/// still visible and the answer does not cover the thing it is about.
+final class ColourTagMark: EditorMark {
+    var style: ToolStyle
+    var anchor: CGPoint
+    var colour: NSColor
+    var hex: String
+    /// Clamped once, when the mark is made, so a tag near the edge of the
+    /// picture never hangs off it.
+    var labelOrigin: CGPoint
+
+    /// One unit of this tag, in picture pixels.
+    ///
+    /// Every mark is drawn in the picture's own pixels and the canvas scales
+    /// them all at once, so a fixed 148×44 tag is a quarter of the size on a
+    /// 4K picture that it is on a 400-pixel one. Growing the tag with the
+    /// picture's longest side keeps its share of the picture — and therefore
+    /// its size on a fitted screen — about the same.
+    ///
+    /// Chosen once when the tag is born and carried by its clone: a tag is a
+    /// fact about the picture it was read from, not about the zoom the window
+    /// happens to be at when it is drawn. Tying it to screen points instead
+    /// would make the exported file depend on that zoom, and would give the
+    /// screen and the file two different drawings.
+    let unit: CGFloat
+    private static let referenceSide: CGFloat = 1000
+
+    /// The one number every part of the tag is sized by: the picture's own
+    /// scale times the multiplier the size slider set on this tag. Reading
+    /// `style.width` here, rather than storing a second field, is what lets
+    /// the slider, undo and `clone` carry the size without another path.
+    /// The clamp keeps an old style value (the picker once inherited a width
+    /// of 6 from the other tools) from drawing a six-times-too-big tag.
+    private static func effectiveUnit(_ unit: CGFloat, _ style: ToolStyle) -> CGFloat {
+        unit * min(max(style.width, 0.5), 2.5)
+    }
+
+    private var u: CGFloat { Self.effectiveUnit(unit, style) }
+
+    static func unit(for imageSize: CGSize) -> CGFloat {
+        guard imageSize.width > 0, imageSize.height > 0 else { return 1 }
+        return max(1, max(imageSize.width, imageSize.height) / referenceSide)
+    }
+
+    private static func size(for unit: CGFloat) -> CGSize {
+        CGSize(width: 148 * unit, height: 44 * unit)
+    }
+
+    private var size: CGSize { Self.size(for: u) }
+
+    init(anchor: CGPoint, colour: NSColor, imageSize: CGSize, style: ToolStyle,
+         unit: CGFloat? = nil) {
+        self.anchor = anchor
+        self.colour = colour
+        self.hex = ColourSampler.hex(colour)
+        self.style = style
+        let base = unit ?? Self.unit(for: imageSize)
+        self.unit = base
+        let u = Self.effectiveUnit(base, style)
+        let wanted = CGPoint(x: anchor.x + 18 * u, y: anchor.y + 18 * u)
+        let pill = Self.size(for: u)
+        let x = min(max(wanted.x, 0), max(0, imageSize.width - pill.width))
+        let y = min(max(wanted.y, 0), max(0, imageSize.height - pill.height))
+        self.labelOrigin = CGPoint(x: x, y: y)
+    }
+
+    private var pill: CGRect {
+        CGRect(origin: labelOrigin, size: size)
+    }
+
+    var pillForTesting: CGRect { pill }
+
+    var bounds: CGRect {
+        let r = 6 * u
+        return pill.union(CGRect(x: anchor.x - r, y: anchor.y - r,
+                                 width: r * 2, height: r * 2))
+    }
+
+    func draw(in ctx: CGContext) {
+        ctx.saveGState()
+        let u = self.u
+        let leaderFrom = CGPoint(x: pill.minX + 6 * u, y: pill.minY + 6 * u)
+        // A pale line under a dark one: one of the two survives on any picture.
+        for (ink, width) in [(NSColor.white.withAlphaComponent(0.9), 3 * u),
+                             (NSColor.black.withAlphaComponent(0.75), 1.2 * u)] {
+            ctx.setStrokeColor(ink.cgColor)
+            ctx.setLineWidth(width)
+            ctx.setLineCap(.round)
+            ctx.move(to: leaderFrom)
+            ctx.addLine(to: anchor)
+            ctx.strokePath()
+        }
+        let ring = CGRect(x: anchor.x - 5 * u, y: anchor.y - 5 * u,
+                          width: 10 * u, height: 10 * u)
+        ctx.setStrokeColor(NSColor.white.cgColor)
+        ctx.setLineWidth(2 * u)
+        ctx.strokeEllipse(in: ring)
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.8).cgColor)
+        ctx.setLineWidth(1 * u)
+        ctx.strokeEllipse(in: ring)
+
+        let pillPath = CGPath(roundedRect: pill, cornerWidth: 10 * u, cornerHeight: 10 * u,
+                              transform: nil)
+        ctx.setFillColor(NSColor.black.withAlphaComponent(0.82).cgColor)
+        ctx.addPath(pillPath)
+        ctx.fillPath()
+
+        let swatch = CGRect(x: pill.minX + 9 * u, y: pill.midY - 13 * u,
+                            width: 26 * u, height: 26 * u)
+        let swatchPath = CGPath(roundedRect: swatch, cornerWidth: 5 * u, cornerHeight: 5 * u,
+                                transform: nil)
+        ctx.setFillColor((colour.usingColorSpace(.sRGB) ?? colour).cgColor)
+        ctx.addPath(swatchPath)
+        ctx.fillPath()
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.85).cgColor)
+        ctx.setLineWidth(1 * u)
+        ctx.addPath(swatchPath)
+        ctx.strokePath()
+
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: hex, attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 16 * u, weight: .semibold),
+            .foregroundColor: NSColor.white,
+        ]))
+        let text = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        ctx.textMatrix = .identity
+        ctx.textPosition = CGPoint(x: swatch.maxX + 10 * u - text.minX,
+                                   y: pill.midY - text.height / 2 - text.minY)
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+    }
+
+    func hitTest(_ point: CGPoint, slack: CGFloat) -> Bool {
+        pill.insetBy(dx: -slack, dy: -slack).contains(point)
+            || hypot(point.x - anchor.x, point.y - anchor.y) <= 5 * u + slack
+    }
+
+    func translated(by delta: CGSize) {
+        anchor = CGPoint(x: anchor.x + delta.width, y: anchor.y + delta.height)
+        labelOrigin = CGPoint(x: labelOrigin.x + delta.width, y: labelOrigin.y + delta.height)
+    }
+
+    /// The anchor has moved: read the pixel it now sits on. A tag whose hex
+    /// still describes the old pixel while pointing at a new one is a wrong
+    /// answer, so moving a tag is a fresh reading rather than a move of text.
+    func resample(from image: CGImage) {
+        let x = min(max(anchor.x, 0), CGFloat(image.width) - 1)
+        let y = min(max(anchor.y, 0), CGFloat(image.height) - 1)
+        guard let colour = ColourSampler.colour(at: CGPoint(x: x, y: y), in: image) else { return }
+        self.colour = colour
+        self.hex = ColourSampler.hex(colour)
+    }
+
+    func clone() -> EditorMark {
+        let copy = ColourTagMark(anchor: anchor, colour: colour,
+                                 imageSize: .zero, style: style, unit: unit)
+        copy.hex = hex
+        copy.labelOrigin = labelOrigin
+        return copy
+    }
 }
 
 // MARK: - Arrow

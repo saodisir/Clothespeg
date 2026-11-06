@@ -105,6 +105,7 @@ final class CaptureController {
         surface.onFinishLong = { [weak self] image in self?.finishLong(image) }
         surface.onReadArea = { [weak self] rect in self?.read(rect) }
         surface.onFinishText = { [weak self] text in self?.finishText(text) }
+        surface.onFinishColour = { [weak self] hex in self?.finishColour(hex) }
         surface.onTranslate = { [weak self] text in self?.translate(text) }
         surface.onFinishTranslation = { [weak self] text in self?.finishTranslation(text) }
         surface.onEnterLongMode = { [weak self] in self?.handOverInput() }
@@ -512,6 +513,17 @@ final class CaptureController {
         diagLog("Capture text: \(text.count) character(s) on the line")
     }
 
+    /// The colour, taken away — and nothing kept. The same landing as the
+    /// words: the pasteboard first, one text card, and no picture or file.
+    /// Marked as this app's own write, so the watcher does not hang a second
+    /// card of the same value.
+    private func finishColour(_ hex: String) {
+        Self.put(hex, on: NSPasteboard.general)
+        close()
+        (NSApp.delegate as? AppDelegate)?.acceptCapturedText(hex)
+        diagLog("Capture colour: \(hex) on the line")
+    }
+
     /// The translation, taken away — and nothing kept.
     ///
     /// The translate door promised the words in the other language, on the
@@ -545,7 +557,7 @@ final class CaptureController {
     /// words. Shared by the two ways text leaves a capture because the mark is
     /// not optional: a copy that forgot it looks exactly like a copy made in
     /// another app, and the card appears twice.
-    private static func put(_ text: String, on pasteboard: NSPasteboard) {
+    static func put(_ text: String, on pasteboard: NSPasteboard) {
         let entry = NSPasteboardItem()
         entry.setString(text, forType: .string)
         entry.setString("1", forType: ClipboardWatcher.ourWrite)

@@ -16,7 +16,8 @@ clothesline. One line holds a clipboard and a notebook: screenshots, text and
 folders you copy hang on it, ready when you are; notes hang there too, for
 ideas and to-dos, in view the moment you look up. Rest the pointer at the
 notch and the line drops down; move away and it rolls up, without breaking
-whatever you were doing.
+whatever you were doing. Capturing a screenshot and marking it up happen in
+this one app, and a note can carry a recording.
 
 ## The clipboard line
 
@@ -48,6 +49,14 @@ comes, with *Next* and the time left at the foot of the card. Have it repeat
 daily, weekly or monthly and it comes round again. Once a one-off has rung the
 card reads *Reminder arrived*; **Got it** takes the dot away. You can set one
 while you write, without saving first.
+
+## Notes that can speak
+
+A note is there to catch a thought on its way past, and typing can be slower
+than the thought. A note can carry a recording; say it once and it stays, with
+a play button and waveform on the card. Words and voice hang on one card, so
+there is only one place to look later. Notes with a recording can be filtered
+on their own.
 
 ## How it comes down
 
@@ -125,6 +134,18 @@ Items come and go with the kind of card; the everyday ones:
 - **The menu bar icon**: filled while the clipboard is being watched, hollow
   when paused. Clicking it opens the menu: both lines, a new note, the
   monitoring switch, *Hang new screenshots*, Settings, Quit.
+
+## Capture and mark up
+
+Taking a screenshot, marking a few spots and sending it on are one continuous
+job, yet it usually takes several apps. Clothespeg keeps them on the same
+line. Frame it, take it, mark it up where it lies, then hang it on the line or
+copy it out. No switching apps, and no Desktop file left behind.
+
+Tall captures, reading text, translation and colour picking all live here.
+The editor draws rectangles, arrows, mosaic, numbered dots and text; a colour
+pick leaves a HEX label that goes out with the picture. Cropping, zoom and
+undo share the same window.
 
 ## The screenshot inbox
 
@@ -257,8 +278,8 @@ his work.
 
 On that foundation, Clothespeg reworks the data model to hold content instead
 of file paths, hangs text and pictures by default, and adds the notes line,
-pinning, the pill, the opt-in screenshot inbox and system Markup from the
-right-click menu.
+pinning, the pill, built-in capture and the image editor, note recordings, the
+opt-in screenshot inbox and system Markup from the right-click menu.
 
 ## License
 
@@ -286,11 +307,17 @@ keeping the LICENSE and the `Required Notice:` line. The PolyForm NC also gives
 an express **patent grant** (so the licence cannot be used as a weapon in patent
 litigation against someone who took this).
 
-**But this software may not be used for a commercial purpose — including selling
-it, bundling it into a commercial product, or using it for company business.**
-Those uses are not granted; they require a separate commercial licence from
-**VIZWISE (HONGKONG) LIMITED**. Before selling or distributing it for a
-commercial purpose, contact the licensor.
+**But a copy obtained from this repository is for noncommercial use only** —
+personal, study, research and hobby use, and also use by the charities,
+educational institutions, public research bodies and government institutions
+listed in LICENSE.
+
+**Organisations that need Clothespeg at work should buy the Mac App Store
+edition ("Clothespeg Apple Edition")**: that purchase grants the right to use
+Clothespeg for commercial purposes, licensed by **VIZWISE (HONGKONG) LIMITED**
+under the App Store's standard licence terms. Reselling it, bundling it into a
+commercial product, or redistributing the source commercially is not covered by
+that purchase and still needs a separate commercial licence from the licensor.
 
 The "Name and icon" restriction is not part of that licence: neither the
 Tendedero nor the Clothespeg name or icon is granted here, a redistributed

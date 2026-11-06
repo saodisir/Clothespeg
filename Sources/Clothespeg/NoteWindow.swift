@@ -79,6 +79,28 @@ final class NoteWindow: NSPanel {
     }
 }
 
+/// The editor's drag as pure arithmetic. The window goes back to the origin
+/// it had when the press began, plus the pointer's total travel in screen
+/// points; nothing here reads where the window is now, so a window that has
+/// already moved cannot feed its own movement back into the next event.
+/// That loop was the shimmer while dragging.
+enum NoteDrag {
+    static func origin(start: NSPoint, startScreen: NSPoint, screen: NSPoint) -> NSPoint {
+        NSPoint(x: start.x + screen.x - startScreen.x,
+                y: start.y + screen.y - startScreen.y)
+    }
+}
+
+/// Whether the recording popover may be closed. An outside press writes
+/// false to `isPresented`; a live microphone puts it straight back, so the
+/// stop button stays in front of the hand. Only that button ends a voice.
+/// Once it has, an outside press closes the panel as it normally would.
+enum RecordingPanelDoor {
+    static func open(requested: Bool, recording: Bool) -> Bool {
+        requested || recording
+    }
+}
+
 /// A note being written.
 ///
 /// Held apart from the note on the line for as long as the window is open, so
@@ -127,6 +149,19 @@ final class NoteDraft: ObservableObject {
     /// card lit after the person had just put it out.
     var remindAcked: Date?
 
+    /// The note's one voice recording, still a draft until the note is
+    /// finished. The file is already on disk — a recording cannot be held
+    /// in memory — so these two names are what let a cancelled window leave
+    /// nothing behind and a saved one take down the recording it replaced.
+    @Published var recording: Note.Recording?
+    /// A file made during this edit and not yet promised to the line.
+    var pendingRecording: String?
+    /// The file the note carried when the editor opened, if it had one.
+    var originalRecording: String?
+    /// Set when the note is saved, so closing the window afterwards does
+    /// not throw away the recording that was just kept.
+    var committed = false
+
     /// Where a reminder change goes the moment it is made, when there is a
     /// note on the line to carry it. The controller sets this as the editor
     /// opens; nil for a note that is not on the line yet, whose reminder
@@ -148,7 +183,7 @@ final class NoteDraft: ObservableObject {
     init(editing: UUID? = nil, anchor: CGRect? = nil, text: String = "",
          tint: NoteTint? = nil, remindAt: Date? = nil,
          remindRule: Note.RepeatRule? = nil, remindFired: Bool = false,
-         remindAcked: Date? = nil) {
+         remindAcked: Date? = nil, recording: Note.Recording? = nil) {
         self.editing = editing
         self.anchor = anchor
         self.text = text
@@ -157,14 +192,25 @@ final class NoteDraft: ObservableObject {
         self.remindRule = remindRule
         self.remindFired = remindFired
         self.remindAcked = remindAcked
+        self.recording = recording
+        self.originalRecording = recording?.name
     }
 
     static func fresh() -> NoteDraft { NoteDraft() }
 
+    /// Takes a recording that was just made. Re-recording replaces the one
+    /// file this draft is allowed to leave behind rather than adding a
+    /// second, so there is never a second voice on one note.
+    func adopt(_ made: Note.Recording) {
+        if let previous = pendingRecording { RecordingStore.discard(previous) }
+        recording = made
+        pendingRecording = made.name
+    }
+
     var note: Note {
         Note(text: text, tint: tint, remindAt: remindAt,
              remindRule: remindRule, remindFired: remindFired,
-             remindAcked: remindAcked)
+             remindAcked: remindAcked, recording: recording)
     }
 
     // MARK: The reminder, as the picker shapes it
@@ -898,6 +944,7 @@ struct NoteEditor: View {
     /// Finished with: the note to keep, or nil when it was thrown away.
     var onFinish: (Note?) -> Void
 
+    @ObservedObject private var recorder = NoteRecorder.shared
     @Environment(\.colorScheme) private var scheme
     /// Whether the colour swatches are out. Opened from the circle in the
     /// foot of the window, closed by a pick, a second press or a click
@@ -907,20 +954,29 @@ struct NoteEditor: View {
     /// Same manners as the swatches: one press opens, one closes, a click
     /// outside closes.
     @State private var showingReminder = false
-    /// The last translation the strip's drag reported, so the window moves
-    /// by the step between events rather than by the whole distance from
-    /// where the finger went down.
-    @State private var dragTranslation: CGSize?
+    /// The voice panel, from the microphone beside the bell.
+    @State private var showingRecording = false
+    /// The drag is measured in screen points, not in the strip's own
+    /// coordinates. Moving a window changes where SwiftUI sees the strip in
+    /// `.global`, so feeding that translation back into the same window is
+    /// a loop: each step re-adds the window's own last step, which is the
+    /// shimmer the editor had while it was being dragged. Screen points are
+    /// absolute and do not move with the window, and the origin is always
+    /// recomputed from the same two starting values rather than accumulated.
+    @State private var dragStartScreen: NSPoint?
+    @State private var dragStartOrigin: NSPoint?
 
-    /// Hands a step of the strip's drag to the window, which is the thing
-    /// being dragged. Found rather than injected: there is one editor on
-    /// screen at a time and one window behind it, and the y step is
-    /// inverted here because the strip measures top-down and the window
-    /// lives bottom-up.
-    private func moveWindow(_ dx: CGFloat, _ dy: CGFloat) {
+    private func moveWindow(to screen: NSPoint) {
         guard let window = NSApp.windows.first(where: { $0 is NoteWindow }) else { return }
-        let frame = window.frame
-        window.setFrameOrigin(NSPoint(x: frame.minX + dx, y: frame.minY - dy))
+        if dragStartScreen == nil {
+            dragStartScreen = screen
+            dragStartOrigin = window.frame.origin
+        }
+        guard let start = dragStartScreen, let origin = dragStartOrigin else { return }
+        let next = NoteDrag.origin(start: origin, startScreen: start, screen: screen)
+        diagLog("Note drag: screen \(Int(screen.x)),\(Int(screen.y)) "
+                + "-> origin \(Int(next.x)),\(Int(next.y))")
+        window.setFrameOrigin(next)
     }
 
     var body: some View {
@@ -950,15 +1006,12 @@ struct NoteEditor: View {
             .padding(.horizontal, 6)
             .frame(height: 32)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                .onChanged { value in
-                    if let last = dragTranslation {
-                        moveWindow(value.translation.width - last.width,
-                                   value.translation.height - last.height)
-                    }
-                    dragTranslation = value.translation
-                }
-                .onEnded { _ in dragTranslation = nil })
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .local)
+                .onChanged { _ in moveWindow(to: NSEvent.mouseLocation) }
+                .onEnded { _ in
+                    dragStartScreen = nil
+                    dragStartOrigin = nil
+                })
             .zIndex(2)
 
             // The sheet under the writing, and the writing on it. The text
@@ -1006,6 +1059,7 @@ struct NoteEditor: View {
                     .help(mark.help)
                 }
                 Spacer(minLength: 0)
+                recordingPicker
                 reminderPicker
                 tintPicker
                 Button { onFinish(draft.note.tidied) } label: {
@@ -1023,6 +1077,18 @@ struct NoteEditor: View {
             .padding(.vertical, 7)
         }
         .frame(width: NoteWindow.size.width, height: NoteWindow.size.height)
+        .onChange(of: showingRecording) { _, open in
+            // A live recording is the one thing a click outside must not
+            // end. SwiftUI closes a popover on an outside press by writing
+            // false here; put it straight back so the stop button stays in
+            // front of the hand and the microphone keeps running. Only the
+            // stop button ends a voice, and once it has, the panel is free
+            // to close again.
+            if !open {
+                showingRecording = RecordingPanelDoor.open(
+                    requested: open, recording: recorder.isRecording)
+            }
+        }
         // The sheet ends where the glass does. The text area reaches the top
         // of the window, and a sheet with square corners sitting in a frame
         // with rounded ones would poke out past the glass at the top two.
@@ -1038,6 +1104,31 @@ struct NoteEditor: View {
                 .stroke(Edge.rim, lineWidth: 0.5).padding(-0.5)
         )
         .onExitCommand { onFinish(nil) }
+    }
+
+    /// The note's one recording, made from the microphone in the foot of the
+    /// window. The panel, not the card, is where a voice is made, tried and
+    /// thrown away; the card only plays what the note already carries.
+    private var recordingPicker: some View {
+        Button {
+            if recorder.isRecording {
+                if let made = recorder.stop() { draft.adopt(made) }
+            } else {
+                showingRecording.toggle()
+            }
+        } label: {
+            Image(systemName: draft.recording == nil ? "mic" : "waveform")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(draft.recording == nil
+                                 ? Color.primary.opacity(0.7) : CDS.clay)
+                .frame(width: 20, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingRecording, arrowEdge: .bottom) {
+            RecordingPanel(draft: draft)
+        }
+        .help(draft.recording == nil ? L("Record") : L("Recording"))
     }
 
     /// The reminder, picked from a panel the bell in the foot of the window
@@ -1096,6 +1187,256 @@ struct NoteEditor: View {
             TintSwatches(selection: $draft.tint, scheme: scheme)
         }
         .help(L("Tint"))
+    }
+}
+
+/// What the microphone opens. One recording lives here at most: the big
+/// button makes one or replaces the one that is here, and there is no
+/// control that adds a second.
+private struct RecordingPanel: View {
+    @ObservedObject var draft: NoteDraft
+    /// Removing a voice is the one destructive thing in this panel, and it
+    /// used to happen without a word: a press, then a wave that still looked
+    /// the same. The word Remove now gives way to Cancel and Confirm in the
+    /// same row, and the wave leaves the panel with the file.
+    @State private var confirmingRemoval = false
+    /// A second recording clears the first. The word is said in the same
+    /// row that normally holds Play, not in a sheet over the panel.
+    @State private var confirmingReplace = false
+    @State private var removed = false
+    @ObservedObject private var recorder = NoteRecorder.shared
+    @ObservedObject private var player = NotePlayer.shared
+    @Environment(\.colorScheme) private var scheme
+
+    private var bars: [Int] {
+        recorder.isRecording ? recorder.levels
+            : (draft.recording?.bars ?? RecordingBars.empty)
+    }
+
+    private var clock: String {
+        if recorder.isRecording {
+            let time = AudioClock.label(recorder.elapsed)
+            return recorder.isPaused ? time + " · " + L("Paused") : time
+        }
+        if let recording = draft.recording { return AudioClock.label(recording.seconds) }
+        return "0:00"
+    }
+
+    private var recordHelp: String {
+        if recorder.isRecording { return L("Stop") }
+        return draft.recording == nil ? L("Record") : L("Re-record")
+    }
+
+    private var pauseHelp: String {
+        recorder.isPaused ? L("Resume") : L("Pause")
+    }
+
+    private func beginRecording() {
+        player.stop()
+        Task { @MainActor in _ = await recorder.start() }
+    }
+
+    private func barInk(_ index: Int) -> Color {
+        if let recording = draft.recording, player.playingName == recording.name,
+           index < player.playedBars { return CDS.clay }
+        return Color.secondary.opacity(0.35)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(L("Recording"))
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 8)
+                Text(clock)
+                    .font(.system(size: 11, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    if recorder.isRecording {
+                        if let made = recorder.stop() { draft.adopt(made) }
+                    } else if draft.recording != nil {
+                        confirmingReplace = true
+                        confirmingRemoval = false
+                    } else {
+                        beginRecording()
+                    }
+                } label: {
+                    ZStack {
+                        Circle().fill(CDS.clay).frame(width: 26, height: 26)
+                        if recorder.isRecording {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(CDS.label(onClayIn: scheme))
+                                .frame(width: 8, height: 8)
+                        } else {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(CDS.label(onClayIn: scheme))
+                        }
+                    }
+                    // A plain button only takes presses on its opaque ink.
+                    // Say the whole square is the button, not just the disc.
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(recordHelp)
+
+                // Only while a voice is being made. The clay circle stays
+                // the stop button; this one holds the file open and lets the
+                // person come back to it without a second recording.
+                if recorder.isRecording {
+                    Button {
+                        if recorder.isPaused { recorder.resume() } else { recorder.pause() }
+                    } label: {
+                        // Both circles wear the same clay ground and only
+                        // their symbols differ. A clear fill is also a
+                        // transparent hit target: the old outlined circle
+                        // answered only on the nine-point glyph inside it.
+                        ZStack {
+                            Circle().fill(CDS.clay)
+                            Image(systemName: recorder.isPaused ? "play.fill" : "pause.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(CDS.label(onClayIn: scheme))
+                        }
+                        .frame(width: 26, height: 26)
+                        // Both circles wear the same clay ground, and both
+                        // answer across the whole square. The old outlined
+                        // button took presses only on the nine-point glyph.
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(pauseHelp)
+                }
+
+                if draft.recording == nil && !recorder.isRecording {
+                    // No voice, no wave. Twenty short bars used to stay on
+                    // screen after a removal, which is exactly why the
+                    // removal could not be seen to have happened.
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.18))
+                        .frame(height: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    // Twenty thin bars, each in a column that takes an equal
+                    // share of the space left by the circles. Fixed-width
+                    // bars used to huddle at the left end and leave the
+                    // right third of the panel empty.
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(bars.enumerated()), id: \.offset) { index, level in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(recorder.isRecording
+                                      ? CDS.clay.opacity(recorder.isPaused ? 0.25 : 0.55)
+                                      : barInk(index))
+                                .frame(width: 2, height: RecordingBars.height(level))
+                                .frame(height: RecordingBars.height(100), alignment: .bottom)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 28)
+
+            if let error = recorder.lastError {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(CDS.clay)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // macOS will never show its prompt again after a refusal,
+                    // so the panel has to offer the way back itself.
+                    if MicrophonePermission.state == .denied {
+                        Button(L("Open System Settings")) {
+                            MicrophonePermission.openSettings()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                if confirmingReplace {
+                    // Still one row. The left slot that normally holds Play
+                    // says what Confirm will do to the old recording.
+                    Text(L("Re-recording clears the old one"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Button {
+                        if let recording = draft.recording { player.toggle(recording) }
+                    } label: {
+                        Text(L("Play")).font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(draft.recording == nil || recorder.isRecording)
+                }
+
+                // Play and Remove keep the two ends of the row so a hand
+                // reaching for one cannot land on the other. Both kinds of
+                // confirming stay in this same row: the words give way to
+                // Cancel and Confirm, with Confirm keeping the far right.
+                Spacer(minLength: 0)
+
+                if confirmingReplace {
+                    Button {
+                        confirmingReplace = false
+                    } label: {
+                        Text(L("Cancel")).font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        confirmingReplace = false
+                        beginRecording()
+                    } label: {
+                        Text(L("Confirm")).font(.system(size: 11))
+                            .foregroundStyle(CDS.clay)
+                    }
+                    .buttonStyle(.plain)
+                } else if confirmingRemoval {
+                    Button {
+                        confirmingRemoval = false
+                    } label: {
+                        Text(L("Cancel")).font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        player.stop()
+                        draft.recording = nil
+                        confirmingRemoval = false
+                        removed = true
+                    } label: {
+                        Text(L("Confirm")).font(.system(size: 11))
+                            .foregroundStyle(CDS.clay)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(recorder.isRecording)
+                } else {
+                    Button {
+                        confirmingRemoval = true
+                        confirmingReplace = false
+                    } label: {
+                        Text(L("Remove recording")).font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(draft.recording == nil || recorder.isRecording)
+                }
+            }
+            if removed, draft.recording == nil {
+                Text(L("Recording removed"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(width: 240)
     }
 }
 
@@ -1629,7 +1970,8 @@ final class NoteController {
                           remindAt: current.remindAt,
                           remindRule: current.remindRule,
                           remindFired: current.remindFired,
-                          remindAcked: current.remindAcked))
+                          remindAcked: current.remindAcked,
+                          recording: current.recording))
     }
 
     var isOpen: Bool { window?.isVisible ?? false }
@@ -1689,22 +2031,48 @@ final class NoteController {
     /// Done with: the note goes on the line, or the card it came from takes
     /// the new version, or nothing happens at all.
     private func finish(_ note: Note?, editing: UUID?) {
-        close()
+        let draft = self.draft
         // Escape, or a window abandoned in a way this does not handle.
-        guard let note else { return }
+        guard let note else { close(); return }
         let tidied = note.tidied
-        // A note of blank lines is not a note. Nothing is hung and nothing is
-        // changed: emptying a note is not how a note is thrown away — the
-        // cross on the card is, and it says so before it does it.
-        guard !tidied.isBlank else { return }
+        // Editing an existing card must write back even when the result is
+        // empty. A note that carried nothing but a voice goes blank the
+        // moment that voice is removed; skipping the write used to leave a
+        // card still pointing at a file that had already been thrown away.
+        if editing == nil, tidied.isBlank {
+            // Nothing is hung: emptying a note is not how a note is thrown
+            // away — the cross on the card is, and it says so before it does.
+            close()  // and close() discards whatever was recorded this edit
+            return
+        }
+        draft?.committed = true
+        close()
         if let editing {
             line?.rewrite(editing, to: tidied)
         } else {
             line?.hang(note: tidied)
         }
+        // Only now that the note has actually landed is it safe to throw away
+        // the voice it replaced. Deleting first was the other half of the
+        // "card still there, recording missing" fault.
+        let kept = tidied.recording?.name
+        if let previous = draft?.originalRecording, previous != kept {
+            RecordingStore.discard(previous)
+        }
+        if let pending = draft?.pendingRecording, pending != kept {
+            RecordingStore.discard(pending)
+        }
     }
 
     func close() {
+        // A cancelled window leaves no file behind, but keeps the recording
+        // the note already had: only the voice made during this edit was a
+        // draft. A saved window has already said `committed` above.
+        if let draft, !draft.committed, let pending = draft.pendingRecording {
+            RecordingStore.discard(pending)
+        }
+        NoteRecorder.shared.cancel()
+        NotePlayer.shared.stop()
         // Cleared first. Ordering the window out while a handler is still
         // attached would let the ending of the note read the ending of the
         // window.

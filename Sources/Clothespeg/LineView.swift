@@ -48,15 +48,27 @@ enum Layout {
 
     static let pinAbove: CGFloat = 9.5
 
-    /// Where the pill goes: under the deepest card on the line.
+    /// How deep the pill has to reach to clear the cards.
     ///
-    /// It was a fixed distance from the bottom of the panel, which worked for
-    /// exactly as long as every card was the same height. A note's is not, so
-    /// the pill is told where the cards end instead. When they are all one
-    /// height — the whole of the clipboard half — this works out a few points
-    /// above where the constant put it.
-    static func pillY(ropeY: CGFloat, deepest: CGFloat) -> CGFloat {
-        ropeY - pinAbove + PeggedView.cardOffsetBelowTop + deepest + 35
+    /// One array only: the depths of the cards on the whole line. There is
+    /// no `page` argument, and that is the point — the pill used to be
+    /// measured against the cards currently on screen, so turning a page
+    /// or switching a filter moved it up and down. The line itself only
+    /// changes when a note is written, rewritten or taken down.
+    ///
+    /// A note is capped at `maxHeight` by its own layout, so the cap here
+    /// is a guard that keeps the pill inside the panel even if that
+    /// constant is ever raised. The clipboard's pictures keep their own
+    /// proportions and are not capped.
+    static func pillDepth(for deck: Line.Deck, line: [CGFloat]) -> CGFloat {
+        let deepest = line.max() ?? 0
+        guard deck == .notes else { return deepest }
+        return min(NoteCardLayout.maxHeight + 2 * Frame.inset, deepest)
+    }
+
+    /// Where the pill goes: below the deepest card on the line.
+    static func pillY(ropeY: CGFloat, depth: CGFloat) -> CGFloat {
+        ropeY - pinAbove + PeggedView.cardOffsetBelowTop + depth + 35
     }
 
     /// The rope hangs as a parabola from edge to edge of the screen.
@@ -74,6 +86,21 @@ enum Layout {
         let gaps = CGFloat(max(count - 1, 0))
         let step = gaps > 0 ? min(pitch, max(0, width - 200) / gaps) : pitch
         return width / 2 - gaps * step / 2 + CGFloat(index) * step
+    }
+}
+
+/// When the pill earns its place on the rope.
+///
+/// A pager with one page has nothing to page, and a filter with every card
+/// already in view has nothing to narrow: the pill used to appear on the
+/// notes rope merely because a recording existed, which put a control with
+/// no question to ask under three cards. It comes out when there is a second
+/// page, and stays while a filter or a search is in force, so the switch
+/// that narrowed the line is never hidden by the narrowing it caused.
+enum PagerVisibility {
+    static func shows(shown: Int, matching: Int,
+                      narrows: Bool, searching: Bool) -> Bool {
+        shown < matching || narrows || searching
     }
 }
 
@@ -113,18 +140,13 @@ struct LineView: View {
             // cannot drift apart on it.
             let empty = (deck == .clipboard ? line.items : line.notes)
                 .allSatisfy { $0.falling }
-            // How deep the deepest card on the line is, which is where the
-            // pill goes. A note's height is a fact about what is written in
-            // it, so the pill cannot be a constant distance under the rope:
-            // it has to be under the cards, whatever they turn out to be.
-            //
-            // A filter or a search that matches nothing leaves `shown`
-            // empty, and a pill measured against nothing rises to the rope.
-            // It is measured against the cards that would be showing
-            // without the filter instead: the pill waits where the line's
-            // own cards put it, not where the empty result does.
-            let standing = shown.isEmpty ? Array(line.onLine.prefix(room)) : shown
-            let deepest = standing.map { PayloadCard.outerSize(of: $0).height }.max() ?? 0
+            // The pill's ground is the whole line, not this page. A filter
+            // or a search that matches nothing leaves `shown` empty, and a
+            // pill measured against an empty page would rise to the rope;
+            // the line's own cards are what the pill waits under.
+            let wholeLine = line.onLine.filter { !$0.falling }
+            let pillDepth = Layout.pillDepth(
+                for: deck, line: wholeLine.map { PayloadCard.outerSize(of: $0).height })
             ZStack(alignment: .topLeading) {
                 Rope(width: width)
 
@@ -208,7 +230,15 @@ struct LineView: View {
                 // nothing to page and the hint above it already says so. The
                 // lock toggle lives on the rope itself instead, where it
                 // does not need the pill to exist to be found.
-                if shown.count < line.matching.count || line.narrows || line.isSearching {
+                // A note carrying a recording is deliberately not a reason
+                // of its own any more. It used to keep the pill up over a
+                // rope of three cards, all of them visible; a filter only
+                // earns its place once there is more than one page to look
+                // through, or once a filter is actually narrowing the line.
+                if PagerVisibility.shows(shown: shown.count,
+                                         matching: line.matching.count,
+                                         narrows: line.narrows,
+                                         searching: line.isSearching) {
                     Pager(line: line,
                           count: line.matching.count, shown: shown.count,
                           offset: line.panOffset,
@@ -220,18 +250,12 @@ struct LineView: View {
                     } onFilter: { option in
                         line.showing = option
                     }
-                    // High enough to clear the cards, low enough that the
-                    // pill's own height does not push it off the bottom: the
-                    // panel is 210 and the pill grows to about thirty when the
-                    // segments are out, so a fixed offset that suits the
-                    // collapsed pill cuts the expanded one in half.
-                    // Under the deepest card rather than at a fixed distance
-                    // from the bottom, which is the difference between a pill
-                    // that sits under a note and a pill a note is drawn over:
-                    // a note's height is whatever is written in it.
+                    // Below the deepest card on the line, whichever page
+                    // happens to be showing. A pager the hand has to go
+                    // looking for on every turn of the line is not a pager.
                     .position(x: width / 2,
                               y: Layout.pillY(ropeY: Layout.ropeY(x: width / 2, width: width),
-                                              deepest: deepest))
+                                              depth: pillDepth))
                     .zIndex(10)
                     // Above the cards in the same stack, and reported to them
                     // in the same breath. The hit test that decides whether a
@@ -658,6 +682,8 @@ private struct Pager: View {
     private var atStart: Bool { offset <= 0 }
     private var atEnd: Bool { offset + shown >= count }
 
+    @Environment(\.colorScheme) private var scheme
+
     /// The line between two parallel buttons. It carries five points of air on
     /// each side and nothing else — every button on the pill meets it flush,
     /// with its own four points inside — so the distance from a divider to
@@ -668,6 +694,42 @@ private struct Pager: View {
             .fill(Color.secondary.opacity(0.22))
             .frame(width: 0.5, height: 11)
             .padding(.horizontal, 5)
+    }
+
+    /// One colour actually worn by a note, system colour included. The dot
+    /// is the colour itself, ringed in clay while it is one of the colours
+    /// being looked at — the same "lit means on" the pin and the waveform
+    /// wear. Dots add up rather than replace one another; pressing a lit
+    /// dot takes just that colour out of the set.
+    private func tintDot(_ choice: NoteTintChoice) -> some View {
+        let chosen = line.showingTints.contains(choice)
+        return Button {
+            var next = line.showingTints
+            if chosen { next.remove(choice) } else { next.insert(choice) }
+            line.showingTints = next
+        } label: {
+            // The system colour is the note's own paper: near white in the
+            // light, near black in the dark. One circle that follows the
+            // appearance, not a half-and-half one that is neither. The rim
+            // is what keeps a near-white dot visible on a pale pill and a
+            // near-black one visible on a dark one.
+            Circle()
+                .fill(choice.background(in: scheme))
+            .overlay(
+                Circle().strokeBorder(chosen ? CDS.clay : Color.primary.opacity(0.25),
+                                      lineWidth: chosen ? 1.5 : 0.75)
+            )
+            .frame(width: 11, height: 11)
+            // Three points of air either side and the pill's own
+            // eighteen-point row: a dot is as tall as every other icon
+            // button here, so the capsule does not grow a second line.
+            .padding(.horizontal, 3)
+            .frame(height: 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(chosen ? String(format: L("Stop watching %@ notes"), choice.label)
+                     : String(format: L("Watch %@ notes"), choice.label))
     }
 
     /// Which cards are on the rope, out of how many there are: "1–4 / 4".
@@ -853,6 +915,36 @@ private struct Pager: View {
                 pillDivider
 
                 DateButton(line: line, level: $datesLevel)
+            } else {
+                // Two questions a note can answer that a copy cannot: the
+                // colour it wears (the system colour counts) and whether it
+                // carries a voice. Each appears only when there is something
+                // for it to find. Colours are drawn as dots rather than
+                // folded into a menu — three colours in use are three dots,
+                // and any number of them may be lit at once.
+                let dots = line.pillTints
+                if !dots.isEmpty {
+                    pillDivider
+                    HStack(spacing: 0) {
+                        ForEach(dots) { choice in tintDot(choice) }
+                    }
+                }
+                if line.hasRecordings || line.showingRecordings {
+                    pillDivider
+                    Button {
+                        line.showingRecordings.toggle()
+                    } label: {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(line.showingRecordings ? CDS.clay : Color.secondary)
+                            .padding(.horizontal, 4)
+                            .frame(height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(line.showingRecordings
+                          ? L("Watching recorded notes") : L("Watch recorded notes"))
+                }
             }
         }
         .padding(.horizontal, 4)

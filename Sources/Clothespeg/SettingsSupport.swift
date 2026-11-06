@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFAudio
 import UserNotifications
 
 /// The licence, in full, as it has to be shown.
@@ -12,8 +13,9 @@ import UserNotifications
 /// at all.
 ///
 /// Selling the software, or any other commercial use, is *not* granted by this
-/// licence. It needs a separate commercial licence from the licensor, and that
-/// is stated here alongside the rest so a reader is not left to assume.
+/// licence. The Provenance below says where such a grant does come from: buying
+/// the Mac App Store edition, under the App Store's standard terms. Everything
+/// else commercial still needs a separate licence from the licensor.
 ///
 /// The last part is easy to miss and is not optional either. It is where the
 /// author says what the licence does *not* cover: the Tendedero name and the
@@ -110,8 +112,17 @@ enum LicenceText {
     which is also the company a release is signed with.
 
     Selling Clothespeg, or any other commercial use, is not granted by this
-    licence. It requires a separate commercial licence from VIZWISE (HONGKONG)
-    LIMITED.
+    licence. A copy built from the source repository is for noncommercial use
+    only, as the licence above defines it.
+
+    Commercial use at work is available through the Mac App Store edition:
+    buying that edition grants the purchaser the right to use Clothespeg for
+    commercial purposes, licensed by VIZWISE (HONGKONG) LIMITED under the
+    App Store's standard licence terms.
+
+    Reselling, embedding in a commercial product, or redistributing the source
+    for a commercial purpose is not covered by that purchase and still needs a
+    separate commercial licence from VIZWISE (HONGKONG) LIMITED.
 
     ---
 
@@ -244,6 +255,75 @@ enum NotificationPermission {
     static func openSettings() {
         let id = Bundle.main.bundleIdentifier ?? ""
         let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")!
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// Whether this app may hear the microphone, and how to ask for it.
+///
+/// The recording panel asks when a voice is first made, but macOS shows its
+/// own prompt only once. After a refusal the request answers "no" without
+/// putting anything on screen, so the settings page is the other door: it
+/// says which of the three states the line is in and offers the one action
+/// that still works — ask, or go to System Settings.
+///
+/// `AVAudioApplication` is the macOS 14 door for a recorder. Asking
+/// `AVCaptureDevice` instead belongs to the capture-session world and can
+/// leave a recorder with no prompt at all, which is exactly the silence
+/// this row was written to answer.
+enum MicrophonePermission {
+    enum State: String {
+        case undetermined, denied, granted
+    }
+
+    /// Read rather than requested, so the page can ask it every second
+    /// without ever putting a prompt up on its own.
+    static var state: State {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: return .granted
+        case .denied: return .denied
+        case .undetermined: return .undetermined
+        @unknown default: return .undetermined
+        }
+    }
+
+    static var isGranted: Bool { state == .granted }
+
+    private static let askedKey = "askedForMicrophone"
+
+    /// Whether this app has ever put the question to macOS, either from the
+    /// recording panel or from the settings page.
+    static var hasAsked: Bool { UserDefaults.standard.bool(forKey: askedKey) }
+
+    /// Puts the question, once. The answer is read back rather than trusted:
+    /// a grant recorded while this process was running may need a restart
+    /// before the recorder can hear it.
+    @discardableResult
+    static func request() async -> Bool {
+        UserDefaults.standard.set(true, forKey: askedKey)
+        // A background app has no window of its own in front, and a TCC
+        // prompt with nowhere to land is a prompt nobody sees.
+        NSApp.activate(ignoringOtherApps: true)
+        let before = state
+        let started = Date()
+        let granted = await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+        // An immediate callback means macOS already had an answer and never
+        // put a dialog up; a slow one means the user was actually asked. Those
+        // two failures need different fixes, so the log says which happened.
+        let waited = Date().timeIntervalSince(started)
+        diagLog("Microphone permission: \(before.rawValue) -> asked, granted=\(granted), "
+                + "state=\(state.rawValue), waited=\(String(format: "%.2f", waited))s")
+        return granted
+    }
+
+    /// Straight to the microphone pane rather than the top of System
+    /// Settings, the same as the other two permissions.
+    static func openSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
         NSWorkspace.shared.open(url)
     }
 }

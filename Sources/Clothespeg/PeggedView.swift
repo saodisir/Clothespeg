@@ -258,8 +258,9 @@ struct PeggedView: View {
         let offset = min(noteScroll, scrollMax)
         // The window the rows are seen through: the card between its top pad
         // and its caption. Taller than the window is the paper's own business.
+        let recordingBand = note.recording == nil ? 0 : NoteCardLayout.recordingHeight
         let region = arrangement.height - NoteCardLayout.topPad
-            - NoteCardLayout.captionHeight - NoteCardLayout.bottomPad
+            - recordingBand - NoteCardLayout.captionHeight - NoteCardLayout.bottomPad
         // The sheet this note is on: its own when it picked one, the line's
         // when it did not.
         // The colour this note picked, when it did; the paper's own when it
@@ -316,6 +317,10 @@ struct PeggedView: View {
                 }
                 .animation(.easeOut(duration: 0.18), value: offset > 0.5)
                 .animation(.easeOut(duration: 0.18), value: offset < scrollMax - 0.5)
+
+                if let recording = note.recording {
+                    NoteRecordingStrip(recording: recording, ink: noteInk(tint))
+                }
 
                 noteFooter(note)
                 // The card's own bottom, after the caption. The window above
@@ -495,6 +500,93 @@ struct PeggedView: View {
     /// line rather than taking a second one: the caption's height is counted
     /// into the card's layout, and a footer that grew would push a row of
     /// words off the bottom.
+    /// The note's one voice, between the words and the caption. Drawn here,
+    /// pressed in `GrabArea`: like every other mark on a note card it sits
+    /// under the view that takes the press, so the whole strip — not only
+    /// the small play glyph — answers a click.
+    ///
+    /// The bars are the levels heard while recording, and the clay part is
+    /// how far the player has got. Nothing here is invented at draw time.
+    private struct NoteRecordingStrip: View {
+        let recording: Note.Recording
+        let ink: Color
+        @ObservedObject private var player = NotePlayer.shared
+        @Environment(\.colorScheme) private var scheme
+
+        private var playing: Bool { player.playingName == recording.name }
+
+        var body: some View {
+            let bars = Array(recording.bars.prefix(RecordingBars.count))
+            let barHeight = RecordingBars.height(100)
+            let played = playing ? player.playedBars : 0
+            // The head is one of the twenty bars, not a shape laid over
+            // them. An overlaid line sat half a column off the bar it
+            // belonged to and read as a twenty-first, taller bar.
+            let head = RecordingBars.head(played)
+            return VStack(spacing: 0) {
+                Rectangle()
+                    .fill(ink.opacity(0.12))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 9)
+
+                // One line for all three marks. The capsule, the bars and the
+                // clock used to be centred separately in a row whose members
+                // were 14, 16 and 11 points tall, so their bottoms sat a
+                // point or two apart. Bottom alignment puts each of them on
+                // the bars' zero line; the top padding holds them off the
+                // rule above, and the spacer holds them off the footer's.
+                HStack(alignment: .bottom, spacing: NoteCardLayout.recordingPlayGap) {
+                    ZStack {
+                        Capsule().fill(playing ? CDS.clay : Color.clear)
+                        Capsule().strokeBorder(ink.opacity(0.35), lineWidth: 0.75)
+                        Image(systemName: playing ? "pause.fill" : "play.fill")
+                            .font(.system(size: 6.5, weight: .bold))
+                            .foregroundStyle(playing
+                                             ? CDS.label(onClayIn: scheme)
+                                             : ink.opacity(0.75))
+                    }
+                    .frame(width: NoteCardLayout.recordingPlayWidth, height: 14)
+                    .frame(height: barHeight, alignment: .bottom)
+
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(bars.enumerated()), id: \.offset) { index, level in
+                            // Full height, clay and a point wider, but still
+                            // the same column as every other bar, so the
+                            // wave keeps its even pitch from end to end.
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(index == head ? CDS.clay
+                                      : (playing && index < played
+                                         ? CDS.clay : ink.opacity(0.22)))
+                                .frame(width: index == head ? 3 : 2,
+                                       height: index == head ? barHeight
+                                           : RecordingBars.height(level))
+                                .frame(height: barHeight, alignment: .bottom)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .frame(width: NoteCardLayout.recordingTrackWidth,
+                           height: barHeight, alignment: .bottom)
+
+                    Text(AudioClock.label(recording.seconds))
+                        .font(.system(size: 9, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(ink.opacity(0.5))
+                        .lineLimit(1)
+                        .frame(width: NoteCardLayout.recordingClockWidth,
+                               height: barHeight, alignment: .bottomTrailing)
+                        // Digits carry a little room below their baseline;
+                        // without this they read a point above the zero line.
+                        .offset(y: 1.5)
+                }
+                .padding(.horizontal, NoteCardLayout.recordingSidePad)
+                .padding(.top, 6)
+                Spacer(minLength: 0)
+            }
+            .frame(height: NoteCardLayout.recordingHeight)
+            .allowsHitTesting(false)
+        }
+    }
+
     private func noteFooter(_ note: Note) -> some View {
         let tint = note.tint
         return VStack(spacing: 0) {

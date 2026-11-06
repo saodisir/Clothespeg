@@ -89,6 +89,15 @@ struct GrabArea: NSViewRepresentable {
             diagLog("Reminder acknowledged: \(id)")
             line.acknowledgeReminder(id)
         }
+        view.hasRecording = item.payload.note?.recording != nil
+        view.onPlayRecording = {
+            guard let recording = item.payload.note?.recording else { return }
+            MainActor.assumeIsolated { NotePlayer.shared.toggle(recording) }
+        }
+        view.onSeekRecording = { fraction in
+            guard let recording = item.payload.note?.recording else { return }
+            MainActor.assumeIsolated { NotePlayer.shared.seek(recording, to: fraction) }
+        }
         // The two decks answer one set of gestures, whatever they hold (the
         // 2026-10-17 unification): a press copies, a double click pastes to
         // the app in front, a long press opens the editor — the system
@@ -188,14 +197,22 @@ struct GrabArea: NSViewRepresentable {
                     line.setPinned(id, !line.isPinned(id))
                 })
             }
-            // Text has no file to open, annotate or reveal, so those items
-            // would be dead — with one exception: a link is a text card whose
-            // words name a place, and the browser is where it goes. Markup
-            // asks before it shows: the system editor opens pictures and
-            // PDFs, and a menu item that ended in Preview for a folder was
-            // one promise the item could not keep.
+            // Every card answers a double click by pasting to the app in
+            // front, so every card gets the same third door here. It used to
+            // sit inside the "has a file" branch, which left text, colour,
+            // link and note cards with a gesture the menu could not name.
+            // `line.open` is a paste, not a window: it copies the card and
+            // sends ⌘V. "Open" promised a viewer that never appeared, and on
+            // the Finder desktop there is nowhere to paste, so the press
+            // looked like it did nothing at all.
+            menu.addItem(ClosureMenuItem(L("Paste into Frontmost App")) { line.open(id) })
+            // Text has no file to annotate or reveal, so those items would be
+            // dead — with one exception: a link is a text card whose words
+            // name a place, and the browser is where it goes. Markup asks
+            // before it shows: the system editor opens pictures and PDFs, and
+            // a menu item that ended in Preview for a folder was one promise
+            // the item could not keep.
             if !isText {
-                menu.addItem(ClosureMenuItem(L("Open")) { line.open(id) })
                 if let url = item.url, Markup.canEdit(url) {
                     menu.addItem(ClosureMenuItem(L("Markup")) { line.markup(id) })
                 }
@@ -213,18 +230,23 @@ struct GrabArea: NSViewRepresentable {
                 // first line. The card stays — nothing was moved.
                 menu.addItem(ClosureMenuItem(L("Save to Desktop")) { line.saveTextToDesktop(id) })
             }
-            menu.addItem(.separator())
-            // No "take down" here any more: the cross in the corner is the way
-            // a card leaves the line, and a menu item for the same gesture was
-            // one more word doing one job the pointer already does. A pinned
-            // card keeps neither item: the pin is a promise to keep it, and
-            // the menu is not a side door around the promise.
+            // A pinned card keeps no remove item: the pin is a promise to
+            // keep it, and the menu is not a side door around it. The
+            // separator belongs to the item, not to the menu, or a pinned
+            // card ends with a line under nothing.
             if !line.isPinned(id) {
-                if inInbox {
-                    menu.addItem(ClosureMenuItem(L("Discard")) { line.discard(id) })
-                } else if !isText {
-                    menu.addItem(ClosureMenuItem(L("Move to Trash")) { line.trash(id) })
-                }
+                menu.addItem(.separator())
+                // One remove item, through the same door the corner cross
+                // uses. Only its name changes: a file card is a shortcut to
+                // somebody else's file, so taking it down must not sound like
+                // deleting anything; the app's own picture, a snippet and a
+                // note really do go away. `discard` already knows which is
+                // which — trashing the Inbox copy, dropping an external
+                // reference, or deleting the note. The old "Move to Trash"
+                // item called `trash` directly and deleted the user's
+                // original file; text and notes had no remove item here at all.
+                let title = item.isFile ? L("Remove Card") : L("Delete")
+                menu.addItem(ClosureMenuItem(title) { line.discard(id) })
             }
             return menu
         }
@@ -263,6 +285,10 @@ final class GrabView: NSView, NSDraggingSource {
     private var startedDrag = false
     private var holdTimer: Timer?
     private var didLongPress = false
+    /// A press that went down on the voice track. It owns the drag until
+    /// the mouse comes up, so the card is not carried off the line by the
+    /// same gesture that is choosing a place in the recording.
+    private var seeking = false
 
     /// How long you hold before Markup opens. Long enough not to fire on a
     /// slow click, short enough to feel deliberate.
@@ -329,6 +355,38 @@ final class GrabView: NSView, NSDraggingSource {
     /// live while `isRinging` says so.
     var onAcknowledge: () -> Void = {}
 
+    /// The note's voice strip, above the caption and below the words. It is
+    /// a fixed band rather than a row: the words scroll under it and it does
+    /// not move, so its place is worked out from the paper's height alone.
+    /// The whole band is the button, not only the small play glyph — a hand
+    /// on a card this narrow should not have to find an eighteen-point mark.
+    var hasRecording = false
+    var onPlayRecording: () -> Void = {}
+    var onSeekRecording: (Double) -> Void = { _ in }
+
+    private var recordingRect: CGRect? {
+        guard hasRecording, paperHeight > 0 else { return nil }
+        return CGRect(
+            x: 0,
+            y: paperHeight - NoteCardLayout.bottomPad - NoteCardLayout.captionHeight
+                - NoteCardLayout.recordingHeight,
+            width: NoteCardLayout.width,
+            height: NoteCardLayout.recordingHeight)
+    }
+
+    /// The part of the strip that is the slider. Its geometry is the same
+    /// numbers the view draws the bars with, so the place a finger names
+    /// and the place the clay colour reaches are the same place.
+    private var recordingTrack: CGRect? {
+        guard hasRecording, paperHeight > 0 else { return nil }
+        return CGRect(
+            x: NoteCardLayout.recordingTrackMinX,
+            y: paperHeight - NoteCardLayout.bottomPad - NoteCardLayout.captionHeight
+                - NoteCardLayout.recordingHeight,
+            width: NoteCardLayout.recordingTrackWidth,
+            height: NoteCardLayout.recordingHeight)
+    }
+
     /// Where 知道了 is, in paper coordinates.
     ///
     /// The caption row sits at the card's fixed bottom, below the scroll — a
@@ -394,6 +452,24 @@ final class GrabView: NSView, NSDraggingSource {
             onAcknowledge()
             return
         }
+        // Before the tick: the strip's left end sits in the marker column,
+        // and a press there would otherwise flip the last row's square.
+        // Before the double click and the long press too, so a press on the
+        // voice is only ever a press on the voice.
+        if isInRecording(event) {
+            downPoint = nil
+            if event.clickCount == 1 {
+                if isInRecordingTrack(event) {
+                    // The left capsule still plays or pauses; everything
+                    // from the first bar to the last is a position.
+                    seeking = true
+                    onSeekRecording(recordingFraction(event))
+                } else {
+                    onPlayRecording()
+                }
+            }
+            return
+        }
         // Before the double click and before the press that copies. A tick is
         // the one press on a card that means something other than "use this",
         // and it is the press that gets made most often, so it is asked about
@@ -452,6 +528,41 @@ final class GrabView: NSView, NSDraggingSource {
         return nil
     }
 
+    /// The press in the paper's own coordinates: x from its left edge, y
+    /// down from its top edge, which is how the card is laid out.
+    private func paperPoint(_ event: NSEvent) -> CGPoint {
+        let p = convert(event.locationInWindow, from: nil)
+        return CGPoint(x: p.x - Frame.inset,
+                       y: (bounds.height - p.y) - Frame.inset)
+    }
+
+    private func isInRecording(_ event: NSEvent) -> Bool {
+        guard let rect = recordingRect else { return false }
+        return rect.contains(paperPoint(event))
+    }
+
+    private func isInRecordingTrack(_ event: NSEvent) -> Bool {
+        guard let track = recordingTrack else { return false }
+        let p = paperPoint(event)
+        // Past the last bar and under the clock counts too: the whole right
+        // hand side of the strip is the slider, and a press out there asks
+        // for the end of the recording rather than falling back to a toggle.
+        // Four points of grace at the left end: the gap between the capsule
+        // and the first bar is part of the slider, not a place where a
+        // press falls back to "play from the start".
+        return p.y >= track.minY && p.y <= track.maxY
+            && p.x >= track.minX - 4
+            && p.x <= NoteCardLayout.width - NoteCardLayout.recordingSidePad
+    }
+
+    /// A number between zero and one: how far along the wave the press
+    /// landed. The player turns it into a moment of the recording.
+    private func recordingFraction(_ event: NSEvent) -> Double {
+        guard let track = recordingTrack else { return 0 }
+        let x = paperPoint(event).x - track.minX
+        return Double(min(1, max(0, x / track.width)))
+    }
+
     /// Whether this press landed on the ringing card's 知道了.
     ///
     /// Asked live, both halves: whether the card is ringing now, and where on
@@ -472,6 +583,10 @@ final class GrabView: NSView, NSDraggingSource {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if seeking {
+            onSeekRecording(recordingFraction(event))
+            return
+        }
         guard let start = downPoint, !startedDrag else { return }
         let p = event.locationInWindow
         guard hypot(p.x - start.x, p.y - start.y) > 4, !didLongPress else { return }
@@ -596,6 +711,7 @@ final class GrabView: NSView, NSDraggingSource {
             endPress()
             downPoint = nil
             didLongPress = false
+            seeking = false
         }
         // A single press on a clipboard card copies it — the gesture the card
         // is most for, and the same path the menu's Copy takes. The first

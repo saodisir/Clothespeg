@@ -390,6 +390,14 @@ enum EditorPreview {
         let name = ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_TOOL"]
         controller.select(name.flatMap(EditorTool.init(rawValue:)) ?? .select)
 
+        // A frame left standing under V, with no hand in the picture. The
+        // grips are the state a normal shot can never reach: drawing one ends
+        // in a crop, and switching tools used to throw the frame away.
+        if ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_CROPVISUAL"] != nil {
+            controller.previewCrop(CGRect(x: 180, y: 140, width: 620, height: 420))
+            controller.select(.select)
+        }
+
         let window = controller.previewWindow
         window.setContentSize(size)
         guard let view = window.contentView else { return }
@@ -415,6 +423,9 @@ enum EditorPreview {
         }
 
         if ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_DRILL"] != nil {
+            // Adjusting a frame must leave the picture alone, so it goes first
+            // and the double-click drill still sees the file it was given.
+            cropAdjustDrill(controller, window: window)
             cropDrill(controller, window: window)
         }
 
@@ -439,6 +450,23 @@ enum EditorPreview {
 
         if ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_INK"] != nil {
             inkDrill(controller)
+        }
+
+        // The loupe is a hover state, and a still picture has no mouse. This
+        // puts it on a known pixel before the shot, so the grid, the outlined
+        // square and the hex are all in the picture being looked at.
+        if let eye = ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_EYE"] {
+            let parts = eye.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2,
+               let canvas = view.subviews.first(where: { $0 is EditorCanvasView })
+                   as? EditorCanvasView {
+                controller.select(.eyedropper)
+                view.layoutSubtreeIfNeeded()
+                canvas.previewHover(x: CGFloat(parts[0]), y: CGFloat(parts[1]))
+                canvas.needsDisplay = true
+            } else {
+                print("eye: WRONG — expected two picture coordinates, got \(eye)")
+            }
         }
 
         // The title bar is part of what is being looked at now: the file name
@@ -478,6 +506,17 @@ enum EditorPreview {
         }
         reportFitting(view)
         reportBars(controller, at: size)
+        reportColourSampler()
+        reportCropPixels()
+        reportColourNeighbourhood()
+        reportColourScale()
+        reportTagSize()
+
+        if ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_EYE"] != nil {
+            tagSizePresetDrill(controller, window: window)
+            tagPickDrill(controller, window: window)
+            eyeDrill(controller, window: window)
+        }
 
         if let second = ProcessInfo.processInfo.environment["CLOTHESPEG_EDITOR_PREVIEW_CHECK"] {
             checkEditor(url: url, second: URL(fileURLWithPath: second))
@@ -549,6 +588,79 @@ enum EditorPreview {
             if let found = button(tipped: tip, in: sub) { return found }
         }
         return nil
+    }
+
+    /// Draws a frame under C, presses V, and adjusts the frame V left standing.
+    /// The checks are the frame itself rather than the picture: an applied crop
+    /// would leave the next drill measuring a different image, so the frame is
+    /// dismissed with Escape at the end.
+    private static func cropAdjustDrill(_ controller: EditorWindowController, window: NSWindow) {
+        guard let canvas = window.contentView?.subviews.first(where: { $0 is EditorCanvasView })
+                as? EditorCanvasView else {
+            print("crop adjust: WRONG — no canvas")
+            return
+        }
+        controller.previewZoom(nil)
+        controller.select(.crop)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+            canvas.convert(controller.previewViewPoint(x, y), to: nil)
+        }
+        func send(_ type: NSEvent.EventType, _ at: NSPoint) {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: at, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+            switch type {
+            case .leftMouseDown: canvas.mouseDown(with: event)
+            case .leftMouseDragged: canvas.mouseDragged(with: event)
+            case .leftMouseUp: canvas.mouseUp(with: event)
+            default: break
+            }
+        }
+        func drag(_ from: NSPoint, _ to: NSPoint) {
+            send(.leftMouseDown, from)
+            send(.leftMouseDragged, to)
+            send(.leftMouseUp, to)
+        }
+
+        drag(point(60, 60), point(260, 200))
+        let drawn = controller.previewCropRect
+        controller.select(.select)
+        let afterV = controller.previewCropRect
+        guard let frame = afterV else {
+            print("crop adjust: WRONG — V threw the frame away")
+            return
+        }
+        // The bottom-right grip sits at (maxX, minY) in picture pixels, which
+        // is bottom-left space: pulling it down and right grows the frame.
+        drag(point(frame.maxX, frame.minY), point(frame.maxX + 40, frame.minY - 30))
+        let resized = controller.previewCropRect
+        if let middle = resized {
+            drag(point(middle.midX, middle.midY), point(middle.midX + 20, middle.midY + 10))
+        }
+        let moved = controller.previewCropRect
+
+        if let esc = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                      timestamp: ProcessInfo.processInfo.systemUptime,
+                                      windowNumber: window.windowNumber, context: nil,
+                                      characters: "", charactersIgnoringModifiers: "",
+                                      isARepeat: false, keyCode: 53) {
+            canvas.keyDown(with: esc)
+        }
+        let cleared = controller.previewCropRect == nil
+
+        let kept = drawn != nil && afterV == drawn
+        let grew = resized.map { $0.width > frame.width + 20 && $0.height > frame.height + 15 } ?? false
+        let shifted = moved.map { $0.origin.x > (resized?.origin.x ?? 0) + 10 } ?? false
+        let shape = [drawn, afterV, resized, moved].map {
+            $0.map { "\(Int($0.width))×\(Int($0.height))@\(Int($0.minX)),\(Int($0.minY))" } ?? "nil"
+        }.joined(separator: " → ")
+        print(kept && grew && shifted && cleared
+              ? "crop adjust: V kept \(shape), grip + move, esc cleared ok"
+              : "crop adjust: WRONG — \(shape) (kept \(kept), grew \(grew), moved \(shifted), cleared \(cleared))")
     }
 
     /// Draws a crop frame and double-clicks it, the way a hand would.
@@ -740,6 +852,19 @@ enum EditorPreview {
               ? "zoom: the keys answer"
               : "zoom: FAILED — ⌘0 did not reach a hundred percent")
 
+        // Two different meanings of "actual size" must both be on offer, and
+        // the screen one is a view-only rung: 2x -> 0.5, with scale 1 still
+        // meaning one picture pixel to one point for every mark and export.
+        let titles = controller.previewZoomMenuTitles
+        let screenRung = titles.contains { $0.contains(L("Screen Actual Size")) }
+        let labelled = titles.contains { $0.hasPrefix("100%") && $0.contains(L("Pixel for pixel")) }
+        let half = EditorWindowController.screenActualZoom(for: 2)
+        let rungs = titles.filter { $0.contains("%") }
+        let keepsRungs = ["50%", "200%", "400%"].allSatisfy { rungs.contains($0) }
+        print(screenRung && labelled && keepsRungs && half == 0.5
+              ? "zoom menu: \(rungs.joined(separator: " / "))"
+              : "zoom menu: WRONG — \(rungs), 2x gave \(half)")
+
         // Ten-point steps, and the first one snaps to a round ten: a fit that
         // happened to land on 73% steps to 80%, not to 83%.
         controller.previewZoom(0.73)
@@ -835,7 +960,8 @@ enum EditorPreview {
               ? "hints: the switch reaches a window that is already open"
               : "hints: FAILED — the switch did not reach the corners")
 
-        // One line, not eleven heights. A chip is a 30 × 26 square and nothing
+        // One line, not one height per chip. A tool may be added and the check
+        // has to keep counting for itself. A chip is a 30 × 26 square and nothing
         // in it may push that square around — but a borderless `NSButton` still
         // reports the bezel it would have had, and the stack view honours that
         // report. The failure is silent, per-chip, and worst on the one glyph
@@ -846,8 +972,485 @@ enum EditorPreview {
         print("hints: the corners are drawn at "
               + lines.map { String(format: "%.1f", $0) }.joined(separator: " "))
         print(lines.count == asked.count && spread < 0.5
-              ? "hints: all eleven on one line (spread \(String(format: "%.1f", spread)) pt)"
+              ? "hints: all \(asked.count) on one line (spread \(String(format: "%.1f", spread)) pt)"
               : "hints: FAILED — the corners span \(String(format: "%.1f", spread)) pt")
+    }
+
+    /// A picture whose two halves are known, so the sampler cannot get away
+    /// with reading the wrong row: the top is blue, the bottom is red. The
+    /// rep counts its rows from the top while the canvas draws them from the
+    /// bottom, and this is the one check that can see the difference.
+    private static func reportColourSampler() {
+        let side = 8
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            print("colour: WRONG — could not build the test picture")
+            return
+        }
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side / 2))
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: side / 2, width: side, height: side / 2))
+        guard let image = ctx.makeImage() else {
+            print("colour: WRONG — could not finish the test picture")
+            return
+        }
+        let upper = ColourSampler.colour(at: CGPoint(x: 2, y: 7), in: image)
+            .map(ColourSampler.hex) ?? "nil"
+        let lower = ColourSampler.colour(at: CGPoint(x: 2, y: 0), in: image)
+            .map(ColourSampler.hex) ?? "nil"
+        print(upper == "#0000FF" && lower == "#FF0000"
+              ? "colour: top \(upper), bottom \(lower) ok"
+              : "colour: WRONG — top \(upper), bottom \(lower) (expected #0000FF / #FF0000)")
+    }
+
+    /// A crop is a reading of the picture's rows, not of the rectangle's
+    /// arithmetic. The frame and every mark are measured from the bottom-left,
+    /// while `CGImage.cropping(to:)` counts rows from the top; a picture split
+    /// into two known halves is the only check that can see which half came
+    /// back. Checking the resulting size alone cannot: the wrong half is
+    /// exactly the same number of pixels.
+    private static func reportCropPixels() {
+        let side = 8
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            print("crop pixels: WRONG — could not build the test picture")
+            return
+        }
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side / 2))
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: side / 2, width: side, height: side / 2))
+        guard let image = ctx.makeImage() else {
+            print("crop pixels: WRONG — could not finish the test picture")
+            return
+        }
+        let lower = EditorDocument(source: image)
+        let upper = EditorDocument(source: image)
+        let croppedBottom = lower.crop(to: CGRect(x: 0, y: 0, width: side, height: side / 2))
+        let croppedTop = upper.crop(to: CGRect(x: 0, y: side / 2, width: side, height: side / 2))
+        let bottom = ColourSampler.colour(at: CGPoint(x: 2, y: 2), in: lower.source)
+            .map(ColourSampler.hex) ?? "nil"
+        let top = ColourSampler.colour(at: CGPoint(x: 2, y: 2), in: upper.source)
+            .map(ColourSampler.hex) ?? "nil"
+        let ok = croppedBottom && croppedTop && bottom == "#FF0000" && top == "#0000FF"
+        print(ok ? "crop pixels: bottom \(bottom), top \(top) ok"
+                 : "crop pixels: WRONG — bottom \(bottom), top \(top) (expected #FF0000 / #0000FF)")
+    }
+
+    /// A tag is drawn in picture pixels and the canvas scales the whole picture
+    /// at once. On a 4K picture a fixed 148×44 tag comes out a quarter of the
+    /// size it has on a 400-pixel one. Counting the opaque run across the pill
+    /// on a fitted screen is the check, not the arithmetic that claims it.
+    private static func reportColourScale() {
+        let style = EditorTool.eyedropper.defaultStyle
+        let small = ColourTagMark(anchor: CGPoint(x: 120, y: 90), colour: .blue,
+                                  imageSize: CGSize(width: 400, height: 300), style: style)
+        let big = ColourTagMark(anchor: CGPoint(x: 1200, y: 900), colour: .blue,
+                                imageSize: CGSize(width: 4000, height: 3000), style: style)
+        let cloned = (big.clone() as? ColourTagMark)?.unit ?? -1
+        let units = small.unit == 1 && big.unit == 4 && cloned == 4
+        let geometry = Int(small.pillForTesting.width) == 148
+            && Int(small.pillForTesting.height) == 44
+            && Int(big.pillForTesting.width) == 592
+            && Int(big.pillForTesting.height) == 176
+        let smallFitted = fittedPillWidth(400, into: 900) ?? -1
+        let bigFitted = fittedPillWidth(4000, into: 900) ?? -1
+        let fitted = smallFitted > 0 && bigFitted > 0
+            && abs(smallFitted - bigFitted) <= smallFitted / 5
+        print(units && geometry && fitted
+              ? "tag scale: unit 1→4, pill 148×44→592×176, fitted \(smallFitted)→\(bigFitted) pt, "
+                + "clone kept \(cloned) ok"
+              : "tag scale: WRONG (unit \(small.unit)/\(big.unit)/\(cloned), "
+                + "pill \(Int(small.pillForTesting.width))×\(Int(small.pillForTesting.height))"
+                + "→\(Int(big.pillForTesting.width))×\(Int(big.pillForTesting.height)), "
+                + "fitted \(smallFitted)→\(bigFitted))")
+    }
+
+    /// The size slider is not a second drawing: it is a multiplier on the very
+    /// same `unit` the picture chose. Draw it at 1.0 and 2.0 and measure the
+    /// opaque run, so a slider that only changes its caption cannot pass.
+    private static func reportTagSize() {
+        let style = EditorTool.eyedropper.defaultStyle
+        let tag = ColourTagMark(anchor: CGPoint(x: 120, y: 90), colour: .blue,
+                                imageSize: CGSize(width: 400, height: 300), style: style)
+        let one = tag.pillForTesting.width
+        tag.style.width = 2
+        let two = tag.pillForTesting.width
+        let cloneKeeps = (tag.clone() as? ColourTagMark)?.pillForTesting.width == two
+        // A tag drawn bigger but still hit-tested at its old size would be
+        // unclickable along its own right-hand edge.
+        let farEdge = CGPoint(x: tag.pillForTesting.maxX - 4,
+                              y: tag.pillForTesting.midY)
+        let hit = tag.hitTest(farEdge, slack: 0)
+        let boundsCover = tag.bounds.contains(farEdge)
+        let fittedOne = fittedPillWidth(400, into: 900, multiplier: 1) ?? -1
+        let fittedTwo = fittedPillWidth(400, into: 900, multiplier: 2) ?? -1
+        let doubled = fittedOne > 0 && abs(fittedTwo - fittedOne * 2) <= fittedOne / 5
+        let range = StyleField.tagScale.range(for: .eyedropper)
+        let ok = one == 148 && two == 296 && cloneKeeps && hit && boundsCover && doubled
+            && range.lowerBound == 0.5 && range.upperBound == 2.5 && style.width == 1
+        print(ok
+              ? "tag size: default 1.0x, slider 2.0x → pill 148→296, fitted \(fittedOne)→\(fittedTwo) pt, "
+                + "clone/hit/bounds followed ok"
+              : "tag size: WRONG — pill \(Int(one))→\(Int(two)), fitted \(fittedOne)→\(fittedTwo), "
+                + "clone \(cloneKeeps), hit \(hit), bounds \(boundsCover), default \(style.width), "
+                + "range \(range.lowerBound)…\(range.upperBound)")
+    }
+
+    /// Draws one tag the way the window would — the picture fitted into a fixed
+    /// width, never enlarged — and measures the opaque run across its pill.
+    private static func fittedPillWidth(_ imageSide: CGFloat, into window: CGFloat,
+                                        multiplier: CGFloat = 1) -> Int? {
+        let size = CGSize(width: imageSide, height: imageSide * 0.75)
+        let tag = ColourTagMark(anchor: CGPoint(x: size.width * 0.3, y: size.height * 0.5),
+                                colour: NSColor(srgbRed: 0.2, green: 0.4, blue: 0.9, alpha: 1),
+                                imageSize: size, style: EditorTool.eyedropper.defaultStyle)
+        tag.style.width = multiplier
+        let scale = min(window / size.width, 1)
+        let width = Int(window)
+        let height = max(Int(size.height * scale), 1)
+        guard let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue),
+              let data = ctx.data else { return nil }
+        ctx.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.scaleBy(x: scale, y: scale)
+        tag.draw(in: ctx)
+        ctx.flush()
+        let rowBytes = ctx.bytesPerRow
+        let bytes = data.assumingMemoryBound(to: UInt8.self)
+        // Sweep every row rather than trusting a computed middle line: a
+        // bitmap context's origin is its own business, and the widest run is
+        // the pill's full width wherever it landed.
+        var best = 0
+        for row in 0..<height {
+            let base: Int = row * rowBytes
+            var run = 0
+            for x in 0..<width {
+                let pixel: Int = base + x * 4
+                let alpha = Int(bytes[pixel + 3])
+                if alpha > 180 { run += 1; best = max(best, run) } else { run = 0 }
+            }
+        }
+        return best
+    }
+
+    /// The loupe asks for eleven pixels around the pointer, not one. A square
+    /// that comes back the wrong size, or whose middle is a different pixel
+    /// from the one-pixel reading, would draw a grid that lies about the click.
+    /// Both samples sit on the far edge of the picture, where most of the
+    /// neighbourhood is outside it and has to be filled with transparency.
+    private static func reportColourNeighbourhood() {
+        let side = 8
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            print("neighbourhood: WRONG — could not build the test picture")
+            return
+        }
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side / 2))
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: side / 2, width: side, height: side / 2))
+        guard let image = ctx.makeImage() else {
+            print("neighbourhood: WRONG — could not finish the test picture")
+            return
+        }
+        let upper = CGPoint(x: 3, y: 7)
+        let lower = CGPoint(x: 3, y: 0)
+        guard let top = ColourSampler.neighbourhood(in: image, around: upper, radius: 5),
+              let bottom = ColourSampler.neighbourhood(in: image, around: lower, radius: 5) else {
+            print("neighbourhood: WRONG — the edge of the picture gave no reading")
+            return
+        }
+        let sizeOK = [top.image.width, top.image.height, bottom.image.width, bottom.image.height]
+            .allSatisfy { $0 == 11 }
+        let topHex = ColourSampler.hex(top.centre)
+        let bottomHex = ColourSampler.hex(bottom.centre)
+        let singleTop = ColourSampler.colour(at: upper, in: image).map(ColourSampler.hex) ?? "nil"
+        let singleBottom = ColourSampler.colour(at: lower, in: image).map(ColourSampler.hex) ?? "nil"
+        let ok = sizeOK && topHex == "#0000FF" && bottomHex == "#FF0000"
+            && topHex == singleTop && bottomHex == singleBottom
+        print(ok
+              ? "neighbourhood: 11×11 at both edges, top \(topHex), bottom \(bottomHex) ok"
+              : "neighbourhood: WRONG — \(top.image.width)×\(top.image.height), "
+                + "top \(topHex) vs single \(singleTop), bottom \(bottomHex) vs single \(singleBottom)")
+
+        // A tag is a reading pinned to a pixel. Move it from the blue half to
+        // the red one and the hex has to come from the new pixel, while a clone
+        // made before the move keeps the value it was born with.
+        let tag = ColourTagMark(anchor: upper, colour: top.centre,
+                                imageSize: CGSize(width: side, height: side),
+                                style: EditorTool.eyedropper.defaultStyle)
+        let snapshot = (tag.clone() as? ColourTagMark)?.hex ?? "nil"
+        tag.translated(by: CGSize(width: 0, height: -7))
+        tag.resample(from: image)
+        let moved = tag.hex
+        print(snapshot == "#0000FF" && moved == "#FF0000"
+              ? "colour tag: \(snapshot) → \(moved) after a move, clone kept \(snapshot) ok"
+              : "colour tag: WRONG — \(snapshot) → \(moved), expected #0000FF → #FF0000")
+    }
+
+    /// The picker's size is a setting for this visit to the tool: I opens the
+    /// slider at 1.0x, a value chosen before the click lands on the new tag,
+    /// and none of it survives into the style file or the next press of I.
+    private static func tagSizePresetDrill(_ controller: EditorWindowController,
+                                           window: NSWindow) {
+        guard let canvas = window.contentView?.subviews.first(where: { $0 is EditorCanvasView })
+                as? EditorCanvasView,
+              let document = canvas.document else {
+            print("tag size preset: WRONG — no canvas or document")
+            return
+        }
+        let stored = UserDefaults.standard.object(forKey: EditorStyleStore.defaultsKey)
+        defer {
+            if let stored {
+                UserDefaults.standard.set(stored, forKey: EditorStyleStore.defaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: EditorStyleStore.defaultsKey)
+            }
+        }
+        controller.select(.eyedropper)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let start = controller.previewPrimaryCaption
+        let drawerOpen = controller.previewDrawerHidden == false
+        let preset = controller.previewSlidePrimary(to: 1.5)
+        // A drag does not write the style file; letting go does. Read after the
+        // release, and read the file itself — `load()` deliberately drops this
+        // key, so asking it would be a test that can never fail.
+        controller.previewReleasePrimary()
+        var remembered = false
+        if let data = UserDefaults.standard.data(forKey: EditorStyleStore.defaultsKey),
+           let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            remembered = raw["eyedropper"] != nil
+        }
+
+        // A caption that says 1.5 is not proof the tag got it: the mark is
+        // built from canvas.style, so click a known pixel and measure the pill.
+        let x: CGFloat = 140, y: CGFloat = 110
+        let location = canvas.convert(canvas.viewPoint(x: x, y: y), to: nil)
+        func send(_ type: NSEvent.EventType) {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: location, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+            if type == .leftMouseDown { canvas.mouseDown(with: event) }
+            if type == .leftMouseUp { canvas.mouseUp(with: event) }
+        }
+        let before = document.marks.count
+        send(.leftMouseDown)
+        send(.leftMouseUp)
+        let pill = (document.marks.last { $0 is ColourTagMark } as? ColourTagMark)?
+            .pillForTesting.width ?? -1
+        document.undo()
+
+        controller.select(.select)
+        controller.select(.eyedropper)
+        let again = controller.previewPrimaryCaption
+        let expected = 148 * ColourTagMark.unit(for: document.pixelSize) * 1.5
+        let ok = drawerOpen && start.contains("1.0") && preset.contains("1.5")
+            && !remembered && document.marks.count == before
+            && abs(pill - expected) <= 1 && again.contains("1.0")
+        print(ok
+              ? "tag size preset: I opens at \(start), 1.5x → pill \(Int(pill)) pt, "
+                + "not stored, next I → \(again) ok"
+              : "tag size preset: WRONG — start \(start), preset \(preset), "
+                + "drawer \(drawerOpen), remembered \(remembered), "
+                + "pill \(Int(pill)) vs \(Int(expected)), next I \(again), "
+                + "marks \(before) → \(document.marks.count)")
+    }
+
+    /// A second click on a tag the picker just made used to draw another tag
+    /// over it. A still picture cannot show this: the second click has to leave
+    /// the mark count alone *and* put the tag in hand, because the size slider
+    /// has no other way to reach a tag that is already on the picture.
+    ///
+    /// The tag is given a size the tool does not have before it is picked up.
+    /// A drawer still answering 1.0x would mean the selection was reported but
+    /// never used, which is the other half of the bug.
+    private static func tagPickDrill(_ controller: EditorWindowController,
+                                     window: NSWindow) {
+        guard let canvas = window.contentView?.subviews.first(where: { $0 is EditorCanvasView })
+                as? EditorCanvasView,
+              let document = canvas.document else {
+            print("tag pick: WRONG — no canvas or document")
+            return
+        }
+        controller.previewZoom(nil)
+        controller.select(.eyedropper)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        func click(_ picture: CGPoint) {
+            let location = canvas.convert(canvas.viewPoint(x: picture.x, y: picture.y), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil,
+                    eventNumber: 0, clickCount: 1, pressure: 1) else { continue }
+                if type == .leftMouseDown { canvas.mouseDown(with: event) }
+                if type == .leftMouseUp { canvas.mouseUp(with: event) }
+            }
+        }
+
+        let before = document.marks.count
+        click(CGPoint(x: 140, y: 110))
+        guard let tag = document.marks.last(where: { $0 is ColourTagMark }) as? ColourTagMark,
+              document.marks.count == before + 1 else {
+            print("tag pick: WRONG — the first click did not make a tag")
+            return
+        }
+        tag.style.width = 2
+        let pill = tag.pillForTesting
+
+        click(CGPoint(x: pill.midX, y: pill.midY))
+        let afterPicked = document.marks.count
+        let picked = canvas.selected === tag
+        let caption = controller.previewPrimaryCaption
+
+        // The fix must not turn the picker into a tool that only selects: a
+        // click away from every tag still reads that pixel and draws a new one.
+        click(CGPoint(x: 620, y: 520))
+        let afterBlank = document.marks.count
+        let dropped = canvas.selected == nil
+
+        document.undo()
+        document.undo()
+        controller.select(.select)
+
+        let ok = picked && afterPicked == before + 1 && caption.contains("2.0")
+            && afterBlank == afterPicked + 1 && dropped
+        print(ok
+              ? "tag pick: I click → 1 tag, click the tag → selected at \(caption), "
+                + "click away → 2 tags ok"
+              : "tag pick: WRONG — picked \(picked), marks \(before) → \(afterPicked) → "
+                + "\(afterBlank), caption \(caption), dropped \(dropped)")
+    }
+
+    /// The colour picker is three moves: a hover reads a pixel, a click writes
+    /// the tag down, undo takes it back. Real mouse events at a known picture
+    /// point are the only way to see `draft → document.add` happen, since
+    /// `isWorthKeeping` quietly drops any mark it does not recognise.
+    private static func eyeDrill(_ controller: EditorWindowController, window: NSWindow) {
+        guard let canvas = window.contentView?.subviews.first(where: { $0 is EditorCanvasView })
+                as? EditorCanvasView,
+              let document = canvas.document else {
+            print("eye: WRONG — no canvas or document")
+            return
+        }
+        controller.previewZoom(nil)
+        controller.select(.eyedropper)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        let x: CGFloat = 120, y: CGFloat = 90
+        guard x < document.pixelSize.width, y < document.pixelSize.height else {
+            print("eye: WRONG — the test pixel is outside the picture")
+            return
+        }
+        canvas.previewHover(x: x, y: y)
+        let loupe = canvas.previewLoupeHex ?? "nil"
+        let before = document.marks.count
+        let location = canvas.convert(canvas.viewPoint(x: x, y: y), to: nil)
+
+        func send(_ type: NSEvent.EventType) {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: location, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+            switch type {
+            case .leftMouseDown: canvas.mouseDown(with: event)
+            case .leftMouseUp: canvas.mouseUp(with: event)
+            default: break
+            }
+        }
+        send(.leftMouseDown)
+        send(.leftMouseUp)
+        let after = document.marks.count
+        let tag = canvas.previewLastColourHex ?? "nil"
+        document.undo()
+        let undone = document.marks.count
+        document.redo()
+        let redone = document.marks.count
+
+        let ok = loupe != "nil" && after == before + 1 && tag == loupe
+            && undone == before && redone == after
+        print(ok
+              ? "eye: hover \(loupe), click → \(after - before) tag (\(tag)), "
+                + "undo → \(undone), redo → \(redone) ok"
+              : "eye: WRONG — hover \(loupe), marks \(before) → \(after) → "
+                + "undo \(undone) → redo \(redone), tag \(tag)")
+
+        // Moving the tag with the cursor tool takes a fresh reading. Look for a
+        // pixel of a different colour first: a drag between two patches of the
+        // same beige would prove nothing.
+        controller.select(.select)
+        var destination: CGPoint?
+        for candidate in [CGPoint(x: 512, y: 512), CGPoint(x: 300, y: 270),
+                          CGPoint(x: 700, y: 300), CGPoint(x: 512, y: 700)] {
+            guard let hex = ColourSampler.colour(at: candidate, in: document.source)
+                .map(ColourSampler.hex), hex != loupe else { continue }
+            destination = candidate
+            break
+        }
+        guard let target = destination else {
+            print("eye: WRONG — no pixel of a different colour to drag onto")
+            return
+        }
+        let from = canvas.convert(canvas.viewPoint(x: x, y: y), to: nil)
+        let to = canvas.convert(canvas.viewPoint(x: target.x, y: target.y), to: nil)
+        func sendAt(_ type: NSEvent.EventType, _ at: NSPoint) {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: at, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1) else { return }
+            switch type {
+            case .leftMouseDown: canvas.mouseDown(with: event)
+            case .leftMouseDragged: canvas.mouseDragged(with: event)
+            case .leftMouseUp: canvas.mouseUp(with: event)
+            default: break
+            }
+        }
+        sendAt(.leftMouseDown, from)
+        sendAt(.leftMouseDragged, to)
+        sendAt(.leftMouseUp, to)
+        let movedHex = canvas.previewLastColourHex ?? "nil"
+        let expected = ColourSampler.colour(at: target, in: document.source)
+            .map(ColourSampler.hex) ?? "nil"
+        print(movedHex == expected && movedHex != tag
+              ? "eye: dragged tag \(tag) → \(movedHex), matches the pixel it points at ok"
+              : "eye: WRONG — dragged tag \(movedHex), expected \(expected)")
+
+        // The drag left the tag in hand, which is the one state the size
+        // slider acts on. Read the caption, move the knob, then undo: the
+        // slider has to reach the drawing and undo has to take it back.
+        let picked = canvas.selected as? ColourTagMark
+        let drawerVisible = controller.previewDrawerHidden == false
+        let caption = controller.previewPrimaryCaption
+        let widthBefore = picked?.pillForTesting.width ?? -1
+        let slideCaption = controller.previewSlidePrimary(to: 2)
+        let widthAfter = (document.marks.last { $0 is ColourTagMark } as? ColourTagMark)?
+            .pillForTesting.width ?? -1
+        document.undo()
+        let widthUndone = (document.marks.last { $0 is ColourTagMark } as? ColourTagMark)?
+            .pillForTesting.width ?? -1
+        let sliderOK = picked != nil && drawerVisible && widthBefore > 0
+            && widthAfter == widthBefore * 2 && widthUndone == widthBefore
+            && caption.contains("1.0") && slideCaption.contains("2.0")
+        print(sliderOK
+              ? "tag size slider: \(caption) → \(slideCaption), drawer open, "
+                + "pill \(Int(widthBefore))→\(Int(widthAfter)), undo → \(Int(widthUndone)) ok"
+              : "tag size slider: WRONG — \(caption) → \(slideCaption), "
+                + "drawer open \(drawerVisible), pill "
+                + "\(Int(widthBefore))→\(Int(widthAfter))→\(Int(widthUndone)), "
+                + "picked \(picked != nil)")
     }
 
     /// Whether the number beside a slider follows the knob, or the mouse-up.

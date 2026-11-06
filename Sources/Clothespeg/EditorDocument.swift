@@ -180,8 +180,19 @@ final class EditorDocument {
     func crop(to rect: CGRect) -> Bool {
         let whole = CGRect(origin: .zero, size: pixelSize)
         let target = rect.intersection(whole).integral
-        guard target.width >= 1, target.height >= 1, target != whole,
-              let cropped = source.cropping(to: target) else { return false }
+        guard target.width >= 1, target.height >= 1, target != whole else { return false }
+        // `rect` and every mark are measured from the picture's bottom-left,
+        // but `CGImage.cropping(to:)` counts its rows from the top. Handing it
+        // the rectangle as it stands keeps the frame's mirror region: a frame
+        // drawn over the bottom of a screenshot comes back with the sky.
+        // `ColourSampler` has made the same turn for years; cropping has to
+        // make it too. The marks below are shifted in bottom-left space, which
+        // is why only the pixels are turned over here and not the rectangle.
+        let rows = CGRect(x: target.minX,
+                          y: whole.height - target.maxY,
+                          width: target.width,
+                          height: target.height)
+        guard let cropped = source.cropping(to: rows) else { return false }
 
         beginEdit()
         marks.removeAll { $0.bounds.intersects(target) == false }

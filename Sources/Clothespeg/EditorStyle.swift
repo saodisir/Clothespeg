@@ -29,7 +29,10 @@ struct ToolStyle: Equatable {
 
     func value(for field: StyleField) -> CGFloat {
         switch field {
-        case .width: width
+        // A colour tag's size is a multiplier, not a thickness. Borrowing
+        // `width` keeps one stored field, so nothing already in UserDefaults
+        // needs migrating and undo carries the size with the mark's style.
+        case .width, .tagScale: width
         case .fontSize: fontSize
         case .blockSize: blockSize
         case .opacity: opacity
@@ -38,7 +41,7 @@ struct ToolStyle: Equatable {
 
     mutating func set(_ field: StyleField, _ value: CGFloat) {
         switch field {
-        case .width: width = value
+        case .width, .tagScale: width = value
         case .fontSize: fontSize = value
         case .blockSize: blockSize = value
         case .opacity: opacity = value
@@ -49,7 +52,7 @@ struct ToolStyle: Equatable {
 /// The numbers a tool can be given, named once so the strip and the style
 /// cannot disagree about which slider is which.
 enum StyleField: String {
-    case width, fontSize, blockSize, opacity
+    case width, fontSize, blockSize, opacity, tagScale
 
     /// What the slider may be dragged between, for this tool.
     ///
@@ -63,6 +66,7 @@ enum StyleField: String {
         case .fontSize: 8...100
         case .blockSize: 2...48
         case .opacity: 0.1...1
+        case .tagScale: 0.5...2.5
         }
     }
 
@@ -72,12 +76,13 @@ enum StyleField: String {
         case .fontSize: L("Font Size")
         case .blockSize: L("Block")
         case .opacity: L("Opacity")
+        case .tagScale: L("Size")
         }
     }
 
     /// The caption beside the slider: the number the slider is at, in the unit
     /// that number is in. A percentage where it is a fraction, whole pixels
-    /// where it is a length.
+    /// where it is a length, and a multiplier where the number is a ratio.
     ///
     /// `name` is passed in because the same field is not the same word for
     /// every tool: 30 is a pen's thickness and a numbered disc's diameter.
@@ -85,6 +90,7 @@ enum StyleField: String {
         let label = name ?? self.name
         return switch self {
         case .opacity: "\(label) \(Int((value * 100).rounded()))%"
+        case .tagScale: "\(label) \(String(format: "%.1f", Double(value)))×"
         default: "\(label) \(Int(value.rounded()))"
         }
     }
@@ -100,6 +106,11 @@ extension EditorTool {
     var defaultStyle: ToolStyle {
         var style = ToolStyle()
         switch self {
+        case .eyedropper:
+            // The picker's `width` is the tag's size multiplier, not a stroke.
+            // 1.0 means "the size the picture asked for"; the slider moves it
+            // either way from there.
+            style.width = 1
         case .select, .hand, .crop, .rectangle, .ellipse, .arrow:
             style.width = 6
         case .pen:
@@ -132,7 +143,7 @@ extension EditorTool {
     var supportsColour: Bool {
         switch self {
         case .rectangle, .ellipse, .arrow, .pen, .highlight, .text, .number: true
-        case .select, .hand, .mosaic, .crop: false
+        case .select, .hand, .mosaic, .crop, .eyedropper: false
         }
     }
 }
@@ -223,6 +234,9 @@ enum EditorStyleStore {
         var styles: [EditorTool: ToolStyle] = [:]
         for (name, stored) in raw {
             guard let tool = EditorTool(rawValue: name) else { continue }
+            // The picker's size is never written now; ignore a key left by a
+            // build that did, so an old preference cannot open I at 2.5x.
+            if tool == .eyedropper { continue }
             var style = tool.defaultStyle
             style.width = CGFloat(stored.width)
             style.fontSize = CGFloat(stored.fontSize)
@@ -241,6 +255,10 @@ enum EditorStyleStore {
     static func save(_ styles: [EditorTool: ToolStyle]) {
         var raw: [String: Stored] = [:]
         for (tool, style) in styles {
+            // A colour tag's size is a setting for one visit to the picker,
+            // not a preference. Leaving the key out of the file is what makes
+            // "every press of I starts at 1.0x" true across launches too.
+            if tool == .eyedropper { continue }
             // A colour that came from the well can be in any space; the one
             // thing worth keeping is what it looks like.
             let srgb = style.color.usingColorSpace(.sRGB) ?? .systemRed

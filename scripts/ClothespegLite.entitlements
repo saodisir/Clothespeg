@@ -9,5 +9,12 @@
        on. Read-write, because a picked folder's new pictures are taken in
        as copies and the original can be left where it is. -->
   <key>com.apple.security.files.user-selected.read-write</key><true/>
+  <!-- A note's voice recording needs the microphone in the sandbox too.
+       These are two different keys: `.audio-input` is Hardened Runtime ->
+       Resource Access (Core Audio input), `.microphone` is App Sandbox ->
+       Hardware -> Audio Input. The lite build is both hardened and
+       sandboxed, so it needs both; the regular build only needs the first. -->
+  <key>com.apple.security.device.audio-input</key><true/>
+  <key>com.apple.security.device.microphone</key><true/>
 </dict>
 </plist>
