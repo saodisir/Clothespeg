@@ -42,6 +42,7 @@ final class NoteWindow: NSPanel {
         becomesKeyOnlyIfNeeded = true
         isReleasedWhenClosed = false
         contentView = content
+        WindowPrivacy.apply(to: self)
     }
 
     override var canBecomeKey: Bool { true }

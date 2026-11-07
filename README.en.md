@@ -214,8 +214,16 @@ scripts/build-app.sh          # a release build (see below)
 scripts/make-dmg.sh           # a release DMG
 ```
 
-Needs the Swift toolchain that ships with Xcode. No dependencies beyond the
-system frameworks.
+Needs the Swift toolchain that ships with Xcode. `Package.swift` also declares a
+local SwiftPM path dependency: the licence library that checks tip codes, which
+is not distributed with this repository. Cloning this one and building it
+unchanged will fail. The dependency is linked into the app, so the built .app
+needs no other repository at run time.
+
+The tip check is the only place in this project that uses that dependency.
+Remove that gate together with the dependency declaration in `Package.swift`
+and no external repository is needed at all. There is no other technical
+restriction in the source.
 
 The scripts do more than one line of `swift build`: a universal binary via
 `lipo`, an SDK fallback (the Command Line Tools' macOS 27 SDK is missing a
@@ -254,10 +262,13 @@ Notarization needs notary credentials in the keychain
 (`xcrun notarytool store-credentials clothespeg-notary ...`); with them the
 script submits and staples automatically, without them it only signs.
 
-## Buy the author a coffee
+## Tipping
 
-Clothespeg is free for noncommercial use — no ads, no paywall. If it has saved you
-time, a coffee is the kindest way to say so.
+Clothespeg's core features are free forever for noncommercial use, with no ads.
+The Tip page in Settings unlocks a few extras with a tip. The source is open:
+you can also remove that gate and build your own without tipping.
+
+The QR code below is simply a coffee for the author, not an unlock code.
 
 <p align="center">
   <a href="https://cv4z8ffs.jsjform.com/p/j5Jhqc">

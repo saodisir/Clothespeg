@@ -1271,7 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Answered only inside the band, so the same two keys keep meaning back
     /// and forward in the browser underneath.
     private func watchSideButtons() {
-        // A thumb key that another app has taken — Flyring answers its own on
+        // A thumb key that another app has taken — some apps answer their own on
         // these, and so may anything else — is not stopped by anything said
         // here, because Carbon hot keys are registered with the system and
         // fire whatever this app does or does not see. The only place a press
@@ -1285,7 +1285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // - Over the empty part the panel is letting through, the press belongs
         //   to whatever is underneath and we do not answer at all. Not
         //   because we could not — the global monitor sees it — but because
-        //   a key that means "bring Flyring up" everywhere on this machine
+        //   a key that means "bring that app up" everywhere on this machine
         //   should not stop meaning that, just because a rope happens to be
         //   hanging at the top of the screen.
         //

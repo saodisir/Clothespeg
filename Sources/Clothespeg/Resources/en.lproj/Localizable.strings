@@ -26,6 +26,7 @@
 "Keep them" = "Keep them";
 
 /* GrabArea */
+"Preview" = "Preview";
 "Copy" = "Copy";
 "Edit" = "Edit";
 "Paste into Frontmost App" = "Paste into Frontmost App";
@@ -66,7 +67,7 @@
 "Copied" = "Copied";
 "Swipe the other way" = "Swipe the other way";
 "Mouse side buttons page" = "Mouse side buttons page";
-"Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this.";
+"Off by default. If another app has recorded these buttons as a global shortcut, both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "Off by default. If another app has recorded these buttons as a global shortcut, both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this.";
 "1 file" = "1 file";
 "%lld files" = "%lld files";
 "All" = "All";
@@ -399,3 +400,37 @@
 "Not asked yet" = "Not asked yet";
 "Allow Microphone" = "Allow Microphone";
 "Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded." = "Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded.";
+
+/* Teleprompter: leave the reading side out of captured frames */
+"Hide from screenshots and recordings" = "Hide from screenshots and recordings";
+"The line, notes, previews and search stay out of captures. Use it as a teleprompter." = "The line, notes, previews and search stay out of captures. Use it as a teleprompter.";
+
+/* Tipping page: core stays free, source is open, deliberately not a storefront */
+"Tip" = "Tip";
+"Core features are free forever. A tip unlocks the extras below. The source is open: turn the gate off, build it yourself and skip the tip." = "Core features are free forever. A tip unlocks the extras below. The source is open: turn the gate off, build it yourself and skip the tip.";
+"Licensed · Perpetual" = "Licensed · Perpetual";
+"Licensed · Annual" = "Licensed · Annual";
+"Not enabled" = "Not enabled";
+"Deactivate" = "Deactivate";
+"Your code" = "Your code";
+"Enable" = "Enable";
+"Support this" = "Support this";
+
+/* Import / export: four content categories, one ticked scope shared by
+   both buttons, all on by default. "Notes" is already defined above for
+   the note feature; do not add it twice. */
+"Import and export" = "Import and export";
+"Clipboard text" = "Clipboard text";
+"Pictures in history" = "Pictures in history";
+"Recordings in notes" = "Recordings in notes";
+
+/* Manual export / import, limited to the ticked categories */
+"Export…" = "Export…";
+"Import…" = "Import…";
+"Export complete" = "Export complete";
+"Import complete" = "Import complete";
+"Export failed" = "Export failed";
+"Import failed" = "Import failed";
+"Notes %@ · Cards %@ · Pictures %@ · Recordings %@" = "Notes %@ · Cards %@ · Pictures %@ · Recordings %@";
+"Restart Clothespeg to see the imported cards." = "Restart Clothespeg to see the imported cards.";
+"Import merges card by card, keeps the newer copy of a duplicate and leaves your existing cards in place." = "Import merges card by card, keeps the newer copy of a duplicate and leaves your existing cards in place.";

@@ -256,14 +256,27 @@ final class SettingsController {
 }
 
 enum SettingsWindow {
-    /// Wide enough that six tabs read without squeezing, and tall enough for
-    /// the busiest page whole — no page may be cut off by the bottom edge: a
-    /// setting the user has to scroll for is a setting the user does not find.
+    /// Wide enough that eight tabs read without squeezing. The height is a
+    /// fixed frame, not an attempt to fit the longest page: every page is a
+    /// grouped Form, and a Form scrolls itself when its content outgrows the
+    /// frame. A switch added later needs no change here.
     ///
     /// 620 rather than 560 since the capture page took on the translation and
     /// editor cards (2026-11-03): with them the page ran 60 points past the old
     /// height and the last card sat below the fold — present, and unreachable.
-    static let size = CGSize(width: 600, height: 620)
+    ///
+    /// 700 rather than 600 since the small-features page made an eighth tab
+    /// (2026-11-06): seven already filled the old width, and an eighth would
+    /// have squeezed every label into an ellipsis. Checked with the settings
+    /// shot harness rather than guessed — a tab nobody can read is not a tab.
+    ///
+    /// 620 is the old height, given back on 2026-11-06. It went to 780 when
+    /// four iCloud switches joined the page, with room held for an account
+    /// row that never arrived; iCloud was then dropped and the switches were
+    /// folded into one card, but nobody gave the height back. At 620 every
+    /// page fits whole except Invocation, which is two points short, so
+    /// scrolling stays a fallback rather than the normal way in.
+    static let size = CGSize(width: 700, height: 620)
 }
 
 /// What the window is made of.
@@ -292,7 +305,7 @@ struct SettingsView: View {
     @State private var languageToken = 0
 
     enum Section: String, CaseIterable, Identifiable {
-        case general, invocation, capture, clipboard, keeping, permissions, about
+        case general, invocation, capture, clipboard, keeping, smallFeatures, permissions, about
         var id: String { rawValue }
 
         var label: String {
@@ -302,6 +315,7 @@ struct SettingsView: View {
             case .invocation: L("Invocation")
             case .capture: L("Capture")
             case .keeping: L("Keeping")
+            case .smallFeatures: L("Tip")
             case .permissions: L("Permissions")
             case .about: L("About")
             }
@@ -314,6 +328,7 @@ struct SettingsView: View {
             case .invocation: "arrow.down.to.line"
             case .capture: "viewfinder"
             case .keeping: "clock.arrow.circlepath"
+            case .smallFeatures: "switch.2"
             case .permissions: "lock.shield"
             case .about: "info.circle"
             }
@@ -359,6 +374,7 @@ struct SettingsView: View {
                 case .invocation: InvocationPage()
                 case .capture: CapturePage()
                 case .keeping: KeepingPage()
+                case .smallFeatures: SmallFeaturesPage()
                 case .permissions: PermissionsPage()
                 case .about: AboutPage()
                 }
@@ -369,8 +385,8 @@ struct SettingsView: View {
         // The warm ground for the whole window, tab strip included. Every page
         // hands its Form's grey back (`.scrollContentBackground(.hidden)`), so
         // this colour is the page floor as well: the white grouped cards float
-        // on it and the strip above wears the same paper. The Flyring
-        // arrangement, so the two halves of the window read as one ground.
+        // on it and the strip above wears the same paper. The two halves
+        // of the window read as one ground.
         .background(CDS.ground)
         // Clay is the emphasis colour of every control in the window: the
         // switches, the pickers' highlights, the focus of the fields. One
@@ -445,7 +461,7 @@ struct GeneralPage: View {
     var body: some View {
         Form {
             // The page's name, inside the first card as a plain headline row —
-            // the Flyring house style: titles read as words, not as the small
+            // the house style: titles read as words, not as the small
             // grey caps a grouped header renders.
             Section {
                 Text(L("Appearance & behaviour"))
@@ -499,7 +515,7 @@ struct GeneralPage: View {
                 // Off by default for that reason: a feature that silently does
                 // nothing is worse than one that is simply absent.
                 if sideButtonPaging {
-                    Text(L("Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this."))
+                    Text(L("Off by default. If another app has recorded these buttons as a global shortcut, both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -524,10 +540,9 @@ struct GeneralPage: View {
                 }
             }
 
-
         }
         .formStyle(.grouped)
-        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // CDS arrangement: hand the Form's own grey back, let the
         // window's warm ground (CDS.ground) show through, and the grouped
         // cards — the system's own white cards — float on that paper. The
         // tab strip above wears the same ground, so strip and page read as
@@ -548,6 +563,163 @@ struct GeneralPage: View {
         .onChange(of: soundOn) { _, on in
             line?.soundOn = on
         }
+    }
+}
+
+// MARK: - Small features
+
+/// Layout harness only: CLOTHESPEG_SETTINGS_LOCKED renders the whole page in
+/// its locked shape without removing the real code from the Keychain. Normal
+/// launches never set it, so the page still answers to the licence alone.
+private var settingsPreviewLocked: Bool {
+    ProcessInfo.processInfo.environment["CLOTHESPEG_SETTINGS_LOCKED"] != nil
+}
+
+/// A quiet page for the few extras a tip unlocks. Deliberately not a
+/// storefront: no price, no badge, no "upgrade". The note under the code
+/// says the core is free forever and that the gate can be removed when
+/// building from source, so the page never claims anyone has to pay.
+/// The switch is greyed out until a code is redeemed; the rest of the app
+/// is unaffected either way.
+struct SmallFeaturesPage: View {
+    @State private var unlocked = settingsPreviewLocked ? false : SmallFeaturesLicense.isUnlocked()
+    @State private var receipt: SmallFeaturesReceipt? = settingsPreviewLocked ? nil : SmallFeaturesLicense.receipt()
+    @State private var code = ""
+    @State private var errorText: String?
+    @State private var hiddenFromCapture = WindowPrivacy.isWanted
+    @State private var syncEnabled: Set<SyncOption> = SyncOptions.enabled
+
+    var body: some View {
+        Form {
+            // 一张卡：状态、码、说明都在这里，不再另起一个标题容器。
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: unlocked ? "checkmark.circle.fill" : "lock.circle")
+                            .foregroundStyle(unlocked ? Color.green : Color.secondary)
+                        Text(statusTitle)
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        if unlocked {
+                            Button(L("Deactivate")) {
+                                SmallFeaturesLicense.deactivate()
+                                refresh()
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        } else if let url = SmallFeaturesLicense.supportURL {
+                            Button(L("Support this")) { NSWorkspace.shared.open(url) }
+                                .buttonStyle(.link)
+                                .font(.caption)
+                        }
+                    }
+                    if let detail = receipt?.detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else {
+                        // One row: the field takes the width, the button takes
+                        // what it needs. A bare TextField is split into a label
+                        // column and a narrow field by Form, so it stays inside
+                        // this HStack; a multiline editor would only invite
+                        // newline characters into a base64 key.
+                        HStack(spacing: 8) {
+                            TextField(text: $code, prompt: Text(L("Your code"))) { }
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+                                .disableAutocorrection(true)
+                                .labelsHidden()
+                                .onSubmit { redeem() }
+                            Button(L("Enable")) { redeem() }
+                        }
+                    }
+                    Text(L("Core features are free forever. A tip unlocks the extras below. The source is open: turn the gate off, build it yourself and skip the tip."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let errorText {
+                        Text(errorText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section {
+                Toggle(L("Hide from screenshots and recordings"), isOn: $hiddenFromCapture)
+                    .disabled(!unlocked)
+                Text(L("The line, notes, previews and search stay out of captures. Use it as a teleprompter."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text(L("Import and export"))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(SyncOption.allCases) { option in
+                    Toggle(option.title, isOn: syncBinding(option))
+                        .disabled(!unlocked || !SyncRules.isAvailable(option, in: syncEnabled))
+                }
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button(L("Export…")) { TransferActions.exportData(scope: syncEnabled) }
+                        .disabled(!unlocked || syncEnabled.isEmpty)
+                    Button(L("Import…")) { TransferActions.importData(scope: syncEnabled) }
+                        .disabled(!unlocked || syncEnabled.isEmpty)
+                }
+                Text(L("Import merges card by card, keeps the newer copy of a duplicate and leaves your existing cards in place."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .onChange(of: hiddenFromCapture) { _, on in
+            WindowPrivacy.set(on)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsAnswerChanged)) { note in
+            guard let key = note.object as? String else { return }
+            if key == WindowPrivacy.defaultsKey { hiddenFromCapture = WindowPrivacy.isWanted }
+            if key.hasPrefix("Transfer.") { syncEnabled = SyncOptions.enabled }
+        }
+    }
+
+    private var statusTitle: String {
+        guard let current = receipt else { return L("Not enabled") }
+        return current.perpetual ? L("Licensed · Perpetual") : L("Licensed · Annual")
+    }
+
+    /// Four answers kept in one Set rather than four @State booleans: the
+    /// recording switch has to see the notes switch change in the same draw.
+    private func syncBinding(_ option: SyncOption) -> Binding<Bool> {
+        Binding(
+            get: { syncEnabled.contains(option) },
+            set: { on in
+                SyncOptions.set(option, on: on)
+                syncEnabled = SyncOptions.enabled
+            })
+    }
+
+    private func redeem() {
+        let entered = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !entered.isEmpty else { return }
+        do {
+            try SmallFeaturesLicense.activate(entered)
+            code = ""
+            errorText = nil
+            refresh()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Windows made before the code was redeemed still carry the old
+    /// `sharingType`; repaint them now rather than waiting for the next launch.
+    private func refresh() {
+        unlocked = SmallFeaturesLicense.isUnlocked()
+        receipt = SmallFeaturesLicense.receipt()
+        WindowPrivacy.applyToAll()
     }
 }
 
@@ -661,7 +833,7 @@ struct ClipboardPage: View {
             .onAppear(perform: refreshFolderRows)
         }
         .formStyle(.grouped)
-        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // CDS arrangement: hand the Form's own grey back, let the
         // window's warm ground (CDS.ground) show through, and the grouped
         // cards — the system's own white cards — float on that paper. The
         // tab strip above wears the same ground, so strip and page read as
@@ -962,7 +1134,7 @@ struct InvocationPage: View {
         Form {
             Section {
                 // The section's name as a headline row inside the card (the
-                // Flyring house style), so the picker beside it can stay
+                // house style), so the picker beside it can stay
                 // "Style" without saying the same thing twice.
                 Text(L("How the line comes down"))
                     .font(.headline)
@@ -1068,7 +1240,7 @@ struct InvocationPage: View {
             }
         }
         .formStyle(.grouped)
-        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // CDS arrangement: hand the Form's own grey back, let the
         // window's warm ground (CDS.ground) show through, and the grouped
         // cards — the system's own white cards — float on that paper. The
         // tab strip above wears the same ground, so strip and page read as
@@ -1648,7 +1820,7 @@ struct KeepingPage: View {
             }
         }
         .formStyle(.grouped)
-        // CDS / Flyring arrangement: hand the Form's own grey back, let the
+        // CDS arrangement: hand the Form's own grey back, let the
         // window's warm ground (CDS.ground) show through, and the grouped
         // cards — the system's own white cards — float on that paper. The
         // tab strip above wears the same ground, so strip and page read as
@@ -1698,7 +1870,7 @@ struct PermissionsPage: View {
                     MicrophonePermissionRow()
                 }
 
-                // The bug-judging corner, in the Flyring house shape: the
+                // The bug-judging corner, in the house shape: the
                 // name, the small words under it, and a row of small buttons.
                 // A log only helps on the day something misbehaves, so the
                 // doors to it sit here quietly rather than anywhere they
@@ -1734,7 +1906,7 @@ struct PermissionsPage: View {
         }
     }
 
-    /// The permission as Flyring draws it: an icon that answers with colour,
+    /// The permission drawn this way: an icon that answers with colour,
     /// the name beside a status badge, the small print under them, and one
     /// small door to the place the permission is given.
     private func permissionRow(granted: Bool) -> some View {
@@ -2047,7 +2219,7 @@ struct AboutPage: View {
     @State private var showLicence = false
 
     var body: some View {
-        // Not a form. Flyring's about page reads as a small poster — the
+        // Not a form. An about page reads as a small poster — the
         // icon, the name, the words, all centred and open — and grouped
         // cards around them made this one read as an insurance form. One
         // column, centred, nothing between the reader and the page.
@@ -2152,7 +2324,7 @@ private struct SettingsPageBackground: ViewModifier {
         // The licence sheet is not a Form, so it simply paints the CDS warm
         // ground behind its content. (The settings pages no longer use this:
         // they hand their Form's grey back with `.scrollContentBackground(
-        // .hidden)` so the window's own ground shows through — the Flyring
+        // .hidden)` so the window's own ground shows through — the same
         // arrangement, where the white cards float on the warm paper.)
         content
             .background(CDS.ground)

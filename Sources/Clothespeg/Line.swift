@@ -946,8 +946,8 @@ final class Line: ObservableObject {
     /// working: on the pasteboard, and pasted into the app they were last in.
     ///
     /// A paste rather than a drag, because a drag is not how an app on
-    /// Chromium takes text. Flyring found the same and its clipboard only
-    /// ever pasted as well.
+    /// Chromium takes text. Another app found the same and its clipboard
+    /// only ever pasted as well.
     /// A double-click is the way to use a card rather than look at it, and it
     /// means the same thing whatever the card holds: put it on the pasteboard
     /// and paste it into the app the user was last in.

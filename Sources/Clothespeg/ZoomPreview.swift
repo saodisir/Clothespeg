@@ -111,6 +111,7 @@ final class ZoomWindow: NSPanel {
         // the pointer arrived with.
         acceptsMouseMovedEvents = true
         contentView = content
+        WindowPrivacy.apply(to: self)
     }
 
     /// Whether the window may be made key. False at birth; true only while

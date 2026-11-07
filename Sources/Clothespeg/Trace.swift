@@ -2,7 +2,7 @@ import Foundation
 
 /// 轻量运行日志：所有诊断输出统一收口到这里。
 ///
-/// 照 Flyring 的 FlyringLog 同款：诊断不该只进系统统一日志（那个用户找不到、
+/// 诊断不该只进系统统一日志（那个用户找不到、
 /// 排查时也拿不出来），要有一个能直接打开、能导出发人的文件。
 ///
 /// - 位置：`~/Library/Application Support/Clothespeg/logs/Clothespeg.log`
@@ -29,7 +29,7 @@ enum ClothespegLog {
 
     private static var baseDirectory: URL {
         // 必须落到 .../Application Support/Clothespeg/（与 History.json 同级）。
-        // Flyring 踩过的坑：漏拼一级就写进 Application Support/logs/，
+        // 漏拼一级就写进 Application Support/logs/，
         // 用户在日志文件夹按钮里看不到。
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             .map { $0.appendingPathComponent("Clothespeg", isDirectory: true) }

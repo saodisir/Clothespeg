@@ -19,6 +19,7 @@ final class LinePanel: NSPanel {
         becomesKeyOnlyIfNeeded = true
         ignoresMouseEvents = true
         contentView = content
+        WindowPrivacy.apply(to: self)
     }
 
     // Never key. The panel cannot take focus: a strip floating over the top

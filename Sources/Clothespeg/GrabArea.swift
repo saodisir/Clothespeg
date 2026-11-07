@@ -1,13 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Bridges each photo to AppKit's drag and drop, so it can be dragged into
-/// any app as a real file. Each destination means one thing:
+/// Bridges each card to AppKit's drag and drop, so it can be dragged into
+/// any app as a real file, or as text. Every destination now means the same
+/// thing (2026-11-06): a copy goes out, and the card stays on the line.
 ///
-/// - An app gets a copy, and the photo stays on the line.
-/// - A folder or the Desktop keeps the file, and the photo leaves the line.
-/// - The Trash discards it.
-/// - Nowhere that accepts it: the photo flies back to the line.
+/// - An app gets a copy, and the card stays on the line.
+/// - A folder or the Desktop gets a copy of the file, and the card stays too.
+/// - Nowhere that accepts it: the dragged image flies back to the line.
+///
+/// Taking a card down is one gesture only, the cross or the menu's remove
+/// item. A drag can never lose a card by accident, whatever it is carrying
+/// and wherever it lands.
 ///
 /// Press and hold opens Markup, the corner cross discards. A double click
 /// opens the card, and a single click does nothing — copying on the way past
@@ -119,7 +123,10 @@ struct GrabArea: NSViewRepresentable {
         view.onDragStart = { line.draggingID = id }
         view.onDragEnd = {
             line.draggingID = nil
-            // Moved into a folder: it is saved where you wanted it.
+            // Cards whose file has gone come down here, as they also do on
+            // the Inbox watcher. A drag is copy-only now, so this no longer
+            // takes the dragged card down; it clears any other card that
+            // lost its file while the line was open.
             line.prune()
         }
         view.onTrash = { line.trash(id) }
@@ -136,6 +143,15 @@ struct GrabArea: NSViewRepresentable {
         view.onPressChange = { pressed in line.pressedID = pressed ? id : nil }
         view.menuProvider = {
             let menu = NSMenu()
+            // The third door into the reader, alongside the corner mark and
+            // the space key. A note is left out: its corner, long press and
+            // menu all go to the editor, and toggleZoom answers a note with
+            // nothing at all (see the `.note` case in ZoomPreview.swift).
+            if !item.payload.isNote {
+                menu.addItem(ClosureMenuItem(L("Preview")) {
+                    ZoomController.shared.toggleZoom(id: id, anchor: self.zoomAnchor)
+                })
+            }
             // A clipboard text card has one copy item, and it is always the
             // other way from the switch: the gestures already give what the
             // switch promises, so the menu is where you reach for the
@@ -637,8 +653,8 @@ final class GrabView: NSView, NSDraggingSource {
     /// Text goes out as `public.utf8-plain-text` and nothing else, which is
     /// the opposite of what two earlier rounds concluded. Offering more types
     /// was tried and made no difference: a chat window on Chromium refused
-    /// the drag whether the item carried one type or eleven. Flyring's
-    /// clipboard, which does reach a Chromium chat window, carries one — the
+    /// the drag whether the item carried one type or eleven. A clipboard
+    /// that does reach a Chromium chat window carries one — the
     /// plain text — and the same byte-writing call rather than the
     /// string-setting one.
     ///
@@ -738,24 +754,29 @@ final class GrabView: NSView, NSDraggingSource {
 
     // MARK: NSDraggingSource
 
-    /// A text card can only be copied and a picture can also be moved or thrown
-    /// away, so what the drag offers is decided by what is on the line.
-    private var isText: Bool { payload.isImage == false }
-
-    // MARK: NSDraggingSource
-
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        // Apps pick copy. Finder picks move, so a folder or the Desktop keeps
-        // the file. Delete is what lets the Dock's Trash accept it.
+        // One answer for every card: copy, and only copy. A drag hands the
+        // contents over; it never takes the card off the line (2026-11-06).
         //
-        // A text card is never moved or deleted — there is nothing to move and
-        // nothing to throw away — so it offers copy alone. Offering more is not
-        // harmless: a target that only wants copy shows no cursor when the
-        // mask also allows a move, and the drag reads as though it were
-        // refused.
-        if isText { return context == .outsideApplication ? .copy : [] }
-        return context == .outsideApplication ? [.copy, .move, .delete] : []
+        // The old answer split on whether the card had a picture behind it:
+        // pictures offered [.copy, .move, .delete], so Finder moved the Inbox
+        // copy away and `prune()` took the now-fileless card down, while text,
+        // notes and file cards could only be copied. One drag, two meanings —
+        // the inconsistency this replaced. A card with no file has nothing to
+        // move, and a file card points at something the user owns, so neither
+        // was ever safe to move in the first place.
+        //
+        // No move and no delete also means the Dock's Trash no longer accepts
+        // a card. Taking one down goes through the cross or the menu instead,
+        // where the discard knows which file is ours to trash.
+        //
+        // A modifier key cannot add an operation the mask does not offer —
+        // AppKit lets the destination pick from this set, and no more. ⌥ in
+        // Finder means "force a copy" anyway; ⌘ is the one that forces a move.
+        // If a "move with a modifier" ever comes back, it belongs here.
+        guard context == .outsideApplication else { return [] }
+        return .copy
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
@@ -763,15 +784,17 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = false
         downPoint = nil
         log.notice("Drag ended with operation \(operation.rawValue, privacy: .public)")
-        // Dropped on the Trash: macOS only tells us, we move the file.
+        onDragEnd()
+        // The move and delete branches below are unreachable while the mask
+        // offers copy alone. They stay because they are the whole of what a
+        // later "move with a modifier" would need, and because this is where
+        // the record of how a Finder move used to take a card down belongs.
+        // `prune()` in onDragEnd still runs: it is also the Inbox watcher's
+        // way of clearing a card whose file vanished for some other reason.
         if operation.contains(.delete) {
-            onDragEnd()
             onTrash()
             return
         }
-        onDragEnd()
-        // Finder finishes a move a moment later. Check again then, so a photo
-        // saved into a folder leaves the line.
         if operation.contains(.move) {
             let done = onDragEnd
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { done() }

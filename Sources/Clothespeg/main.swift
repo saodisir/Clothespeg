@@ -1,5 +1,63 @@
 import AppKit
 
+/// A status-bar app has no menu bar, but ⌘A / ⌘C / ⌘V / ⌘X are *menu* key
+/// equivalents, not text-field behaviour. With no main menu the responder
+/// chain never receives them — right-click Paste still works because
+/// NSTextField's own context menu sends `paste:` straight to the field
+/// editor. A minimal Edit menu gives every text field its standard keys
+/// back. `.accessory` keeps the menu bar hidden, so the titles below are
+/// never drawn; the menu exists only as a key-equivalent source.
+enum EditMenu {
+    static func install() {
+        let main = NSMenu()
+
+        // AppKit expects the first item to be the application menu. It is
+        // never drawn here, but keeping the slot stops the system folding
+        // its own items into Edit.
+        let appItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        appItem.submenu = NSMenu()
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let edit = NSMenu()
+        func add(_ title: String, _ action: Selector, _ key: String) {
+            edit.addItem(NSMenuItem(title: title, action: action, keyEquivalent: key))
+        }
+        // Target stays nil, so these go down the responder chain to whoever
+        // is editing. cut/copy/paste live on NSText, selectAll on NSResponder.
+        add("Cut", #selector(NSText.cut(_:)), "x")
+        add("Copy", #selector(NSText.copy(_:)), "c")
+        add("Paste", #selector(NSText.paste(_:)), "v")
+        add("Select All", #selector(NSResponder.selectAll(_:)), "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+
+        NSApp.mainMenu = main
+    }
+
+    /// Structure only. Whether the keys really reach the field editor is a
+    /// live-window question, so it still needs one real-machine check.
+    static func report() -> String {
+        let edit = NSApp.mainMenu?.items.dropFirst().first?.submenu
+        let keys = edit?.items.reduce(into: [String: Bool]()) { result, item in
+            result[item.keyEquivalent] = item.action != nil
+        } ?? [:]
+        let hasAll = ["x", "c", "v", "a"].allSatisfy { keys[$0] == true }
+        return [
+            "edit menu probe:",
+            NSApp.activationPolicy() == .accessory
+                ? "PASS  activation policy stays .accessory, no menu bar shown"
+                : "FAIL  activation policy changed",
+            NSApp.mainMenu != nil
+                ? "PASS  main menu installed"
+                : "FAIL  main menu missing",
+            hasAll
+                ? "PASS  cut / copy / paste / select all key equivalents present"
+                : "FAIL  edit key equivalents incomplete"
+        ].joined(separator: "\n")
+    }
+}
+
 // One-time carry-over of the saved settings onto the app's new identity.
 //
 // macOS 26 decides whether an app may paint a menu-bar item with a per-app
@@ -7,7 +65,7 @@ import AppKit
 // com.vizwise.clothespeg went bad: AppKit built a valid, visible status item
 // and the WindowServer still refused to commit it, so the icon never showed —
 // whatever the build. A fresh bundle id starts with a clean authorization (the
-// same fix Flyring shipped for the same symptom), so the app now lives at
+// same fix shipped elsewhere for the same symptom), so the app now lives at
 // com.vizwise.clothespeg.app.
 //
 // Settings are stored under the bundle id, so they have to be moved across
@@ -65,6 +123,54 @@ MainActor.assumeIsolated {
         exit(0)
     }
     let app = NSApplication.shared
+    // Privacy probe: whether this macOS really leaves `sharingType = .none`
+    // out of a captured frame. Two flat windows and three capture APIs,
+    // counted in pixels rather than believed from the headers. Writes its
+    // lines to the path given and quits.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_PRIVACY_PROBE"] {
+        let report = PrivacyProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Small-features gate: a throwaway key signs four kinds of code and feeds
+    // them to the same readback logic the app uses. Catches a gate installed
+    // only on the activation path, and a legacy code broken by a new payload
+    // field. Run with CLOTHESPEG_TIPS_PROBE=<path>.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_TIPS_PROBE"] {
+        let report = SmallFeaturesProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // The four iCloud switches and the payload routing they imply. Pure
+    // rules: no UserDefaults writes, no CloudKit, so this runs before the
+    // developer account is configured. CLOTHESPEG_SYNC_PROBE=<path>.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_SYNC_PROBE"] {
+        let report = SyncProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Manual export / import: a whole round trip in two temporary attics.
+    // Run with CLOTHESPEG_TRANSFER_PROBE=<path>.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_TRANSFER_PROBE"] {
+        let report = TransferProbe.run()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Edit-menu key equivalents. Run with CLOTHESPEG_MENU_PROBE=<path>.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_MENU_PROBE"] {
+        // The normal launch sets this at the very end, past every probe.
+        // Do it here too so the report checks the real runtime combination.
+        app.setActivationPolicy(.accessory)
+        EditMenu.install()
+        let report = EditMenu.report()
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
     // Translation probe: whether the system's engine is reachable from this
     // app at all, which pair is installed here, and how long a translation
     // takes. The one-point SwiftUI view it needs is the one part of P5 that
@@ -250,5 +356,6 @@ MainActor.assumeIsolated {
     let delegate = AppDelegate()
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
+    EditMenu.install()
     withExtendedLifetime(delegate) { app.run() }
 }

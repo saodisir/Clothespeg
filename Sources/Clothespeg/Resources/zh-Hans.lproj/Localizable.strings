@@ -26,6 +26,7 @@
 "Keep them" = "留着";
 
 /* GrabArea */
+"Preview" = "预览";
 "Copy" = "复制";
 "Edit" = "编辑";
 "Paste into Frontmost App" = "粘贴到当前应用";
@@ -66,7 +67,7 @@
 "Copied" = "已复制";
 "Swipe the other way" = "反向滑动";
 "Mouse side buttons page" = "鼠标侧键翻页";
-"Off by default. If another app has recorded these buttons as a global shortcut — Flyring does — both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "默认关闭。如果别的软件把这两个侧键录制成了全局快捷键（比如 Flyring），按下时两边会同时响应，这一点在这里无法避免。不开这个开关，滚轮和胶囊箭头一样能翻页。";
+"Off by default. If another app has recorded these buttons as a global shortcut, both will answer at once, and that cannot be prevented from here. The wheel and the arrows page without this." = "默认关闭。如果别的软件把这两个侧键录制成了全局快捷键，按下时两边会同时响应，这一点在这里无法避免。不开这个开关，滚轮和胶囊箭头一样能翻页。";
 "1 file" = "1 个文件";
 "%lld files" = "%lld 个文件";
 "All" = "全部";
@@ -411,3 +412,36 @@
 "Not asked yet" = "尚未询问";
 "Allow Microphone" = "允许麦克风";
 "Clothespeg uses the microphone for one thing: recording a voice memo on a note. The audio stays in a file beside your notes on this Mac and is never uploaded." = "Clothespeg 只用麦克风做一件事：给便签录一段语音。录音文件存在这台 Mac 的便签目录旁边，不会上传。";
+
+/* 提词器：把读词的那一侧从截图里摘出去 */
+"Hide from screenshots and recordings" = "在截图和录屏中隐藏晾衣绳";
+"The line, notes, previews and search stay out of captures. Use it as a teleprompter." = "截屏和录屏里看不到晾衣绳、便签、空格预览和搜索，可以当提词器用。";
+
+/* 打赏：核心功能免费、源码开放，不做成商店 */
+"Tip" = "打赏";
+"Core features are free forever. A tip unlocks the extras below. The source is open: turn the gate off, build it yourself and skip the tip." = "核心功能永久免费。打赏解锁下面几项非核心功能。源码开放，自己打包可以去掉这个限制，不必打赏。";
+"Licensed · Perpetual" = "已激活 · 永久授权";
+"Licensed · Annual" = "已激活 · 年费授权";
+"Not enabled" = "未启用";
+"Deactivate" = "取消激活";
+"Your code" = "激活码";
+"Enable" = "启用";
+"Support this" = "支持一下";
+
+/* 导入导出：四个内容类别，一次勾选同时管导出和导入，默认全开。
+   "Notes" 已在上方定义，不要重复添加。 */
+"Import and export" = "导入导出";
+"Clipboard text" = "剪切板文字";
+"Pictures in history" = "历史里的图片";
+"Recordings in notes" = "便签中的录音";
+
+/* 手动导出 / 导入，范围就是上面勾选的类别 */
+"Export…" = "导出…";
+"Import…" = "导入…";
+"Export complete" = "导出完成";
+"Import complete" = "导入完成";
+"Export failed" = "导出失败";
+"Import failed" = "导入失败";
+"Notes %@ · Cards %@ · Pictures %@ · Recordings %@" = "便签 %@ 张 · 历史 %@ 张 · 图片 %@ 张 · 录音 %@ 个";
+"Restart Clothespeg to see the imported cards." = "重启 Clothespeg 后即可看到导入的卡片。";
+"Import merges card by card, keeps the newer copy of a duplicate and leaves your existing cards in place." = "导入按卡片合并，重复的取较新的，不会清掉本机已有内容。";

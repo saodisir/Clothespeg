@@ -49,6 +49,7 @@ final class SearchWindow: NSPanel {
         // app, so the app the user is working in is not disturbed, and this
         // window never becomes main, so it does not take their menus either.
         contentView = content
+        WindowPrivacy.apply(to: self)
     }
 
     // The one window in this app that can take a key, because it is the only

@@ -140,7 +140,12 @@ scripts/build-app.sh          # release 产物，通用二进制（Apple silicon
 scripts/make-dmg.sh           # 打一个发布用的 DMG
 ```
 
-需要 Xcode 自带的 Swift 工具链，除此之外没有任何依赖。
+需要 Xcode 自带的 Swift 工具链。`Package.swift` 里还声明了一个本地 SwiftPM 依赖
+（打赏码校验用的许可库，未随本仓库公开）。**照原样单独 clone 会构建失败**；
+编译出的 app 已把它静态链入，运行时不再需要。
+
+打赏校验是全项目唯一用到这个依赖的地方。把这道闸连同 `Package.swift` 里的依赖声明
+一起去掉，就不再需要那个库 —— 源码里没有别的技术限制。
 
 脚本做的事比一行 `swift build` 多：双架构 `lipo`、SDK 回退（Command Line Tools 的 macOS 27 SDK 缺
 SwiftUI 宏插件）、图标生成、`Info.plist`（含 `LSUIElement` 所以不占 Dock）。所以脚本是这个项目
@@ -170,9 +175,11 @@ scripts/build-app.sh release && scripts/make-dmg.sh
 公证需要钥匙串里有 notary 凭证（`xcrun notarytool store-credentials clothespeg-notary ...`），
 有的话脚本会自动提交并 staple；没有就只签名不公证。
 
-## 给作者买杯咖啡
+## 打赏
 
-Clothespeg 免费、非商用，不放广告，也没有付费墙。如果它帮你省了时间，欢迎请作者喝杯咖啡。
+Clothespeg 的核心功能永久免费、非商用，不放广告。设置里的「打赏」页用打赏解锁几项非核心功能；源码开放，愿意自己打包的也可以在源码里去掉这道闸，不必打赏。
+
+下面的二维码只是请作者喝杯咖啡，跟解锁码无关。
 
 <p align="center">
   <a href="https://cv4z8ffs.jsjform.com/p/j5Jhqc">
