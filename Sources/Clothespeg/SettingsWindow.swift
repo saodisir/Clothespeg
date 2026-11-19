@@ -137,10 +137,56 @@ enum TranslationTargets {
         "english": "en", "simplifiedChinese": "zh-Hans", "traditionalChinese": "zh-Hant",
     ]
 
+    /// Where the two answers are kept, behind a seam.
+    ///
+    /// A set of closures rather than `UserDefaults` at each call site, for one
+    /// measured reason: the harness has to show a menu built from the setting
+    /// and a choice that is remembered, and it must not do that by writing into
+    /// the settings of whoever ran it. Save-click-restore has failed twice in
+    /// this app already — a test process ends in `exit(0)`, and a preference
+    /// written at the last moment is not always flushed, so the restore went
+    /// missing and the *scratch* value stayed behind. Measured 2026-11-13: 译成
+    /// was 繁體 before a self-test run and `en` after it, which is one of the
+    /// two languages the harness passes through on its way.
+    private static var readTarget: () -> String? = {
+        UserDefaults.standard.string(forKey: currentKey)
+    }
+    private static var writeTarget: (String) -> Void = { value in
+        UserDefaults.standard.set(value, forKey: currentKey)
+    }
+    private static var readList: () -> [String]? = {
+        UserDefaults.standard.stringArray(forKey: listKey)
+    }
+    private static var writeList: ([String]) -> Void = { value in
+        UserDefaults.standard.set(value, forKey: listKey)
+    }
+
+    /// Points the seam at somewhere harmless. Harness only.
+    ///
+    /// What it costs: the round trip through `UserDefaults` is no longer part of
+    /// what the menu check proves. What it buys: the check cannot change the
+    /// person's 译成, which it did — see above.
+    static func useStorageForTesting(readTarget: @escaping () -> String?,
+                                     writeTarget: @escaping (String) -> Void,
+                                     readList: @escaping () -> [String]?,
+                                     writeList: @escaping ([String]) -> Void) {
+        self.readTarget = readTarget
+        self.writeTarget = writeTarget
+        self.readList = readList
+        self.writeList = writeList
+    }
+
+    static func restoreRealStorage() {
+        readTarget = { UserDefaults.standard.string(forKey: currentKey) }
+        writeTarget = { value in UserDefaults.standard.set(value, forKey: currentKey) }
+        readList = { UserDefaults.standard.stringArray(forKey: listKey) }
+        writeList = { value in UserDefaults.standard.set(value, forKey: listKey) }
+    }
+
     static var chosen: [String] {
         get {
             migrateOnce()
-            let stored = UserDefaults.standard.stringArray(forKey: listKey) ?? []
+            let stored = readList() ?? []
             let known = stored.filter { TranslationCatalogue.named($0) != nil }
             return known.isEmpty ? fallback : known
         }
@@ -154,7 +200,7 @@ enum TranslationTargets {
             // itself as things are added is a list with no place to remember.
             let order = TranslationCatalogue.all.map(\.code)
             seen.sort { (order.firstIndex(of: $0) ?? 0) < (order.firstIndex(of: $1) ?? 0) }
-            UserDefaults.standard.set(seen.isEmpty ? fallback : seen, forKey: listKey)
+            writeList(seen.isEmpty ? fallback : seen)
             // The current one has to stay one of them: a button that says
             // "Español" while its menu no longer offers it is a button that
             // cannot be explained.
@@ -167,12 +213,12 @@ enum TranslationTargets {
     static var current: String {
         get {
             migrateOnce()
-            guard let raw = UserDefaults.standard.string(forKey: currentKey) else { return fallbackCurrent }
+            guard let raw = readTarget() else { return fallbackCurrent }
             let code = legacy[raw] ?? raw
             if code == "system" { return systemLanguage }
             return TranslationCatalogue.named(code) == nil ? fallbackCurrent : code
         }
-        set { UserDefaults.standard.set(newValue, forKey: currentKey) }
+        set { writeTarget(newValue) }
     }
 
     /// The language the interface is in, which is what the old `system` case

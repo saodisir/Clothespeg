@@ -35,6 +35,11 @@
 "Markup" = "标注";
 "Show in Finder" = "在访达中显示";
 "Save to Desktop" = "存储到桌面";
+"File Access…" = "访问权限…";
+"“%@” needs your permission" = "%@ 需要你的同意";
+"macOS decides that in Privacy settings. Allow it, then drag the card again." = "由 macOS 隐私设置决定，允许后重新拖一次即可。";
+"Grant Access" = "去授权";
+"Not Now" = "暂不";
 "Discard" = "丢弃";
 "Copy QR code contents" = "复制二维码内容";
 "Open Link" = "打开链接";
@@ -339,11 +344,21 @@
 "Ratio · the shape of the frame" = "比例 · 框是什么形状";
 "Long · scroll down, Return when done" = "长图 · 往下滚动，回车完成";
 "Text · the words in the area" = "识别 · 取这块区域里的字";
-"Translate · the same words, another language" = "译 · 同一段字，另一种语言";
-"Language · which one a press translates into" = "语言 · 按一下译成哪一种";
+"Language · which one it translates into" = "语言 · 译成哪一种";
+"Translate · Return, a double-click, or this button · esc leaves" = "翻译 · 回车、双击或这颗按钮 · esc 离开";
+"Translate" = "翻译";
+/* 截图 · `T` 在短名单里走一格，浮条先说两秒「译成 X」。芯片上没有字，这是唯一
+   能看见「换到哪一门」的地方。 */
+"Now into %@" = "译成 %@";
+"The language changed" = "语言已切换";
 "Edit · take it and open the editor" = "编辑 · 截下来并打开编辑器";
 "Again · put the last frame back" = "重截 · 把上一次的框放回原位";
 "Capture · Return, a double-click, or this button · esc leaves without one" = "拍下来 · 回车、双击、点这里都行 · esc 直接离开";
+/* 折起来的浮条（译文出来之后那一条）。第二颗出口是这里唯一一个「图标说不清
+   自己在干什么」的按钮，所以要有一句悬停说明。 */
+"Both texts · the words and their translation" = "原文和译文 · 两份一起拿走";
+"The translated picture" = "译好的图片";
+"Leave without taking it" = "什么都不拿，直接离开";
 "Scroll up or down · Return when done" = "上下滚动都行 · 回车完成";
 "Drag the area that should keep growing" = "拖出要一直长下去的区域";
 /* 这一句曾经是全浮条最宽的一句（233pt），而它一年出现两次：浮条的宽度钉在
@@ -362,7 +377,9 @@
 "The words in this area" = "这块区域里的文字";
 "Drag the area to translate" = "拖动要翻译的区域";
 "Translating…" = "翻译中…";
+"Translating into %@…" = "译成 %@…";
 "The words, in the other language" = "这块区域里的文字，另一种语言";
+"The words, in %@" = "这块区域里的文字，%@";
 "Those words could not be translated" = "这段文字没能译出来";
 "Cannot tell which language these words are in" = "读不出这段是什么语言";
 /* 这两句原来更长（「还不能在这两种语言之间翻译」/「设置里可改『译成』」），
@@ -370,6 +387,16 @@
 "This Mac cannot translate between those two languages" = "这台 Mac 不支持这两种语言";
 "Those words are already in this language" = "已经是这种语言了 · 设置里可改";
 "More text — all of it is in the clipboard" = "还有更多 · 全部已在剪贴板";
+
+/* 截图 · 译文放在哪（P17）：`译` 旁边那个带下拉箭头的按钮。
+   两个选项沿用用户自己的说法，四个字压成三个字：菜单是扫一眼选的，
+   长一点的那句放在按钮的悬停提示里。 */
+"Where the translation goes" = "译文放在哪";
+"Side by side" = "对照";
+"In place" = "原位置";
+/* 原位置翻译只译出一部分时浮条上的那句。带着个数，所以短：
+   浮条宽度钉在最长那句上，这句不能比「已经是这种语言了」更长。 */
+"%d areas could not be translated" = "%d 处未翻译";
 
 /* 剪贴板页 —— 「译」用哪种语言、哪个引擎、哪把钥匙 */
 "Translation" = "翻译";

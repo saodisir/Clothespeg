@@ -148,6 +148,32 @@ enum Payload: Codable, Equatable {
     var isImage: Bool { imageURL != nil }
     var isFile: Bool { if case .file = self { return true }; return false }
     var isNote: Bool { if case .note = self { return true }; return false }
+
+    /// What a stack of files calls itself.
+    ///
+    /// One file is named by itself, extension and all: the extension is half
+    /// of what a file is, and a card reading "Desktop" for something the
+    /// Finder calls "Desktop.pdf" is a card that cannot be told apart from
+    /// the folder.
+    ///
+    /// Several are named after where they are, because that is what tells
+    /// them apart — three PDFs from three folders are three documents and
+    /// their names say nothing. When they are not all in the same place there
+    /// is no one place, so the number of places is what it says.
+    ///
+    /// Asked by two drawings of the same thing: the card on the line, and
+    /// the small card that follows the pointer while the card is dragged.
+    var fileHeadline: String {
+        let files = files
+        guard let first = files.first else { return "" }
+        if files.count == 1 { return first.lastPathComponent }
+        let folders = Set(files.map { $0.deletingLastPathComponent().lastPathComponent })
+        if folders.count == 1 { return folders.first ?? first.lastPathComponent }
+        // Not translated: it is a number and a noun that only appear when
+        // a selection is spread across several folders, and a card that says
+        // "4 places" says it in any language the Finder does.
+        return "\(folders.count) \(folders.count == 1 ? "place" : "places")"
+    }
 }
 
 /// The rich formatting a copy arrived with, kept beside the plain text.
@@ -418,6 +444,23 @@ enum PayloadCard {
               let url = URL(string: string),
               url.scheme != nil else { return false }
         return ["http", "https", "ftp", "mailto", "file"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    /// The icon the Finder shows for this file, or a page when it has none
+    /// to show — which is the case for something that has since been moved.
+    ///
+    /// Asked twice for the same reason `fileHeadline` is: the card draws a
+    /// stack of these, and so does the small card under the pointer while
+    /// the card is being dragged.
+    static func fileIcon(for url: URL) -> NSImage {
+        let generic = NSWorkspace.shared.icon(for: .data)
+        // A missing file's icon is a question mark, which reads as an error
+        // rather than as the thing itself.
+        guard FileManager.default.fileExists(atPath: url.path) else { return generic }
+        // The icon of what the file is, not of its name: a document renamed
+        // from .txt to .md should look like what it now is.
+        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType) ?? .data
+        return NSWorkspace.shared.icon(for: type)
     }
 }
 

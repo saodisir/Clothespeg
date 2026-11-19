@@ -108,6 +108,8 @@ final class CaptureController {
         surface.onFinishColour = { [weak self] hex in self?.finishColour(hex) }
         surface.onTranslate = { [weak self] text in self?.translate(text) }
         surface.onFinishTranslation = { [weak self] text in self?.finishTranslation(text) }
+        surface.onReadInPlace = { [weak self] rect in self?.readInPlace(rect) }
+        surface.onFinishInPlaceImage = { [weak self] image in self?.finishInPlaceImage(image) }
         surface.onEnterLongMode = { [weak self] in self?.handOverInput() }
         surface.onEdit = { [weak self] target in self?.edit(target) }
         surface.onAgain = { [weak self] in self?.restoreLast() }
@@ -387,6 +389,170 @@ final class CaptureController {
         }
     }
 
+    /// The words translated back onto the pixels they came from.
+    ///
+    /// One entrance, two exits. This is the reading half: the region is cut
+    /// once, Vision returns the words *and* their places, and one batch
+    /// translation keeps the answers in the same order as the boxes. The
+    /// finished picture stays on the overlay until the check hangs the words
+    /// or the second button hangs the picture.
+    private func readInPlace(_ rect: CGRect) {
+        guard let backdrop, let screen,
+              let image = Self.crop(backdrop, to: rect, on: screen) else {
+            surface?.showInPlaceTranslation(nil, words: "")
+            return
+        }
+        let surface = surface
+        DispatchQueue.global(qos: .userInitiated).async {
+            let blocks = PictureText.recognizeBlocks(in: image)
+            let lines = blocks.map(\.text)
+            let original = lines.joined(separator: "\n")
+            guard !blocks.isEmpty else {
+                DispatchQueue.main.async { surface?.showInPlaceTranslation(nil, words: "") }
+                return
+            }
+            let source = SourceLanguage.guess(original)
+            Task { @MainActor in
+                // Read on the main actor: the shortlist is a user default that
+                // the settings window owns, not a value to copy off-thread.
+                let target = Self.translationTarget()
+                // A block already in the target language is left alone: not
+                // sent to the engine, not covered on the picture. Framecho's
+                // planner does the same, and it is why a Chinese label on an
+                // English page does not come back mangled.
+                var send: [(index: Int, text: String)] = []
+                // What the rule judged to be already in the target, by guess.
+                // Logged because "nothing happened" and "the guess was wrong"
+                // look identical on screen, and the guess is the only part of
+                // this path that can be wrong without an error.
+                var already: Set<String> = []
+                for (index, line) in lines.enumerated() {
+                    if let target, let guessed = SourceLanguage.guess(line),
+                       SourceLanguage.same(guessed, target) {
+                        already.insert(guessed.minimalIdentifier)
+                        continue
+                    }
+                    send.append((index, line))
+                }
+                diagLog("Capture text: in-place \(send.count)/\(lines.count) block(s) to translate"
+                    + (target.map { " into \(TranslationAPI.name(of: $0))" } ?? " into the system's language")
+                    + (already.isEmpty ? "" : " · already \(already.sorted().joined(separator: "/"))"))
+                // Nothing on the picture is in another language. Said on the
+                // bar instead of handing back a picture that looks untouched:
+                // "no translation happened" and "the translation is invisible"
+                // are the same thing to look at, and this one has a reason.
+                guard !send.isEmpty else {
+                    surface?.inPlaceNothingToDo()
+                    return
+                }
+                // `answers` is what the text exit hands over (untouched blocks
+                // keep their original words); `painted` is what the picture
+                // draws, where an empty answer means "leave this area alone".
+                var answers = lines
+                var painted = Array(repeating: "", count: lines.count)
+                // How many areas the engine had nothing for. Zero is the
+                // ordinary case; anything else is said on the bar, because a
+                // half-translated screenshot otherwise looks like a bug with no
+                // explanation — which is exactly what it was reported as.
+                var leftBehind = 0
+                do {
+                    let translated: [String]
+                    var converted = false
+                    if let target,
+                       let byScript = ScriptConversion.convert(send.map(\.text),
+                                                               from: source, to: target) {
+                        // 简体 ↔ 繁體 is a conversion, not a translation, and
+                        // the model reads both scripts as "already the language
+                        // asked for" — measured 2026-11-13, twice. ICU is exact.
+                        translated = byScript
+                        converted = true
+                        diagLog("Capture text: in-place \(send.count) block(s) by script conversion")
+                    } else if TranslationAPI.isConfigured, let target {
+                        translated = try await TranslationAPI.translateLines(
+                            send.map(\.text), into: target)
+                    } else if #available(macOS 15.0, *) {
+                        translated = try await Translator.shared.translateBlocks(
+                            send.map(\.text), from: source, to: target)
+                    } else {
+                        // macOS 14 with no key filled in: no remote engine and
+                        // no `TranslationSession` before 15, so there is
+                        // nothing behind the button. Handing the words straight
+                        // back would be a picture that claims to be translated
+                        // and is not — the silent degradation the bar exists to
+                        // prevent, and the reason this throws.
+                        throw TranslationAPI.Failure.noEngine
+                    }
+                    // By index rather than by count. `translateLines` always
+                    // answers with one slot per line and fills the ones nobody
+                    // answered with "", so a count check could never catch the
+                    // failure it was written for — it was true on every run,
+                    // including the one that left half a screenshot in English.
+                    //
+                    // An answer that is the question again counts as no answer.
+                    // Painted, it is a block that kept its original words while
+                    // the bar said nothing, which is indistinguishable from a
+                    // translation nobody asked for. See `sameWords` for why a
+                    // short product name is exempt.
+                    var missed = 0
+                    for (offset, entry) in send.enumerated() {
+                        guard offset < translated.count else { missed += 1; continue }
+                        let answer = translated[offset]
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        // A converted block may legitimately be identical — a
+                        // line with nothing Simplified-only in it — so the
+                        // "same words" test only guards the engine's answers.
+                        guard !answer.isEmpty else { missed += 1; continue }
+                        guard converted
+                            || (!Self.sameWords(answer, as: entry.text)
+                                && !SourceLanguage.untouched(answer, since: entry.text,
+                                                             into: target)) else {
+                            missed += 1
+                            continue
+                        }
+                        answers[entry.index] = answer
+                        painted[entry.index] = answer
+                    }
+                    diagLog("Capture text: in-place \(send.count - missed)/\(send.count)"
+                        + " block(s) answered")
+                    leftBehind = missed
+                } catch {
+                    diagLog("Capture text: in-place translation failed — \(error.localizedDescription)")
+                    // A lost round trip is said out loud, not swallowed. The
+                    // picture cannot show a failure — the words are the words
+                    // either way — so the original comes back on the card with
+                    // the count on the bar, which is the same treatment a
+                    // half-answered screen gets. Reported 2026-11-13 as 「在原
+                    // 位置上翻译英文…还是中文」: the request had timed out
+                    // (`请求超时` at 15:30:40) and repainting the originals
+                    // left a screenshot that looked untouched. The area is
+                    // still selected and `译` is pressable again, so the retry
+                    // is one key.
+                    surface?.showInPlaceTranslation(nil, words: original,
+                                                    leftBehind: blocks.count,
+                                                    base: image,
+                                                    boxes: blocks.map(\.box))
+                    return
+                }
+                let rendered = TranslatedImage.render(base: image, blocks: blocks,
+                                                      translations: painted)
+                let joined = answers.joined(separator: "\n")
+                surface?.showInPlaceTranslation(rendered,
+                                                words: joined.isEmpty ? original : joined,
+                                                leftBehind: leftBehind,
+                                                base: image,
+                                                boxes: blocks.map(\.box))
+            }
+        }
+    }
+
+    /// The second exit: hang the translated picture itself. `commit` already
+    /// writes the PNG, puts it on the pasteboard, marks it as our own write
+    /// and hangs one card, so there is no second landing to build here.
+    private func finishInPlaceImage(_ image: CGImage) {
+        close()
+        commit(image, from: nil)
+    }
+
     /// The words in the other language.
     ///
     /// Two engines, and which one answers is decided by a key rather than by a
@@ -407,6 +573,19 @@ final class CaptureController {
         if let region = surface?.region { LastCapture.remember(.translate, region) }
 
         let asked = Self.translationTarget()
+
+        // 简体 ↔ 繁體 first, and by the system rather than by a model. It is a
+        // script conversion — every character has a counterpart — and the model
+        // got it wrong twice on 2026-11-13: asked for 繁體, it answered 简体, so
+        // the card showed the words twice in the same script and the bar said
+        // 「这块区域里的文字，繁體中文」. No key, no wire, no wait.
+        if let target = asked, let source = SourceLanguage.guess(text),
+           let converted = ScriptConversion.convert(text, from: source, to: target) {
+            surface?.showTranslation(converted)
+            diagLog("Capture text: \(source.minimalIdentifier) → "
+                + "\(target.minimalIdentifier) by script conversion")
+            return
+        }
 
         // A filled-in key is the whole of the choice between the two engines,
         // so the remote one is asked first and the system's engine is not
@@ -494,6 +673,29 @@ final class CaptureController {
     /// default can tell it from someone who does not.
     private static func translationTarget() -> Locale.Language? {
         Locale.Language(identifier: TranslationTargets.current)
+    }
+
+    /// Whether an answer is the question again.
+    ///
+    /// An engine that hands the same words back has not translated them, and
+    /// painting them silently is the failure this app keeps having to fix. But
+    /// an identical answer is not always a miss: rule 4 of the prompt tells the
+    /// model to leave code, URLs, file names, product names and version numbers
+    /// exactly as they are, so `Tableau Studio` and `v2.3.0` are *supposed* to
+    /// come back untouched.
+    ///
+    /// So the test is what kind of block it was, not whether the bytes moved: a
+    /// passage longer than a heading (20 characters) is prose and has to come
+    /// back changed, and any block holding a script above Latin-1 is words that
+    /// were meant to be translated — `> 0x2FF` starts at combining marks and so
+    /// leaves `Café` on the product-name side, while Han, kana, Hangul, Greek,
+    /// Cyrillic, Hebrew and Arabic all land on the other.
+    static func sameWords(_ answer: String, as text: String) -> Bool {
+        let a = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, a == t else { return false }
+        if t.count > 20 { return true }
+        return t.unicodeScalars.contains { $0.value > 0x2FF }
     }
 
     /// The words, on their way to the line as text rather than as a picture.

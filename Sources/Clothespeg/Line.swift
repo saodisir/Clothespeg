@@ -1183,6 +1183,36 @@ final class Line: ObservableObject {
         }
     }
 
+    /// Why a card would not come off the line, said where the answer lives.
+    ///
+    /// A drag the app cannot complete is a drag the Finder refuses, and the
+    /// refusal is silent: the card flies back with nothing said (2026-11-07,
+    /// files copied out of `~/Downloads`). So the drag is stopped before it
+    /// starts and this is the sentence that replaces it — the folder that
+    /// stands in the way, and the one button that can change it.
+    ///
+    /// One line, because the folder is the whole explanation. The system's
+    /// own question, if it ever got asked, would say the same thing; this
+    /// only exists for the case where it was answered no and will not be
+    /// asked again.
+    func explainBlockedDrag(_ url: URL) {
+        let folder = FileAccess.folderName(of: url)
+        let alert = NSAlert()
+        // Named as the system's answer rather than the app's limit: the
+        // app would read the file if it were allowed to, and a dialog that
+        // says "no permission" without saying whose leaves the user
+        // guessing whether this is a bug.
+        alert.messageText = String(format: L("“%@” needs your permission"), folder)
+        alert.informativeText = L("macOS decides that in Privacy settings. Allow it, then drag the card again.")
+        alert.addButton(withTitle: L("Grant Access"))
+        alert.addButton(withTitle: L("Not Now"))
+        alert.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            FileAccess.openSettings()
+        }
+    }
+
     /// Keep an image by copying it to the Desktop. The card stays on the
     /// line: saving is not taking down — whether a card leaves is always
     /// the user's call, made with the cross in the corner.

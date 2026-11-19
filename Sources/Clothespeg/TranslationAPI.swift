@@ -94,6 +94,11 @@ enum TranslationAPI {
         /// A 200 with nothing in it. Worth its own case: it reads as "the
         /// translation is empty", and that is a different bug from a refusal.
         case emptyAnswer
+        /// No engine to ask. macOS 14 with no key filled in: the system's
+        /// translator does not exist before 15, so there is nothing behind the
+        /// button. A refusal the bar can say, rather than handing the original
+        /// words back and calling it a translation.
+        case noEngine
 
         var errorDescription: String? {
             switch self {
@@ -109,6 +114,8 @@ enum TranslationAPI {
                 return "No answer: \(detail)"
             case .emptyAnswer:
                 return "The model answered with nothing"
+            case .noEngine:
+                return "No translation engine here (macOS 14 with no key)"
             }
         }
     }
@@ -125,19 +132,46 @@ enum TranslationAPI {
         return trimmed
     }
 
+    /// The words Test asks about. English, and prose rather than a label, so
+    /// an answer still written in Latin cannot be excused as a product name
+    /// the prompt told the model to leave alone.
+    static let testSample = "The line is where things rest."
+
+    /// Whether a Test answer is the question again.
+    ///
+    /// A 200 is not a translation. Measured 2026-11-14: `qwen-mt-flash`, given
+    /// the system rules folded into one user message, answered Test with the
+    /// English sample verbatim, so Test said ok for as long as every capture
+    /// came back in English. The script is the honest test: Latin words asked
+    /// for Chinese that come back Latin were not translated. Pure, so the
+    /// self-test can assert it without a wire.
+    static func answeredWithoutTranslating(_ answer: String,
+                                           into target: Locale.Language) -> Bool {
+        let said = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty else { return true }
+        return SourceLanguage.untouched(said, since: testSample, into: target)
+    }
+
     /// One short round trip, for the Test button: does the address answer,
-    /// does the key work, does the model exist. The three faults people
-    /// actually hit, each with its own sentence — a single "failed" would
-    /// leave the next step to guesswork.
+    /// does the key work, does the model exist, and does it actually translate.
+    /// A single "failed" would leave the next step to guesswork.
     static func test() async -> (ok: Bool, detail: String) {
         guard isConfigured else { return (false, "No key yet.") }
         let began = Date()
+        let target = Locale.Language(identifier: "zh-Hans")
         do {
-            let answer = try await call(text: "The line is where things rest.",
-                                        system: prompt(into: Locale.Language(identifier: "zh-Hans")),
+            let answer = try await call(text: testSample,
+                                        system: prompt(into: target),
                                         maxTokens: 80)
             let took = Int(Date().timeIntervalSince(began) * 1000)
             let said = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !said.isEmpty else {
+                return (false, "\(model) · \(took) ms · the model answered with nothing")
+            }
+            guard !answeredWithoutTranslating(answer, into: target) else {
+                return (false, "\(model) · \(took) ms · answered in the source language, "
+                    + "not \(name(of: target)): \(said)")
+            }
             return (true, "\(model) · \(took) ms · \(said)")
         } catch {
             return (false, error.localizedDescription)
@@ -146,9 +180,54 @@ enum TranslationAPI {
 
     // MARK: The request
 
+    /// The address as a request needs it, rather than as it was pasted.
+    ///
+    /// Providers hand out a base URL (`.../compatible-mode/v1`, `.../v1`)
+    /// because their SDK appends `/chat/completions` on the way out. This app
+    /// has no SDK: it posts to exactly what is in the field. Only a bare `/v1`
+    /// is completed; every other path is left alone, so a provider laid out
+    /// differently is never silently rewritten into a wrong address. Deliberately
+    /// not inside `endpoint`: the settings page must show what was typed, not a
+    /// tidied version of it.
+    static func resolvedEndpoint(_ raw: String) -> String {
+        let typed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bare = typed.hasSuffix("/") ? String(typed.dropLast()) : typed
+        let suffix = "/chat/completions"
+        if bare.hasSuffix(suffix) { return bare }
+        if bare.hasSuffix("/v1") { return bare + suffix }
+        return typed
+    }
+
+    /// Two shapes of the same request, chosen by what the other end accepts.
+    ///
+    /// Ordinary chat models take a `system` rule and a `user` text. A few
+    /// translation-only endpoints — measured with `qwen-mt-plus`, 2026-11-13 —
+    /// accept one `user` message and answer 400 to `system` at all. There the
+    /// rule is folded into the one message: the target language is already
+    /// written inside it, so nothing else has to travel. Pure, and with the
+    /// model handed in, so the self-test can assert both shapes without a
+    /// network or a preference file.
+    static func messages(system: String, text: String, model: String) -> [[String: String]] {
+        let words = String(text.prefix(limit))
+        if usesSingleMessage(model) {
+            return [["role": "user", "content": system + "\n\n" + words]]
+        }
+        return [["role": "system", "content": system],
+                ["role": "user", "content": words]]
+    }
+
+    /// Whether a model of this kind refuses `system`.
+    ///
+    /// A request shape, not a vendor: the same provider's ordinary chat models
+    /// take two messages, and a different provider with this constraint would
+    /// belong under its own name here.
+    static func usesSingleMessage(_ model: String) -> Bool {
+        model.lowercased().hasPrefix("qwen-mt")
+    }
+
     private static func call(text: String, system: String,
                              maxTokens: Int = 4096) async throws -> String {
-        let address = endpoint
+        let address = resolvedEndpoint(endpoint)
         guard let url = URL(string: address), url.scheme?.hasPrefix("http") == true else {
             throw Failure.badEndpoint(address)
         }
@@ -172,10 +251,7 @@ enum TranslationAPI {
             "temperature": 0.2,
             "max_tokens": maxTokens,
             "stream": false,
-            "messages": [
-                ["role": "system", "content": system],
-                ["role": "user", "content": String(text.prefix(limit))],
-            ],
+            "messages": messages(system: system, text: text, model: model),
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -205,6 +281,14 @@ enum TranslationAPI {
               let content = answer.choices.first?.message.content else {
             throw Failure.emptyAnswer
         }
+        // Which model really answered, and with what. Four rounds of
+        // "sometimes it translates and sometimes it does not" were spent
+        // guessing at this from outside the process: the bar can only say
+        // 未翻译, which does not tell an echoed answer apart from a model that
+        // was never the one typed into Settings. Kept to a short prefix —
+        // this is a diagnostic line, not a copy of the screen.
+        let said = String(content.prefix(100)).replacingOccurrences(of: "\n", with: " / ")
+        diagLog("Translation: \(model) · \(text.count) in · \(content.count) out · \(said)")
         return content
     }
 
@@ -226,6 +310,134 @@ enum TranslationAPI {
             let message: Message
         }
         let choices: [Choice]
+    }
+
+    /// One answer per line, in the same order, for a translation that is
+    /// painted back over the pixels.
+    ///
+    /// `translate(_:into:)` answers with one block of prose, which is right
+    /// for the card. A screenful of separate text boxes needs its lines kept
+    /// apart, and asking once per box would be a dozen 1–3 second round trips.
+    /// The numbering is what lets a short model drop or repeat a line without
+    /// silently shifting every line below it onto the wrong part of the image.
+    ///
+    /// Asking twice is not a retry of the same question. The second call names
+    /// only the lines the first answer left out, so it is cheap, and a model
+    /// that dropped one number in an otherwise good answer gets a second look at
+    /// that one line instead of a whole screen's worth of fresh drift.
+    static func translateLines(_ lines: [String],
+                               into language: Locale.Language) async throws -> [String] {
+        guard !lines.isEmpty else { return [] }
+        var out = try await ask(lines, into: language)
+        let missing = out.indices.filter { out[$0].isEmpty }
+        guard !missing.isEmpty, missing.count < lines.count else {
+            if !missing.isEmpty {
+                diagLog("Translation: no line paired in an answer of \(lines.count)")
+            }
+            return out
+        }
+        diagLog("Translation: answer left \(missing.count)/\(lines.count) line(s) out — asking again")
+        let again = try await ask(missing.map { lines[$0] }, into: language)
+        for (offset, text) in zip(missing, again) where !text.isEmpty {
+            out[offset] = text
+        }
+        let still = out.indices.filter { out[$0].isEmpty }.count
+        if still > 0 {
+            diagLog("Translation: \(still) line(s) still unanswered — left as they were")
+        }
+        return out
+    }
+
+    /// One round trip for a set of lines, paired back to one answer each.
+    private static func ask(_ lines: [String],
+                            into language: Locale.Language) async throws -> [String] {
+        let numbered = lines.enumerated()
+            .map { "\($0.offset + 1)\t\($0.element)" }
+            .joined(separator: "\n")
+        let answer = try await call(text: numbered, system: linesPrompt(into: language))
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw Failure.emptyAnswer }
+        return paired(trimmed, count: lines.count)
+    }
+
+    /// The answer's lines, paired with the numbers the reply was asked to keep.
+    ///
+    /// Read as loosely as the model writes it. The measured failure (2026-11-13)
+    /// is that a 7B model keeps the number and then puts a *space* where the tab
+    /// was asked for — 「4 一键操作…」 — and a strict `\t` split dropped that
+    /// line, which painted nothing over it, which is a screenshot that came back
+    /// half in English with nothing on screen to say why.
+    ///
+    /// So: the number is what counts, the separator is not. A line with no
+    /// number is a translation that wrapped, and it belongs to the one above
+    /// rather than to no one — a long paragraph is where a small model wraps
+    /// most.
+    static func paired(_ answer: String, count: Int) -> [String] {
+        var out = Array(repeating: "", count: count)
+        var last = -1
+        for raw in answer.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            if let (number, text) = numbered(line), number >= 1, number <= count {
+                last = number - 1
+                out[last] = text
+            } else if last >= 0, !out[last].isEmpty {
+                // Continuation. Only onto a line that already has an answer, so
+                // a preface before the first number is dropped rather than
+                // glued to it.
+                out[last] += " " + line
+            }
+        }
+        // Nothing paired at all: the numbering was lost, not the answer. Take
+        // the lines in the order they came rather than lose the screen.
+        if out.allSatisfy(\.isEmpty) {
+            let plain = answer.split(separator: "\n", omittingEmptySubsequences: true)
+            for (index, text) in plain.enumerated() where index < out.count {
+                out[index] = text.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return out
+    }
+
+    /// A leading number and whatever separator the model chose after it.
+    ///
+    /// One to three digits, because a translation is allowed to *start* with a
+    /// number — 「13 种网格…」 — and a rule that ate it would corrupt the answer
+    /// it was trying to align.
+    private static func numbered(_ line: String) -> (Int, String)? {
+        var rest = Substring(line)
+        var digits = ""
+        while let first = rest.first, first.isASCII, first.isNumber, digits.count < 3 {
+            digits.append(first)
+            rest = rest.dropFirst()
+        }
+        guard let number = Int(digits) else { return nil }
+        rest = rest.drop(while: { $0 == " " || $0 == "\t" })
+        // Tab, full stop, colon, dash, ideographic comma — or the literal
+        // backslash-t that came back from one measured English answer.
+        if rest.hasPrefix("\\t") {
+            rest = rest.dropFirst(2)
+        } else if let first = rest.first, ".):：、-".contains(first) {
+            rest = rest.dropFirst()
+        }
+        let text = rest.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : (number, text)
+    }
+
+    /// A separate prompt, deliberately. The card's prompt asks for prose and
+    /// preserves line breaks; this one asks for a numbered table. Sharing one
+    /// prompt between the two would make one of them wrong.
+    private static func linesPrompt(into language: Locale.Language) -> String {
+        """
+        You are a translation engine. Translate each numbered line into \(name(of: language)).
+
+        Rules:
+        1. Reply with one line per input line, in the same order. Start each with its number and a tab.
+        2. Keep the numbering and the tab. Do not merge, split or reorder lines.
+        3. Reply with the translations only. No preface, no explanation, no quotation marks.
+        4. Leave code, URLs, file names, product names and version numbers exactly as they are.
+        5. Translate everything. Do not summarise, shorten, or add anything that is not in the text.
+        """
     }
 
     // MARK: The prompt
@@ -257,10 +469,30 @@ enum TranslationAPI {
     /// scripts, while 简体中文 does not. The fallback is the identifier
     /// itself, which a model reads correctly often enough — and which only
     /// shows up for a target the settings cannot produce today.
+    ///
+    /// The script subtag is read *before* the bare language code, and that
+    /// order is the whole of a bug reported on 2026-11-13: 「为什么繁体中文翻译
+    /// 无效」. `minimalIdentifier` drops the script — `zh-Hant` comes back as
+    /// `zh-TW`, `zh-Hans` as `zh` — so the table matched neither and both fell
+    /// through to `zh` → 中文. Told 中文, the model answers in Simplified, so a
+    /// request for 繁體 came back 简体: not a refusal, not an error, a wrong
+    /// answer that looks like the button did nothing.
     static func name(of language: Locale.Language) -> String {
         let id = language.minimalIdentifier.lowercased()
+        // Script first, and *before* the plain code. `minimalIdentifier` keeps
+        // the script only when it has no better idea; `zh-Hans` comes back as
+        // `zh`, which is in the table as 「中文」, so a plain-code lookup first
+        // would answer 中文 for both Chinese targets and never reach the
+        // script — which is exactly the bug this order exists for.
+        if let code = language.languageCode?.identifier.lowercased(),
+           let script = language.script?.identifier.lowercased(),
+           let exact = names["\(code)-\(script)"] {
+            return exact
+        }
         if let exact = names[id] { return exact }
-        if let base = id.split(separator: "-").first, let name = names[String(base)] { return name }
+        if let base = id.split(separator: "-").first, let name = names[String(base)] {
+            return name
+        }
         return id
     }
 

@@ -144,8 +144,78 @@ enum CaptureSymbol {
     /// `arrow.uturn.backward.square`): an arrow says "back", never "this frame
     /// is on screen but nothing has been taken yet".
     static let again = "rectangle.dashed"
-    /// In the order they are drawn, which is also the order they are read.
-    static let all = [ratio, long, read, colour, translate, again, edit]
+    /// The second exit of an in-place translation: hang the picture itself.
+    static let hangImage = "photo"
+    /// The second exit of a card translation: the words **and** their
+    /// translation, together, as text.
+    ///
+    /// Two panels rather than one, because that is the difference from the check
+    /// beside it: the check hands over the answer, this hands over the answer
+    /// and the question. It was asked for in exactly those terms (2026-11-13):
+    /// 「增加一个按钮，就变成双语一起复制，这样对照着去看？只复制文字，不是复制图片」.
+    ///
+    /// `doc.on.doc` was the first answer and was wrong about its own meaning: it
+    /// is macOS's *copy* glyph, offset sheets and all, and beside a ✕ and a ✓ it
+    /// promised a duplicate rather than a second text. Reported the same evening:
+    /// 「这个按钮其实有点'复制'的意思…至少目前这个图标不是特别合适」. What the
+    /// button hands over is two blocks of text one above the other — exactly what
+    /// the result card is — so the glyph is that card: a rectangle divided in
+    /// two.
+    ///
+    /// Three candidates were rendered in the real bar before this one was taken
+    /// (30 × 26 chip, 2× pixels, measured off the stills):
+    ///
+    /// - `bubble.left.and.text.bubble.right` says "two texts" best of anything in
+    ///   the system, and was given up on weight: 19.5 × 15.5 pt against this
+    ///   one's 16 × 12.5. The folded bar's quietest control would have been its
+    ///   heaviest glyph, and two speech bubbles also read as Messages.
+    /// - `text.rectangle` is one block with one line in it: "text", never "two".
+    /// - `text.alignleft` is a paragraph of rules and nothing else.
+    ///
+    /// The key badge is not part of this argument: `bar.second` is drawn with
+    /// `key: nil`, so the bottom-right corner is free whatever glyph is here —
+    /// unlike the five chips that carry a letter.
+    static let bothTexts = "rectangle.split.1x2"
+    /// The chip beside `译`, in its two states: where the words come back.
+    ///
+    /// Symbols now, not the hand-drawn faces these started as. A person looking
+    /// at the bar asked what the two drawings had to do with translation
+    /// (2026-11-13), and the answer had to be "nothing" — two stacked lines is
+    /// a paragraph, a framed line is a minus sign.
+    ///
+    /// Then the second face was reported as not clear either (2026-11-13). A
+    /// coherent pair was tried and given up on: a panel split down the middle
+    /// beside two panels one over the other is exactly the *beside / on top*
+    /// distinction, and `rectangle.split.2x1` is what `自由` already wears
+    /// (`aspectratio` is an inner rectangle with a divider) — two neighbouring
+    /// chips that look alike is the ambiguity this was meant to remove, moved
+    /// rather than fixed. So `translate` stays on the card: it is the one glyph
+    /// in the system that means translation on its own, the `译` chip next door
+    /// wears a globe rather than it, and the in-place face below says the other
+    /// half of the pair in shapes.
+    static let presentationCard = "translate"
+    /// A second sheet laid on the first, which is what the in-place answer is:
+    /// the words are not moved, a layer is put over them. `character.textbox`
+    /// lost on two counts — it draws the character the **system language** uses
+    /// (an `A` here, 字 there), and on a Chinese Mac it drew a 字 in a box
+    /// beside the reading chip's 字. Two chips saying 字 is one too many.
+    static let presentationInPlace = "rectangle.on.rectangle"
+    /// The way out, beside the way on.
+    ///
+    /// A symbol since 2026-11-13, and it was drawn by hand before that for a
+    /// reason that turned out to be about the **character** `✕` and not about
+    /// this glyph: "a ✕ is not in every font, and the one that has it sits low
+    /// in a 22-point box" is true of a text glyph and false of the system
+    /// symbol, which is available from macOS 11 and is centred by construction.
+    /// The hand-drawn cross also had its own size — a 3.6-point arm, 8.6 points
+    /// of ink — which was the smallest of the three marks in the row and the
+    /// half of 「这个图标的大小也不一致啊」 that nobody could name.
+    static let close = "xmark"
+    /// Every symbol this bar can draw, so the self-test asks each one by name:
+    /// a symbol renamed between two macOS releases draws as a blank box, and
+    /// nothing else in a build would say so.
+    static let all = [ratio, long, read, colour, translate, again, edit, close,
+                      presentationCard, presentationInPlace, hangImage, bothTexts]
 }
 
 /// What the capture draws and what it hears.
@@ -341,14 +411,20 @@ final class CaptureSurface: NSView {
     /// `识别` was chosen before there was a region. The next drag is the region
     /// to read, the way `longArmed` treats the next drag as the one to grow.
     private var readArmed = false
-    /// `译` was chosen before there was a region.
+    /// `M`, or the chip that says where the answer lands, was pressed before
+    /// there was a region. The next region is translated the moment it exists.
+    ///
+    /// It used to say *which* chip asked, so the light could come on under the
+    /// right one — and then both chips stopped being doors. The globe became a
+    /// select box on 2026-11-13 (「其实它没有按钮的作用，只是一个选择框」), so
+    /// only one chip can still be waiting for anything, and one flag says it.
     private var translateArmed = false
     /// Which door the region came in through.
     ///
     /// The pixels and the Vision request are the same either way; what differs
     /// is what happens to the words afterwards — one hangs them on the line,
     /// the other puts them back on the screen and keeps nothing.
-    private enum ReadingPurpose { case hang, translate }
+    private enum ReadingPurpose { case hang, translate, inPlace }
     private var readingPurpose: ReadingPurpose = .hang
     /// Harness only: the words a reading would show. There is no screen for a
     /// harness to read, and the bar is exactly what needs looking at.
@@ -411,6 +487,24 @@ final class CaptureSurface: NSView {
     /// `nothingToTranslate` — which is exactly why it has to be caught rather
     /// than compared for.
     private var translateNoop = false
+    /// How many areas the engine had nothing for, when it had nothing for some.
+    ///
+    /// A picture that came back half in its original language used to look
+    /// exactly like a picture that had been translated badly, and there was no
+    /// way to tell which had happened — reported 2026-11-13 as 「翻译不全」.
+    /// Now the bar says how many places stayed as they were, and the answer is
+    /// "the engine had nothing for them" rather than a guess.
+    private var translateNote: String?
+    /// What the bar is saying for a moment about something that changed with
+    /// nothing else on screen changing with it.
+    ///
+    /// One case so far: `T` walking the shortlist (2026-11-13). The language chip
+    /// carries no word — asked for in 2026-11-03, 「这个按钮不需要显示中文或英文等
+    /// 语言类型」 — so while the key was only opening a menu that was fine, and the
+    /// moment the key changes the answer instead, the change has to be said
+    /// somewhere. The line is the place that already says the state.
+    private var saidNote: String?
+    private var saidTimer: Timer?
     /// The controller asks the engine and comes back through
     /// `showTranslation(_:)`; nil means it could not.
     var onTranslate: (String) -> Void = { _ in }
@@ -418,6 +512,109 @@ final class CaptureSurface: NSView {
     /// asked for was to read this area in another language, and the reading is
     /// over when the screen goes away.
     var onFinishTranslation: (String) -> Void = { _ in }
+
+    /// The in-place door. Its reading is a picture, not a sheet of words, so
+    /// it has its own way in and one extra way out; the check still hands the
+    /// words over as text.
+    var onReadInPlace: (CGRect) -> Void = { _ in }
+    var onFinishInPlaceImage: (CGImage) -> Void = { _ in }
+    private var inPlaceImage: CGImage?
+    /// The same area *before* the words were replaced, and where each replaced
+    /// block sits in it.
+    ///
+    /// The finished picture is all a static answer needs; an answer that arrives
+    /// a block at a time needs both — the original to lay underneath, the boxes
+    /// to know in what order and how far each one has got. Boxes are Vision's
+    /// own (normalised, bottom-left) and are kept in *reading* order: top first.
+    private var inPlaceBase: CGImage?
+    private var inPlaceBoxes: [CGRect] = []
+    /// Counts in-place answers, so each arrival gets its own reveal key.
+    private var answerSerial = 0
+    /// How the words come back once the area is agreed: on a card beside the
+    /// original, or painted over the words themselves.
+    ///
+    /// A setting rather than a mode, and the distinction is the whole reason it
+    /// has a chip of its own: a mode changes what the next drag means, and this
+    /// changes nothing about the drag — only where the answer lands. The card is
+    /// the default, so the old path stays exactly as long as it was.
+    ///
+    /// Per capture in how it is shown, remembered across captures in what it is:
+    /// the same question every time — *where does the answer go* — and answering
+    /// it again on every capture is answering a question the person has already
+    /// answered. Asked for in as many words (2026-11-13): 「我选了哪个，下一次
+    /// 就默认是这个」. It stays a setting rather than a mode for the older
+    /// reason, and it writes through on the click that chooses it, so the next
+    /// window opens on the same answer with nothing to keep in step.
+    enum Presentation: String, Equatable {
+        case card, inPlace
+        /// What the menu calls it. Two words rather than a sentence: the rows
+        /// are read at a glance, and the long version of each lives in the
+        /// chip's tool tip.
+        var name: String {
+            switch self {
+            case .card: return L("Side by side")
+            case .inPlace: return L("In place")
+            }
+        }
+        /// In the order the menu lists them: the default first, because the
+        /// first row is where the eye starts and where the tick usually is.
+        static let all: [Presentation] = [.card, .inPlace]
+
+        static let storageKey = "translationPresentation"
+
+        /// Where the answer is kept, behind a seam.
+        ///
+        /// A pair of closures rather than `UserDefaults` at each call site, for
+        /// one measured reason: the harness has to show that a choice survives
+        /// the window, and it must not do that by writing into the settings of
+        /// whoever ran it. The version that did — set the key, click, set it
+        /// back — left `inPlace` behind, because a test process ends in
+        /// `exit(0)` and a preference written at the last moment is not always
+        /// flushed. It then poisoned a different check that assumed the default.
+        private static var readSetting: () -> String? = {
+            UserDefaults.standard.string(forKey: Presentation.storageKey)
+        }
+        private static var writeSetting: (String?) -> Void = { value in
+            if let value {
+                UserDefaults.standard.set(value, forKey: Presentation.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Presentation.storageKey)
+            }
+        }
+
+        /// Points the seam at somewhere harmless. Harness only.
+        static func useStorageForTesting(read: @escaping () -> String?,
+                                        write: @escaping (String?) -> Void) {
+            readSetting = read
+            writeSetting = write
+        }
+
+        static func restoreRealStorage() {
+            readSetting = { UserDefaults.standard.string(forKey: Presentation.storageKey) }
+            writeSetting = { value in
+                if let value {
+                    UserDefaults.standard.set(value, forKey: Presentation.storageKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: Presentation.storageKey)
+                }
+            }
+        }
+
+        /// What the last capture used, or the card when nothing was chosen yet.
+        /// The card is the older path and the safer default: a first capture
+        /// that silently repaints the page is a bigger surprise than one that
+        /// puts the words beside it.
+        static var remembered: Presentation {
+            guard let raw = readSetting(), let way = Presentation(rawValue: raw) else {
+                return .card
+            }
+            return way
+        }
+
+        static func remember(_ way: Presentation) { writeSetting(way.rawValue) }
+    }
+    var presentation: Presentation = Presentation.remembered
+    var presentationForTesting: String { presentation == .card ? "card" : "inPlace" }
 
     /// What the region is showing, in the harness or for real.
     private var readingState: Reading? { reading ?? previewReading.map { .found($0) } }
@@ -555,6 +752,79 @@ final class CaptureSurface: NSView {
         revealTimer = nil
     }
 
+    /// The translated picture, arriving the way the card's lines do.
+    ///
+    /// The words in place used to be one flip: the whole area went from English
+    /// to Chinese between two frames, and the answer read as a still rather than
+    /// as something that had just been worked out. Asked for in as many words
+    /// (2026-11-13): 「我们翻译的时候是从上到下面入的，现在原位置翻译的话，最好
+    /// 也是这个效果」.
+    ///
+    /// So the same clock as `ResultReveal`, one row per block instead of one row
+    /// per line: the original sits underneath, and each translated block is
+    /// clipped into place as its turn comes. Blocks are the unit because they
+    /// are what the engine answered — a line-by-line wipe would cut through a
+    /// paragraph in the middle of a sentence, and a growing rectangle would cut
+    /// through the middle of a glyph.
+    ///
+    /// Two paths, on purpose. Outside the animation the finished picture is
+    /// drawn once, exactly as before: clipping a static picture into boxes
+    /// leaves hairline seams at the box edges, and the pixel checks would start
+    /// measuring the seams instead of the words.
+    private func drawInPlace(_ image: CGImage, in region: NSRect) {
+        let whole = NSImage(cgImage: image,
+                            size: NSSize(width: image.width, height: image.height))
+        guard isRevealing, let base = inPlaceBase, !inPlaceBoxes.isEmpty else {
+            whole.draw(in: region)
+            return
+        }
+        NSImage(cgImage: base, size: NSSize(width: base.width, height: base.height))
+            .draw(in: region)
+        // Blocks that have finished go in one clipped pass; the one or two still
+        // fading get their own. A dozen separate full-picture draws at 30 frames
+        // a second is a stutter, and a full-screen capture is a dozen blocks.
+        let settled = NSBezierPath()
+        var fading: [(rect: NSRect, alpha: CGFloat)] = []
+        for (row, box) in inPlaceBoxes.enumerated() {
+            let alpha = revealAlpha(row)
+            guard alpha > 0 else { continue }
+            // Half a point of slack: the clip edge and the picture's own edge
+            // land on different sub-pixels otherwise, and the seam shows as a
+            // one-pixel line down a paragraph.
+            let rect = imageBox(box, in: region).insetBy(dx: -0.5, dy: -0.5)
+            if alpha >= 0.999 {
+                settled.appendRect(rect)
+            } else {
+                fading.append((rect, alpha))
+            }
+        }
+        if !settled.isEmpty {
+            NSGraphicsContext.saveGraphicsState()
+            settled.addClip()
+            whole.draw(in: region, from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        for step in fading {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: step.rect).addClip()
+            whole.draw(in: region, from: .zero, operation: .sourceOver, fraction: step.alpha)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    /// A Vision box in the region it was cut from.
+    ///
+    /// The overlay's own coordinates are the screen's — bottom-left, no flip —
+    /// which is Vision's convention too, so this is a scale and an offset and
+    /// nothing else. (`TranslatedImage` does flip, because the context it draws
+    /// into was flipped on purpose.)
+    private func imageBox(_ box: CGRect, in region: NSRect) -> NSRect {
+        NSRect(x: region.minX + box.minX * region.width,
+               y: region.minY + box.minY * region.height,
+               width: box.width * region.width,
+               height: box.height * region.height)
+    }
+
     /// The rectangle this capture is about, in screen coordinates.
     ///
     /// Handed out for one purpose: remembering what to do again. A `译` or a
@@ -638,6 +908,7 @@ final class CaptureSurface: NSView {
     deinit {
         pointerWatch?.invalidate()
         revealTimer?.invalidate()
+        saidTimer?.invalidate()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -679,6 +950,10 @@ final class CaptureSurface: NSView {
         // repainting a card nobody is looking at is the same mistake the
         // sampling clock used to make.
         stopReveal()
+        // And the note's: two seconds later it would repaint a bar that is no
+        // longer on screen.
+        saidTimer?.invalidate()
+        saidTimer = nil
     }
 
     private func tick() {
@@ -954,30 +1229,35 @@ final class CaptureSurface: NSView {
         }
     }
 
-    /// A ✕ in a disc: leaving without a picture.
+    /// A ✕ on the bar's own wash: leaving without a picture.
     ///
-    /// Drawn rather than set as a glyph, for the reason the chevron on the ratio
-    /// button is drawn: a "✕" is not in every font at every weight, and the ones
-    /// that have it sit low in a 22-point circle.
+    /// The box is a chip, not a disc. It was a disc for two years and that is
+    /// what made the row look like two families of control: next to a chip the
+    /// same ink and the same wash, the one round shape in a row of squares read
+    /// as something else than the way out (2026-11-13). Same radius as every
+    /// other pressable thing — see `chipRadius` — and, since the same evening,
+    /// the same 30 × 26 box: 「距离大小、宽度、高度，理论上都应该是一样的」.
+    ///
+    /// The mark is the system's `xmark` now, not four stroked segments. It was
+    /// drawn for a reason that was about the character `✕` — "not in every font,
+    /// and the ones that have it sit low" — and a symbol is neither of those
+    /// things. What the drawn version did keep for itself was a fourth size: a
+    /// 3.6-point arm is 8.6 points of ink, in a row where the chips are 12 and
+    /// the tick is 10.25. That is the other half of 「这个图标的大小也不一致
+    /// 啊」, and it goes with the rest of them — see `markPointSize`.
     private func drawClose(_ rect: NSRect, lit: Bool) {
-        let disc = NSBezierPath(ovalIn: rect)
-        // The bar's ink rather than white: on a light bar a white disc is not a
-        // disc, it is nothing at all.
+        let plate = NSBezierPath(roundedRect: rect,
+                                 xRadius: Self.chipRadius, yRadius: Self.chipRadius)
+        // The bar's ink rather than white, and the chips' own ten percent
+        // rather than a wash of its own: on a light bar a white plate is not a
+        // plate, it is nothing at all, and two greys one percent apart are the
+        // kind of difference that reads as a mistake without being nameable.
         CaptureInk.ink(effectiveAppearance)
-            .withAlphaComponent(lit ? 0.18 : 0.09).setFill()
-        disc.fill()
-        let cross = NSBezierPath()
-        let centre = NSPoint(x: rect.midX, y: rect.midY)
-        let arm: CGFloat = 3.6
-        cross.move(to: NSPoint(x: centre.x - arm, y: centre.y - arm))
-        cross.line(to: NSPoint(x: centre.x + arm, y: centre.y + arm))
-        cross.move(to: NSPoint(x: centre.x - arm, y: centre.y + arm))
-        cross.line(to: NSPoint(x: centre.x + arm, y: centre.y - arm))
-        cross.lineWidth = 1.4
-        cross.lineCapStyle = .round
-        CaptureInk.ink(effectiveAppearance)
-            .withAlphaComponent(lit ? 0.95 : 0.7).setStroke()
-        cross.stroke()
+            .withAlphaComponent(lit ? 0.18 : 0.10).setFill()
+        plate.fill()
+        drawMark(CaptureSymbol.close, at: NSPoint(x: rect.midX, y: rect.midY),
+                 ink: CaptureInk.ink(effectiveAppearance)
+                    .withAlphaComponent(lit ? 0.95 : 0.7))
     }
 
     /// What was read, on a card laid over the frame it came from.
@@ -1015,6 +1295,13 @@ final class CaptureSurface: NSView {
     /// that switches between them.
     private func drawResultCard(_ region: NSRect) {
         guard let state = readingState else { return }
+        // An in-place translation has no card: the picture itself is the
+        // answer, sitting exactly where the words were read from.
+        if let image = inPlaceImage {
+            resultCard = region
+            drawInPlace(image, in: region)
+            return
+        }
         let ink = CaptureInk.ink(effectiveAppearance)
 
         // What the card says: one block, or two when a translation came back.
@@ -1444,6 +1731,23 @@ final class CaptureSurface: NSView {
         /// The fourth button: read one pixel's colour instead of a picture of
         /// the area. The only button here whose answer needs no rectangle.
         var colour = NSRect.zero
+        /// The chip beside `译` that says *how* the words come back.
+        ///
+        /// A second wide chip, and deliberately not a switch on `译`: the two
+        /// things that used to be crammed into one press are a language and a
+        /// place, and they are asked at different moments. This one is a
+        /// setting — its face shows which way is in force, its chevron opens
+        /// the two rows, and `译` is still the only button that runs anything.
+        var presentation = NSRect.zero
+        /// The chevron end of that chip, which opens its menu.
+        var presentationMenu = NSRect.zero
+        /// The two rows of that menu, in the order they are drawn.
+        var presentationRows: [(Presentation, NSRect)] = []
+        /// A second exit for that reading, to the left of the ✕. Drawn only when
+        /// there is something extra to hand over — a picture in the in-place
+        /// case, both texts in the card's — so the ✕ and the check keep the
+        /// places they have always had.
+        var second = NSRect.zero
         /// The middle of the bar while a long capture runs, where the two
         /// buttons were: one number, and the pill that ends the capture.
         var middle = NSRect.zero
@@ -1498,10 +1802,21 @@ final class CaptureSurface: NSView {
     private static let barHeight: CGFloat = 34
     private static let barPadding: CGFloat = 13
     private static let barGap: CGFloat = 10
-    /// The ✕ beside the pill. Round, and small enough to sit beside a 26-point
-    /// pill without becoming a second button on equal footing — it is the way
-    /// out, not the way on.
-    private static let closeSize: CGFloat = 22
+    /// One corner for every pressable thing in this bar.
+    ///
+    /// Chips, the check, the ✕ and the rows of every menu wear it. It was
+    /// mixed until 2026-11-13 — the chips were rounded squares, the ✕ was a
+    /// disc — and the mix was reported as exactly that: 「叉子和勾，包括你选的
+    /// 图标，有圆的有方的…应该统一一个形状的背景底」. A disc cannot be the one
+    /// rule here anyway: the ratio chip carries a word and `译` is 46 points
+    /// wide, and the only shape that covers a 30-point square, a 46-point chip
+    /// and a 22-point exit is a rounded rectangle. So one radius, and the exit
+    /// keeps its corner instead of losing it.
+    ///
+    /// The panels those menus sit in keep their 10: a panel is a sheet of
+    /// paper, not a button, and a panel drawn with a button's corner would read
+    /// as one enormous chip.
+    private static let chipRadius: CGFloat = 7
     private static let lineFont = NSFont.systemFont(ofSize: 11.5, weight: .regular)
     private static let buttonFont = NSFont.systemFont(ofSize: 11.5, weight: .medium)
     private static let chipFont = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -1511,6 +1826,25 @@ final class CaptureSurface: NSView {
     private static let chipWidth: CGFloat = 30
     private static let chipHeight: CGFloat = 26
     private static let chipGap: CGFloat = 4
+    /// The one size every mark in this bar is drawn at.
+    ///
+    /// There were three of these numbers until 2026-11-13 — 14 for the icon row,
+    /// 13 for the two chips that carry a chevron, 12 for the tick — plus a fourth
+    /// that was not a number at all but a hand-drawn cross with a 3.6-point arm.
+    /// The row read as four sizes because it was four sizes: 「这个图标的大小也
+    /// 不一致啊」. Measured ink at 4× off the real bar, in points tall:
+    /// `rectangle.split.1x2` 12.00, `xmark` 8.60, `checkmark` 10.25.
+    ///
+    /// Thirteen is where they meet. At one point size the symbols are already
+    /// optically balanced by the system, which is Apple's job and not this bar's:
+    /// measured at 13, `rectangle.split.1x2` is 15.00 × 12.00, `aspectratio`
+    /// 15.00 × 12.00, `globe.asia.australia` 13.00 × 13.00 and `xmark`
+    /// 10.50 × 10.50 — the cross is smaller in its box on purpose, because a
+    /// diagonal reads bigger than the box it occupies.
+    ///
+    /// The tick is the one mark that is not the bar's weight: on clay a regular
+    /// tick at this size is a hair, so it stays semibold (11.50 × 11.25).
+    private static let markPointSize: CGFloat = 13
     /// The chevron's own strip at the right end of the language chip.
     ///
     /// Sixteen rather than the ratio chip's twenty, because there is no word
@@ -1530,7 +1864,7 @@ final class CaptureSurface: NSView {
     /// somebody has to remember in five places: opening one closes the other by
     /// construction.
     enum ShowingPanel {
-        case none, ratio, language
+        case none, ratio, language, presentation
     }
 
     /// Set by a chip that carries a chevron, cleared by a choice or by any
@@ -1546,6 +1880,16 @@ final class CaptureSurface: NSView {
     /// a modal moment, so the shortlist cannot change underneath it, and
     /// `bar()` is called by every hover, by every hit test and by the drawing.
     var translationLanguage = TranslationTargets.current
+
+    /// The shortlist as it was when this capture opened.
+    ///
+    /// Read once, for the reason `translationLanguage` is: `bar()` runs on every
+    /// hover and every hit test, and the capsule's width is pinned from
+    /// `measuredLines`, which needs every note `T` can say — a read per frame to
+    /// answer a question that cannot change mid-capture is a read too many.
+    /// `T` walks this list, so what it can walk and what was measured are the
+    /// same list by construction.
+    private var languageShortlist = TranslationTargets.chosen
 
     /// The geometry the tool tips were last registered for. See `refreshToolTips`.
     private var toolTipSignature = ""
@@ -1569,8 +1913,32 @@ final class CaptureSurface: NSView {
     private var lineReadArmed: String { L("Drag the area whose words you want") }
     private var lineTranslateArmed: String { L("Drag the area to translate") }
     private var lineReading: String { L("The words in this area") }
-    private var lineTranslating: String { L("Translating…") }
-    private var lineTranslated: String { L("The words, in the other language") }
+    /// What is happening, **and into which language**.
+    ///
+    /// The name is the part that can be wrong. The chip does not show the
+    /// language — taken off on purpose in 2026-11-03, because it costs a word
+    /// and the answer rarely changes — so a target that is not the one the
+    /// person thinks is in force is invisible until the words come back in the
+    /// wrong language. Reported exactly that way on 2026-11-13: 「我为什么翻译成
+    /// 英文，它翻译成的是繁体」. This slot already says 「翻译中…」; naming the
+    /// language costs nothing extra and makes the mistake visible while it is
+    /// still happening, rather than after it lands.
+    private var lineTranslating: String {
+        guard let name = TranslationCatalogue.named(TranslationTargets.current)?.name else {
+            return L("Translating…")
+        }
+        return String(format: L("Translating into %@…"), name)
+    }
+    /// The same, with the language named — the answer to "into what" is the
+    /// whole point of the button, and the chip does not carry it. Reported
+    /// 2026-11-13: 「我为什么翻译成英文，它翻译成的是繁体」, which was unanswerable
+    /// from the screen because nothing said which language had been asked for.
+    private var lineTranslated: String {
+        guard let name = TranslationCatalogue.named(TranslationTargets.current)?.name else {
+            return L("The words, in the other language")
+        }
+        return String(format: L("The words, in %@"), name)
+    }
     private var lineTranslateFailed: String { L("Those words could not be translated") }
     private var lineTranslateUnsure: String { L("Cannot tell which language these words are in") }
     private var lineTranslateUnsupported: String {
@@ -1604,7 +1972,13 @@ final class CaptureSurface: NSView {
          lineTranslateArmed, lineColour,
          lineGrowing, lineReading, lineTranslating, lineTranslated, lineTranslateFailed,
          lineTranslateNoop, lineTranslateUnsure, lineTranslateUnsupported,
-         longNote ?? "", previewNote ?? ""] + LongStitcher.notes
+         longNote ?? "", previewNote ?? "", translateNote ?? "",
+         // Every note `T` can say. The names differ in length (「日本語」 against
+         // 「繁體中文」), so the widest one the shortlist can produce has to be
+         // measured while none of them is showing — the width is pinned, and a
+         // note that arrived and widened the capsule would slide the ✓ away from
+         // the hand going for it.
+         ] + LongStitcher.notes + languageShortlist.map { languageNote($0) }
     }
 
     /// Where everything in the bar sits, in this view's own coordinates.
@@ -1615,7 +1989,7 @@ final class CaptureSurface: NSView {
     private func bar() -> Bar {
         var out = Bar()
         let settled = selection != nil || previewSelection != nil
-        if let note = longNote ?? previewNote {
+        if let note = longNote ?? previewNote ?? saidNote {
             out.lineText = note
         } else if translating {
             out.lineText = lineTranslating
@@ -1627,6 +2001,10 @@ final class CaptureSurface: NSView {
             }
         } else if translateNoop {
             out.lineText = lineTranslateNoop
+        } else if let translateNote {
+            // Before the ordinary reading line, and only while a reading is up:
+            // it is a sentence about the answer on the picture, not a mode.
+            out.lineText = translateNote
         } else if readingState != nil {
             out.lineText = translationText == nil ? lineReading : lineTranslated
         } else if colourResult != nil {
@@ -1644,6 +2022,9 @@ final class CaptureSurface: NSView {
         } else if readArmed {
             out.lineText = lineReadArmed
         } else if translateArmed {
+            // The key arrived before the area did. With an area in hand there is
+            // no armed state to describe — the press translates at once, and the
+            // bar goes straight to 翻译中….
             out.lineText = lineTranslateArmed
         } else if longArmed {
             out.lineText = lineArmed
@@ -1676,6 +2057,12 @@ final class CaptureSurface: NSView {
         // made the row 105 points wider for a fact nobody needs at the moment of
         // pressing.
         let languageChipWidth = Self.chipWidth + Self.languageMenuWidth
+        // The second wide chip, and the same arithmetic: 30 points of face,
+        // 16 of chevron. It is beside `译` because what the two answer is one
+        // question asked twice — *which* language, and *where* the answer
+        // goes — and a chip on the far side of the row would be a setting
+        // about translation living away from the translation.
+        let presentationChipWidth = Self.chipWidth + Self.languageMenuWidth
         // Every other chip is the same box, so one number each is all the row
         // needs — and the far end is a chip too now. The letter legend that used
         // to spell `esc` there is gone with the last word it carried: the keys
@@ -1688,8 +2075,9 @@ final class CaptureSurface: NSView {
         // The two groups, measured the same way they are laid out below rather
         // than as a count times a width: a formula that counts is a formula
         // that has to be re-derived every time the row changes, and this row
-        // has now changed twice.
+        // has now changed three times.
         let valuesWidth = buttonWidth + Self.chipGap + languageChipWidth
+            + Self.chipGap + presentationChipWidth
         let iconsWidth = CGFloat(chipCount) * Self.chipWidth
             + CGFloat(max(0, chipCount - 1)) * Self.chipGap
         let width = Self.barPadding * 2 + lineWidth + Self.barGap + 1 + Self.barGap
@@ -1707,11 +2095,11 @@ final class CaptureSurface: NSView {
         out.divider = NSRect(x: x, y: midY - 8, width: 1, height: 16)
         x += 1 + Self.barGap
         // The row is in two groups, and the spacing says so: four points inside
-        // a group, ten across the seam. The first group is the two chips that
-        // carry a value and a chevron and are therefore asking a question; the
+        // a group, ten across the seam. The first group is the three chips that
+        // carry a value or a menu and are therefore asking a question; the
         // second is the four that are only a symbol and an answer. Read as one
-        // undifferentiated run of six, a person has to know which kind each one
-        // is before pressing it — and the two kinds respond to different
+        // undifferentiated run of seven, a person has to know which kind each
+        // one is before pressing it — and the two kinds respond to different
         // things: one opens a menu, the other does something at once.
         func chip(_ x: CGFloat, _ width: CGFloat) -> NSRect {
             NSRect(x: x, y: midY - Self.chipHeight / 2, width: width, height: Self.chipHeight)
@@ -1727,7 +2115,16 @@ final class CaptureSurface: NSView {
                                   y: out.language.minY,
                                   width: Self.languageMenuWidth,
                                   height: out.language.height)
-        x += languageChipWidth + Self.barGap
+        // Four points from `译`, not ten: the two answer one question — which
+        // language, and where the answer goes — and a group seam between them
+        // would say they belong to two different kinds of thing.
+        x += languageChipWidth + Self.chipGap
+        out.presentation = chip(x, presentationChipWidth)
+        out.presentationMenu = NSRect(x: out.presentation.maxX - Self.languageMenuWidth,
+                                      y: out.presentation.minY,
+                                      width: Self.languageMenuWidth,
+                                      height: out.presentation.height)
+        x += presentationChipWidth + Self.barGap
         out.long = chip(x, Self.chipWidth)
         x += Self.chipWidth + Self.chipGap
         out.read = chip(x, Self.chipWidth)
@@ -1772,9 +2169,28 @@ final class CaptureSurface: NSView {
         out.done = NSRect(x: lastButton - Self.chipWidth,
                           y: midY - Self.chipHeight / 2,
                           width: Self.chipWidth, height: Self.chipHeight)
-        out.close = NSRect(x: out.done.minX - Self.barGap - Self.closeSize,
-                           y: midY - Self.closeSize / 2,
-                           width: Self.closeSize, height: Self.closeSize)
+        // The ✕ is the chips' own box — 30 × 26, one chip gap from the pill —
+        // because three buttons in a row are three buttons, whatever they do.
+        //
+        // It was 22 × 22 for two years, then 26 × 26 for an evening, and both
+        // were defended with the same argument: a smaller box cannot pass for a
+        // second button, and the exit is not that. The argument is sound about
+        // *emphasis* and wrong about *geometry*: with one box shorter and
+        // narrower than its neighbours, and a gap of ten on one side against
+        // four on the other, the row stops being a row — reported as
+        // 「这个图标的大小也不一致啊」, then as 「这三个按钮的距离也不一样大」, then
+        // spelled out: 「距离大小、宽度、高度，理论上都应该是一样的」. Emphasis is
+        // carried by the fill (clay or not) and by the mark, never by the plate;
+        // the plate is the same plate everywhere in this bar.
+        out.close = NSRect(x: out.done.minX - Self.chipGap - Self.chipWidth,
+                           y: midY - Self.chipHeight / 2,
+                           width: Self.chipWidth, height: Self.chipHeight)
+        // The extra exit goes to the LEFT of the ✕, so neither the ✕ nor the
+        // check ever moves — a ✕ that shifts under a hand reaching for it is
+        // the one thing this bar's geometry has always refused to do.
+        out.second = NSRect(x: out.close.minX - Self.chipGap - Self.chipWidth,
+                            y: midY - Self.chipHeight / 2,
+                            width: Self.chipWidth, height: Self.chipHeight)
 
         guard panelOpen, mode == .shot else { return out }
         let pad: CGFloat = 10
@@ -1826,6 +2242,26 @@ final class CaptureSurface: NSView {
                                   width: rowWidth, height: rowHeight)
                 out.languageRows.append((code, rect))
             }
+        case .presentation:
+            // Two rows, and the same list shape as the language menu: the two
+            // answers are read, not recognised by silhouette, and a row each is
+            // what makes "which am I on" a glance.
+            let names = Presentation.all.map(\.name)
+            let rowWidth = (names.map { textWidth($0, Self.chipFont) }.max() ?? 60) + 40
+            let space: CGFloat = 4
+            let panelWidth = pad * 2 + rowWidth
+            let panelHeight = pad * 2 + CGFloat(names.count) * rowHeight
+                + CGFloat(max(0, names.count - 1)) * space
+            let panelX = min(max(8, out.presentation.minX), bounds.width - panelWidth - 8)
+            out.panel = NSRect(x: panelX, y: out.capsule.maxY + 8,
+                               width: panelWidth, height: panelHeight)
+            for (index, mode) in Presentation.all.enumerated() {
+                let rect = NSRect(x: panelX + pad,
+                                  y: out.panel.maxY - pad - rowHeight
+                                    - CGFloat(index) * (rowHeight + space),
+                                  width: rowWidth, height: rowHeight)
+                out.presentationRows.append((mode, rect))
+            }
         case .none:
             break
         }
@@ -1870,6 +2306,45 @@ final class CaptureSurface: NSView {
         if colourResult != nil { return true }
         if case .found = readingState { return true }
         return false
+    }
+
+    /// What the second exit hands over, when there is one.
+    ///
+    /// A reading has one answer — the check. A *translated* reading has two
+    /// things worth taking: the picture the words were painted on (in place), or
+    /// the two texts side by side (the card). Which one is on offer is a fact
+    /// about the state rather than about the button, and it is asked from one
+    /// place so the drawing, the hit test and the harness cannot disagree about
+    /// what is in that slot.
+    private enum SecondExit {
+        case picture(CGImage)
+        case both(words: String, translation: String)
+
+        var symbol: String {
+            switch self {
+            case .picture: return CaptureSymbol.hangImage
+            case .both: return CaptureSymbol.bothTexts
+            }
+        }
+
+        /// What this slot hands over, for the one control in the folded bar
+        /// whose symbol cannot say it alone.
+        var tip: String {
+            switch self {
+            case .picture: return L("The translated picture")
+            case .both: return L("Both texts · the words and their translation")
+            }
+        }
+    }
+
+    private var secondExit: SecondExit? {
+        if let image = inPlaceImage { return .picture(image) }
+        // Both, only when there really are two different strings: the check
+        // already hands over the answer, and a button that copies the same
+        // words twice would be a button lying about having a second thing.
+        guard let words = wordsText, let translated = translationText,
+              !words.isEmpty, !translated.isEmpty, words != translated else { return nil }
+        return .both(words: words, translation: translated)
     }
 
     /// Whether there is anything for the check to do.
@@ -1924,9 +2399,10 @@ final class CaptureSurface: NSView {
     /// "where is the button" is a button that is drawn in one place and pressed
     /// in another.
     var shotBarOnScreen: (capsule: NSRect, ratio: NSRect, language: NSRect,
-                          languageMenu: NSRect, long: NSRect, read: NSRect,
-                          colour: NSRect, edit: NSRect, again: NSRect,
-                          confirm: NSRect)? {
+                          languageMenu: NSRect, presentation: NSRect,
+                          presentationMenu: NSRect, long: NSRect, read: NSRect,
+                          colour: NSRect, edit: NSRect,
+                          again: NSRect, confirm: NSRect)? {
         guard mode == .shot, readingState == nil else { return nil }
         let bar = bar()
         guard !bar.read.isEmpty else { return nil }
@@ -1935,6 +2411,8 @@ final class CaptureSurface: NSView {
                 bar.button.offsetBy(dx: origin.x, dy: origin.y),
                 bar.language.offsetBy(dx: origin.x, dy: origin.y),
                 bar.languageMenu.offsetBy(dx: origin.x, dy: origin.y),
+                bar.presentation.offsetBy(dx: origin.x, dy: origin.y),
+                bar.presentationMenu.offsetBy(dx: origin.x, dy: origin.y),
                 bar.long.offsetBy(dx: origin.x, dy: origin.y),
                 bar.read.offsetBy(dx: origin.x, dy: origin.y),
                 bar.colour.offsetBy(dx: origin.x, dy: origin.y),
@@ -1952,6 +2430,7 @@ final class CaptureSurface: NSView {
         switch name {
         case "ratio": panel = .ratio
         case "language": panel = .language
+        case "presentation": panel = .presentation
         default: return false
         }
         needsDisplay = true
@@ -1968,13 +2447,36 @@ final class CaptureSurface: NSView {
         }
     }
 
+    /// The blocks an in-place answer is arriving in, top first, for the harness.
+    /// Order is the whole effect the animation is for, and it is the one part of
+    /// it a still picture cannot show.
+    var inPlaceBoxesForTesting: [CGRect] { inPlaceBoxes }
+
     /// Which languages the menu would offer, without opening it.
     var offeredLanguagesForTesting: [String] { TranslationTargets.chosen }
+
+    /// The language this capture is set to, and what the bar is saying about it.
+    ///
+    /// A window with no word on the chip has no other way to be asked "which one
+    /// is in force": the pixel that would say it is the panel's clay row, and the
+    /// panel is shut while `T` walks.
+    var languageForTesting: String { translationLanguage }
+    var saidNoteForTesting: String? { saidNote }
 
     /// The chip's own width, so the harness can compare two answers.
     var languageChipWidthOnScreen: CGFloat {
         guard mode == .shot else { return 0 }
         return bar().language.width
+    }
+
+    /// The presentation menu's rows as drawn: which way and where it sits, in
+    /// screen coordinates. Empty unless that menu is open.
+    var presentationRowsOnScreen: [(way: String, rect: NSRect)] {
+        guard panel == .presentation else { return [] }
+        let origin = screen.frame.origin
+        return bar().presentationRows.map {
+            ($0.0 == .card ? "card" : "inPlace", $0.1.offsetBy(dx: origin.x, dy: origin.y))
+        }
     }
 
     /// Where the reading state's pill and ✕ sit, in screen coordinates.
@@ -1983,13 +2485,49 @@ final class CaptureSurface: NSView {
     /// the live arithmetic instead of keeping a copy of it. A button drawn in
     /// one place and pressed in another is exactly what a second copy of this
     /// arithmetic buys.
-    var readingBarOnScreen: (capsule: NSRect, close: NSRect, done: NSRect)? {
+    var readingBarOnScreen: (capsule: NSRect, close: NSRect, done: NSRect,
+                             second: NSRect)? {
         guard readingState != nil, !translating else { return nil }
         let bar = bar()
         let origin = screen.frame.origin
         return (bar.capsule.offsetBy(dx: origin.x, dy: origin.y),
                 bar.close.offsetBy(dx: origin.x, dy: origin.y),
-                bar.done.offsetBy(dx: origin.x, dy: origin.y))
+                bar.done.offsetBy(dx: origin.x, dy: origin.y),
+                bar.second.offsetBy(dx: origin.x, dy: origin.y))
+    }
+
+    /// What the second exit would hand over at this instant, for the harness.
+    /// Nil when the chip is not drawn at all.
+    var secondExitNameForTesting: String? {
+        switch secondExit {
+        case .picture: return "picture"
+        case .both: return "both"
+        case nil: return nil
+        }
+    }
+
+    /// What the pointer would say over a control of the folded bar, for the
+    /// harness.
+    ///
+    /// A tool tip is the one part of this bar nobody can see in a still, and it
+    /// is the only thing that explains the second exit's symbol — the folded bar
+    /// has no other room for a word (2026-11-13). Asked from the same
+    /// `chipName` the window server asks, with the point computed here so a tip
+    /// that stopped being offered over a drawn control fails a check instead of
+    /// going quiet.
+    func chipNameForTesting(_ name: String) -> String? {
+        let bar = bar()
+        switch name {
+        case "second":
+            guard !bar.second.isEmpty else { return nil }
+            return chipName(at: NSPoint(x: bar.second.midX, y: bar.second.midY))
+        case "close":
+            return chipName(at: NSPoint(x: bar.close.midX, y: bar.close.midY))
+        case "done":
+            return chipName(at: NSPoint(x: bar.done.midX, y: bar.done.midY))
+        default:
+            return nil
+        }
     }
 
     /// A press on the bar, for the harness.
@@ -2005,6 +2543,14 @@ final class CaptureSurface: NSView {
     /// was chosen, which area is cut, whether the engine is asked — is the same
     /// code either way, and this is the one seam that needs a stand-in.
     func selectForTesting(_ rect: CGRect) { selection = rect }
+
+    /// Harness only: the state between "asked" and "answered", which is the
+    /// only moment the bar says which language it is working in. No engine is
+    /// called — the claim is about the sentence, not about the round trip.
+    func markTranslatingForTesting() {
+        translating = true
+        needsDisplay = true
+    }
 
     /// Puts a remembered frame back, as if it had just been dragged out.
     ///
@@ -2109,8 +2655,12 @@ final class CaptureSurface: NSView {
         if collapsed {
             // The height on the left of the slot the buttons used to fill, the
             // way out on the right.
+            // The second exit, when there is one, takes the same room the
+            // readout would have used; a number under a button is a number
+            // nobody can read.
+            let readoutEdge = secondExit != nil ? bar.second.minX : bar.close.minX
             let numbers = NSRect(x: bar.button.minX, y: bar.middle.minY,
-                                 width: max(0, bar.close.minX - Self.barGap - bar.button.minX),
+                                 width: max(0, readoutEdge - Self.barGap - bar.button.minX),
                                  height: bar.middle.height)
             draw(bar.middleText, in: numbers,
                  attributes: [.font: Self.buttonFont,
@@ -2130,16 +2680,20 @@ final class CaptureSurface: NSView {
             // The ✕, which is never the thing to do and is always available. It
             // is drawn whether or not the pill is, so the way out does not
             // appear and disappear while a read finishes.
+            if let second = secondExit {
+                drawChip(bar.second, symbol: second.symbol, key: nil)
+            }
             drawClose(bar.close, lit: closeHover)
         } else {
-            // Two kinds of chip, drawn in the order they are laid out: the two
-            // that carry a value and a chevron, then the four that are only a
+            // Two kinds of chip, drawn in the order they are laid out: the three
+            // that carry a value or a menu, then the four that are only a
             // symbol with a key in the corner. The words were abandoned because
             // the capsule was reading as a paragraph with a toolbar on the end;
             // a symbol says the same thing in 30 points, and the letter in the
             // corner is the only part of this bar a person has to be taught.
             drawRatioChip(bar.button)
             drawLanguageChip(bar.language, menu: bar.languageMenu)
+            drawPresentationChip(bar.presentation, menu: bar.presentationMenu)
             // The armed chip fills, exactly the way the ratio chip fills when a
             // shape is locked. One rule for the whole bar: filled means "this
             // changes what the next drag means" — so pressing L, W or T has to
@@ -2185,6 +2739,8 @@ final class CaptureSurface: NSView {
         }
 
         guard panelOpen, mode == .shot else { return }
+        // Ten, where a button has seven: the panel is the sheet the buttons sit
+        // on, and a sheet drawn with a button's corner is one enormous chip.
         let shape = NSBezierPath(roundedRect: bar.panel, xRadius: 10, yRadius: 10)
         NSGraphicsContext.saveGraphicsState()
         shadow.set()
@@ -2197,7 +2753,8 @@ final class CaptureSurface: NSView {
         switch panel {
         case .ratio:
             for (option, rect) in bar.options {
-                let chip = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+                let chip = NSBezierPath(roundedRect: rect,
+                                        xRadius: Self.chipRadius, yRadius: Self.chipRadius)
                 let picked = option == aspect
                 (picked ? CDS.clayInk
                         : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
@@ -2210,38 +2767,53 @@ final class CaptureSurface: NSView {
                      centred: true)
             }
         case .language:
-            // The current one is marked twice over: a clay wash on its row, and
-            // a tick on the right. The wash is what says "this is where you
-            // already are" from across the screen; the tick is what says it when
-            // the wash is a 7% tint on a light panel, which is nearly nothing —
-            // and a menu where the current item is nearly nothing is a menu that
-            // has to be read twice.
-            for (code, rect) in bar.languageRows {
-                let picked = code == translationLanguage
-                // The same faint wash the shapes get, on every row and not only
-                // the arrowed one: a menu whose rows are bare text has nothing
-                // saying where one row ends and the next begins, and this app's
-                // own panels already taught the other reading.
-                let row = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-                (picked ? CDS.clayInk
-                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
-                row.fill()
-                let name = TranslationCatalogue.named(code)?.name ?? code
-                draw(name, in: NSRect(x: rect.minX + 10, y: rect.minY,
-                                      width: rect.width - 40, height: rect.height),
-                     attributes: [.font: Self.chipFont,
-                                  .foregroundColor: picked
-                                      ? CaptureInk.onClay
-                                      : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)])
-                if picked, let tick = Self.glyph("checkmark", pointSize: 11,
-                                                 ink: CaptureInk.onClay) {
-                    tick.draw(in: NSRect(x: rect.maxX - 10 - tick.size.width,
-                                         y: rect.midY - tick.size.height / 2,
-                                         width: tick.size.width, height: tick.size.height))
-                }
-            }
+            drawMenuRows(bar.languageRows.map {
+                (title: TranslationCatalogue.named($0.0)?.name ?? $0.0,
+                 picked: $0.0 == translationLanguage, rect: $0.1)
+            })
+        case .presentation:
+            // The same two marks, in the same shape, because it is the same
+            // question: which of these is in force. Nothing else here differs —
+            // a menu that looked different for being two rows long would be a
+            // second kind of menu in one bar.
+            drawMenuRows(bar.presentationRows.map {
+                (title: $0.0.name, picked: $0.0 == presentation, rect: $0.1)
+            })
         case .none:
             break
+        }
+    }
+
+    /// A menu's rows: the faint wash every row wears, the word, and a clay
+    /// wash plus a tick on the one in force.
+    ///
+    /// The tick as well as the wash, because the wash is a tint on a tint: on a
+    /// light panel it is nearly nothing, and a menu where the current item is
+    /// nearly nothing is a menu that has to be read twice. A faint wash on every
+    /// row and not only the chosen one, because a menu of bare text says nothing
+    /// about where one row ends and the next begins.
+    private func drawMenuRows(_ rows: [(title: String, picked: Bool, rect: NSRect)]) {
+        for row in rows {
+            let rect = row.rect
+            // The chip's own corner, not a point tighter: every row in this
+            // panel is a button, and the panel it sits in is the only thing
+            // here that is not.
+            let shape = NSBezierPath(roundedRect: rect,
+                                     xRadius: Self.chipRadius, yRadius: Self.chipRadius)
+            (row.picked ? CDS.clayInk
+                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.07)).setFill()
+            shape.fill()
+            draw(row.title, in: NSRect(x: rect.minX + 10, y: rect.minY,
+                                       width: rect.width - 40, height: rect.height),
+                 attributes: [.font: Self.chipFont,
+                              .foregroundColor: row.picked
+                                  ? CaptureInk.onClay
+                                  : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.9)])
+            guard row.picked, let tick = Self.glyph("checkmark", pointSize: 11,
+                                                    ink: CaptureInk.onClay) else { continue }
+            tick.draw(in: NSRect(x: rect.maxX - 10 - tick.size.width,
+                                 y: rect.midY - tick.size.height / 2,
+                                 width: tick.size.width, height: tick.size.height))
         }
     }
 
@@ -2315,12 +2887,20 @@ final class CaptureSurface: NSView {
     /// chip and `L`/`W`/`T` did not, which made three keys that looked like they
     /// had done nothing at all — and the fix is only a fix if all four ask the
     /// same question from now on.
+    ///
+    /// `translate` and `presentation` were two chips because they are two
+    /// answers, and a key that armed one had to light **that** chip. Only one
+    /// of them can be filled now: the globe is a select box (2026-11-13,
+    /// 「只是一个选择框」) and selecting a language arms nothing, while the chip
+    /// that says where the words land still waits for an area if it is pressed
+    /// early. A globe that filled would be claiming a mode it does not have.
     private func isPicked(_ chip: Choice) -> Bool {
         switch chip {
         case .ratio: return aspect != .free
         case .long: return longArmed
         case .read: return readArmed
-        case .translate: return translateArmed
+        case .translate: return false
+        case .presentation: return translateArmed
         case .colour: return colourAiming || colourResult != nil
         }
     }
@@ -2329,7 +2909,7 @@ final class CaptureSurface: NSView {
     /// capture by taking it, the other by putting a frame back, and neither
     /// changes what the next drag means.
     enum Choice: String, CaseIterable {
-        case ratio, long, read, translate, colour
+        case ratio, long, read, translate, presentation, colour
     }
 
     /// The filled chips, for the harness.
@@ -2356,7 +2936,11 @@ final class CaptureSurface: NSView {
         switch name {
         case "long": longArmed = true
         case "read": readArmed = true
-        case "translate": translateArmed = true
+        // The only armed state translation still has: the key pressed before
+        // the area. `"translate"` is gone with the door it named — the globe
+        // has no mode to show, so a preview cannot be asked to draw one.
+        case "presentation": translateArmed = true
+        case "inPlace": presentation = .inPlace
         case "colour": colourAiming = true
             colourHover = colourHover ?? NSPoint(x: bounds.midX, y: bounds.midY)
         // Not an arming either, but it has to be holdable for a photograph:
@@ -2377,6 +2961,26 @@ final class CaptureSurface: NSView {
     func takeColourForTesting(_ point: NSPoint) { takeColour(at: point) }
     func finishColourForTesting() { finishResult() }
 
+    /// One symbol, centred on a point, at the bar's one mark size.
+    ///
+    /// The five drawings that used to centre an image by hand each carried their
+    /// own point size and their own two subtractions. A helper is the only shape
+    /// in which "all the marks are the same size" is a fact rather than a promise
+    /// kept in five places — and the promise was broken in four of them, which is
+    /// what the row looked like (2026-11-13).
+    ///
+    /// `weight` is an argument because exactly one mark in the bar is not the
+    /// bar's weight: the tick, on clay. Everything else takes the default.
+    private func drawMark(_ symbol: String, at centre: NSPoint, ink: NSColor,
+                          weight: NSFont.Weight = .regular) {
+        guard let image = Self.glyph(symbol, pointSize: Self.markPointSize,
+                                     ink: ink, weight: weight) else { return }
+        let size = image.size
+        image.draw(in: NSRect(x: centre.x - size.width / 2,
+                              y: centre.y - size.height / 2,
+                              width: size.width, height: size.height))
+    }
+
     /// A chip: the rounded box, its symbol, and its key.
     ///
     /// One function for the five actions, because they differ in exactly two
@@ -2386,23 +2990,87 @@ final class CaptureSurface: NSView {
     /// the next drag means", and an action that fills would be claiming a state
     /// it does not have.
     private func drawChip(_ rect: NSRect, symbol: String, key: String?, picked: Bool = false) {
-        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let box = NSBezierPath(roundedRect: rect,
+                               xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         (picked ? CDS.clayInk
                 : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
         box.fill()
         let ink = picked ? CaptureInk.onClay
                          : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
-        if let image = Self.glyph(symbol, pointSize: 14, ink: ink) {
-            let size = image.size
-            image.draw(in: NSRect(x: rect.midX - size.width / 2,
-                                  y: rect.midY - size.height / 2,
-                                  width: size.width, height: size.height))
-        }
+        drawMark(symbol, at: NSPoint(x: rect.midX, y: rect.midY), ink: ink)
         if let key, showKeys {
             // On clay the letter has to go dark, for the same reason the icon
             // does: white on clay is not faint, it is gone.
             drawHint(key, in: rect, onClay: picked)
         }
+    }
+
+    /// The chip beside `译`: which way the words come back.
+    ///
+    /// Built exactly like `译` — a symbol in the 30 points a chip has, a chevron
+    /// in the 16 beside it — because the two answer one question asked twice:
+    /// *which* language, and *where* the answer goes. The symbol changes with
+    /// the answer (`CaptureSymbol.presentationCard` / `.presentationInPlace`),
+    /// so the chip says what it will do before it is pressed.
+    ///
+    /// Its icon translates, exactly like `译`'s does: the answer is already
+    /// chosen — one of the two is always in force — so pressing must act rather
+    /// than ask. Reported the same evening (2026-11-13): 「理论上是默认选择的…
+    /// 点一下就应该是确认了」. Only the 16-point chevron opens the menu.
+    ///
+    /// Never clay *for having an answer*: filled means "this changes what the
+    /// next drag means", and one of the two ways is always in force, so a chip
+    /// lit because it holds a setting would outrank the three modes that come
+    /// and go beside it.
+    ///
+    /// Armed is the other thing, and it is clay: `M` arms this chip the way `T`
+    /// arms `译`, and a key whose press lights nothing is the failure this bar
+    /// has already been fixed for twice (`R` filled its chip and `L`/`W`/`T`
+    /// filled none). The light goes out the moment the drag it asked for begins,
+    /// so the chip is not claiming to be a mode — it is claiming to have heard
+    /// the key.
+    private func drawPresentationChip(_ rect: NSRect, menu: NSRect) {
+        let armed = isPicked(.presentation)
+        (armed ? CDS.clayInk
+               : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
+        NSBezierPath(roundedRect: rect,
+                     xRadius: Self.chipRadius, yRadius: Self.chipRadius).fill()
+        let ink = armed ? CaptureInk.onClay
+                        : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
+        // Centred in the 30 points a chip has, the way `译`'s symbol is: the
+        // extra 16 are beside the symbol, not around it.
+        let body = NSRect(x: rect.minX, y: rect.minY,
+                          width: rect.width - menu.width, height: rect.height)
+        let symbol = presentation == .card
+            ? CaptureSymbol.presentationCard : CaptureSymbol.presentationInPlace
+        // A point and a half to the left of centre: `translate` is the widest
+        // glyph here and its rear bubble ends exactly where the `M` goes. One
+        // point of width is the difference between a hint and a smudge, and a
+        // point and a half inside a 30-point body is not a lean. Both faces share
+        // the setting — a chip whose symbol moved when the answer changed would
+        // be worse than one that is a point small.
+        drawMark(symbol, at: NSPoint(x: body.midX - 1.5, y: rect.midY), ink: ink)
+        drawChevron(centre: NSPoint(x: menu.midX, y: rect.midY + 1.5), ink: ink)
+        if showKeys { drawHint("M", in: body, onClay: armed) }
+    }
+
+    /// The chevron that says "there is a menu here", at one size and one weight
+    /// for the whole bar.
+    ///
+    /// Drawn rather than a glyph: "▾" is not in every font, and the one that has
+    /// it sets it at the wrong weight for a 26-point box. Three chips carry one
+    /// now, and a chevron that differed by half a point between neighbours would
+    /// read as two different kinds of control.
+    private func drawChevron(centre: NSPoint, ink: NSColor) {
+        let chevron = NSBezierPath()
+        chevron.move(to: NSPoint(x: centre.x - 3.5, y: centre.y + 2))
+        chevron.line(to: NSPoint(x: centre.x, y: centre.y - 1.5))
+        chevron.line(to: NSPoint(x: centre.x + 3.5, y: centre.y + 2))
+        chevron.lineWidth = 1.4
+        chevron.lineCapStyle = .round
+        chevron.lineJoinStyle = .round
+        ink.setStroke()
+        chevron.stroke()
     }
 
     /// The checkmark at the far end: clay, a tick, and nothing else.
@@ -2417,19 +3085,17 @@ final class CaptureSurface: NSView {
     /// Those two never appear together — the icon row is replaced by the line
     /// and the check — so there is one check in the app, not two kinds of one.
     private func drawConfirmChip(_ rect: NSRect, hover: Bool = false) {
-        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let box = NSBezierPath(roundedRect: rect,
+                               xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         CDS.clayInk.setFill()
         box.fill()
-        // Semibold at this size: at 13 points a regular tick on clay is a hair,
-        // and the one button that ends the capture should not be the faintest
-        // mark in the row.
-        if let tick = Self.glyph("checkmark", pointSize: 12,
-                                 ink: CaptureInk.onClay, weight: .semibold) {
-            let size = tick.size
-            tick.draw(in: NSRect(x: rect.midX - size.width / 2,
-                                 y: rect.midY - size.height / 2,
-                                 width: size.width, height: size.height))
-        }
+        // The bar's mark size, and semibold rather than the bar's regular weight:
+        // at 13 points a regular tick on clay is a hair, and the one button that
+        // ends the capture should not be the faintest mark in the row. Twelve
+        // points was this tick alone at a size of its own — 10.25 of ink beside
+        // the chips' 12, which is half of what the row was reported for.
+        drawMark("checkmark", at: NSPoint(x: rect.midX, y: rect.midY),
+                 ink: CaptureInk.onClay, weight: .semibold)
         if hover {
             // White on clay in both appearances: a near-black ring in light
             // mode would read as a pressed border rather than as "this is it".
@@ -2467,13 +3133,20 @@ final class CaptureSurface: NSView {
     /// obvious once it has been used and means nothing before. The words the
     /// buttons used to wear survive here, where they cost no width.
     private func chipName(at local: NSPoint) -> String? {
-        // Nothing is drawn but a readout while a long capture runs or a reading
-        // is waiting, and a tip naming a button that is not there is a tip about
-        // a button that was.
-        guard !collapsed else { return nil }
         let bar = bar()
+        // While a reading is up the row is folded to three controls, and one of
+        // them is a symbol nobody has met before: 「both texts」 has no glyph in
+        // the system that says it (2026-11-13), so the words have to be one
+        // hover away. The ✕ is named in the same breath — a bar where hovering
+        // works on one button of three is a bar with a hole in it. The check is
+        // not: 「go」 is the one thing a check has never needed explaining.
+        if collapsed {
+            if let second = secondExit, bar.second.contains(local) { return second.tip }
+            if bar.close.contains(local) { return L("Leave without taking it") }
+            return nil
+        }
         if bar.languageMenu.contains(local) {
-            return L("Language · which one a press translates into")
+            return L("Language · which one it translates into")
         }
         if bar.button.contains(local) { return L("Ratio · the shape of the frame") }
         if bar.long.contains(local) { return L("Long · scroll down, Return when done") }
@@ -2486,7 +3159,18 @@ final class CaptureSurface: NSView {
         // costs nothing and looking is what a person is already doing.
         if bar.language.contains(local) {
             let name = TranslationCatalogue.named(translationLanguage)?.name ?? translationLanguage
-            return L("Translate · the same words, another language") + " · " + name
+            return L("Language · which one it translates into") + " · " + name
+        }
+        // The chip beside it says where the answer lands — and says it by doing
+        // it. The two halves have two jobs now (2026-11-13, the third telling):
+        // the body translates and the chevron opens the two rows. Before that
+        // both halves only opened the menu, which left the person pressing the
+        // chip and then a check, and calling the second press 多余.
+        if bar.presentation.contains(local) {
+            if bar.presentationMenu.contains(local) {
+                return L("Where the translation goes") + " · " + presentation.name
+            }
+            return L("Translate") + " · " + presentation.name
         }
         if bar.edit.contains(local) { return L("Edit · take it and open the editor") }
         if againShown, bar.again.contains(local) { return L("Again · put the last frame back") }
@@ -2494,6 +3178,12 @@ final class CaptureSurface: NSView {
         // said to everyone all the time; it is said to the person asking about
         // this button instead, at the one moment they are asking.
         if bar.confirm.contains(local) {
+            // One press, one question: with a translation waiting for an area
+            // this button no longer takes a picture, and a tip that still said
+            // 截图 would be the old answer at the worst moment.
+            if translateArmed {
+                return L("Translate · Return, a double-click, or this button · esc leaves")
+            }
             return L("Capture · Return, a double-click, or this button · esc leaves without one")
         }
         return nil
@@ -2534,13 +3224,17 @@ final class CaptureSurface: NSView {
         // Filled clay only while a shape is locked: an always-clay chip would be
         // claiming a state the free shape does not have.
         let locked = isPicked(.ratio)
-        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let box = NSBezierPath(roundedRect: rect,
+                               xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         (locked ? CDS.clayInk
                 : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
         box.fill()
         let ink = locked ? CaptureInk.onClay
                          : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.92)
-        if let image = Self.glyph(CaptureSymbol.ratio, pointSize: 13, ink: ink) {
+        // Left-anchored rather than centred, which is why this one does not go
+        // through `drawMark`: the word beside it has to start where the symbol
+        // ends, and the symbol's box is wider than its ink.
+        if let image = Self.glyph(CaptureSymbol.ratio, pointSize: Self.markPointSize, ink: ink) {
             let size = image.size
             image.draw(in: NSRect(x: rect.minX + 8, y: rect.midY - size.height / 2,
                                   width: size.width, height: size.height))
@@ -2553,16 +3247,7 @@ final class CaptureSurface: NSView {
 
         // A drawn chevron rather than a glyph: "▾" is not in every font, and the
         // one that has it sets it at the wrong weight for a 26-point box.
-        let chevron = NSBezierPath()
-        let centre = NSPoint(x: rect.maxX - 12, y: rect.midY + 1.5)
-        chevron.move(to: NSPoint(x: centre.x - 3.5, y: centre.y + 2))
-        chevron.line(to: NSPoint(x: centre.x, y: centre.y - 1.5))
-        chevron.line(to: NSPoint(x: centre.x + 3.5, y: centre.y + 2))
-        chevron.lineWidth = 1.4
-        chevron.lineCapStyle = .round
-        chevron.lineJoinStyle = .round
-        ink.setStroke()
-        chevron.stroke()
+        drawChevron(centre: NSPoint(x: rect.maxX - 12, y: rect.midY + 1.5), ink: ink)
         if showKeys { drawHint("R", in: rect, onClay: locked) }
     }
 
@@ -2581,10 +3266,14 @@ final class CaptureSurface: NSView {
     /// the ratio chip uses for the same reason.
     ///
     /// `T` sits in the icon's corner, not the chip's: the key does what the icon
-    /// does, and the corner of the whole box is inside the menu's strip.
+    /// does, and the corner of the whole box is inside the menu's strip. The
+    /// strip has no letter: `Y` was here for a fortnight and is gone — 「我觉得
+    /// 这个 Y 的快捷键没有意义，这就是手工选就行了」(2026-11-13). The menu is a
+    /// mouse target, and a key nobody asked for is a corner spent on nothing.
     private func drawLanguageChip(_ rect: NSRect, menu: NSRect) {
         let armed = isPicked(.translate)
-        let box = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let box = NSBezierPath(roundedRect: rect,
+                               xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         (armed ? CDS.clayInk
                : CaptureInk.ink(effectiveAppearance).withAlphaComponent(0.10)).setFill()
         box.fill()
@@ -2594,26 +3283,16 @@ final class CaptureSurface: NSView {
         // 长图's and 选文字's do — the extra 16 are beside it, not around it.
         let body = NSRect(x: rect.minX, y: rect.minY,
                           width: rect.width - menu.width, height: rect.height)
-        if let image = Self.glyph(CaptureSymbol.translate, pointSize: 14, ink: ink) {
-            let size = image.size
-            image.draw(in: NSRect(x: body.midX - size.width / 2,
-                                  y: rect.midY - size.height / 2,
-                                  width: size.width, height: size.height))
+        drawMark(CaptureSymbol.translate, at: NSPoint(x: body.midX, y: rect.midY), ink: ink)
+        // The same drawn chevron every other chipped menu uses, at the same
+        // size: two chevrons in one bar that differ by half a point read as two
+        // different kinds of control, and 16 points has room for the wider one.
+        drawChevron(centre: NSPoint(x: menu.midX, y: rect.midY + 1.5), ink: ink)
+        // One letter, because there is one key: the body translates, and the
+        // 16-point strip beside it is the mouse's alone.
+        if showKeys {
+            drawHint("T", in: body, onClay: armed)
         }
-        // The same drawn chevron the ratio chip uses, at the same size: two
-        // chevrons in one bar that differ by half a point read as two different
-        // kinds of control, and 16 points has room for the wider one.
-        let chevron = NSBezierPath()
-        let centre = NSPoint(x: menu.midX, y: rect.midY + 1.5)
-        chevron.move(to: NSPoint(x: centre.x - 3.5, y: centre.y + 2))
-        chevron.line(to: NSPoint(x: centre.x, y: centre.y - 1.5))
-        chevron.line(to: NSPoint(x: centre.x + 3.5, y: centre.y + 2))
-        chevron.lineWidth = 1.4
-        chevron.lineCapStyle = .round
-        chevron.lineJoinStyle = .round
-        ink.setStroke()
-        chevron.stroke()
-        if showKeys { drawHint("T", in: body, onClay: armed) }
     }
 
     // MARK: Converting
@@ -2744,6 +3423,24 @@ final class CaptureSurface: NSView {
                 + " — pill \(Int(bar.done.minX))…\(Int(bar.done.maxX))"
                 + "×\(Int(bar.done.minY))…\(Int(bar.done.maxY)),"
                 + " live \(pillLive), translating \(translating)")
+            // The second exit is a button of its own, and must be answered
+            // before the capsule's blanket "take the words" press — otherwise
+            // a click meant to take the picture (or the two texts) would take
+            // the words instead.
+            if let second = secondExit, bar.second.contains(local) {
+                switch second {
+                case .picture(let image):
+                    DispatchQueue.main.async { [weak self] in self?.onFinishInPlaceImage(image) }
+                case .both(let words, let translated):
+                    // The same landing as the check — pasteboard and one card —
+                    // with both texts in it. A second door in the controller
+                    // would be a second definition of where a text lands.
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onFinishTranslation(words + "\n\n" + translated)
+                    }
+                }
+                return true
+            }
             if bar.close.contains(local) {
                 DispatchQueue.main.async { [weak self] in self?.onCancel() }
             } else if pillLive, bar.capsule.contains(local) {
@@ -2773,13 +3470,38 @@ final class CaptureSurface: NSView {
                 for (code, rect) in bar.languageRows where rect.contains(local) {
                     translationLanguage = code
                     TranslationTargets.current = code
+                    // Logged because a choice that did not land is invisible:
+                    // the chip carries no language name, so "I picked English"
+                    // and "nothing was picked" look identical on screen. The
+                    // question this answers is 「为什么翻译成英文，它翻译成的是
+                    // 繁体」 (2026-11-13).
+                    diagLog("Capture: 译成 → \(code)")
                     needsDisplay = true
-                    // The menu is not a setting here, it is the press: choosing
-                    // a language while an area is drawn is a person saying
-                    // "translate it into this", and making them press twice
-                    // would be the menu asking them to confirm what they just
-                    // said.
-                    if mode == .shot, reading == nil, selection != nil { armTranslate() }
+                    // Choosing a language settles *which* one, and nothing else.
+                    // It used to run the translation as well, on the theory that
+                    // the menu was the press; the person using it disagreed
+                    // (2026-11-13): 「选了之后不确认」. Two presses that do one
+                    // visible thing each beat one press that does two, because
+                    // only the second kind can be taken back.
+                    return true
+                }
+            case .presentation:
+                for (way, rect) in bar.presentationRows where rect.contains(local) {
+                    presentation = way
+                    // Written down here rather than in a `didSet`: this is the
+                    // click that chooses, and the harness assigns the property
+                    // directly to photograph both faces. A setting that wrote
+                    // itself on every assignment would let a test change the
+                    // person's choice.
+                    Presentation.remember(way)
+                    needsDisplay = true
+                    // A setting, like the language: choosing says *where*, and
+                    // it runs nothing — the ask is the chip's body, `M`, or the
+                    // check. The chip's own face changes with this assignment, so
+                    // the press is visible even with no area drawn — which the
+                    // half of the old two-button segment that answered this
+                    // question was not.
+                    diagLog("Capture text: translation goes \(way == .card ? "side by side" : "in place")")
                     return true
                 }
             case .none:
@@ -2796,8 +3518,31 @@ final class CaptureSurface: NSView {
         // could not be opened because the body answered first is a menu that
         // does not exist.
         if bar.languageMenu.contains(local) {
-            panel = .language
+            selectLanguage()
+            return true
+        }
+        // The globe is a select box and nothing else (2026-11-13, twice in one
+        // evening: 「其实它没有按钮的作用，只是一个选择框」). Both halves open the
+        // list, neither lights anything, neither asks the engine — what is
+        // chosen there is read by the next press of the chip beside it.
+        if bar.language.contains(local) {
+            selectLanguage()
+            return true
+        }
+        // The chevron of the other chip opens its two rows; the body translates.
+        // A press that both ran and opened a menu would put a menu over the
+        // answer it had just asked for.
+        if bar.presentationMenu.contains(local) {
+            panel = .presentation
             needsDisplay = true
+            return true
+        }
+        if bar.presentation.contains(local) {
+            // 2026-11-13, the third telling: 「按 M 键或者点一下，理论上就该去翻译。
+            // ……我还必须再按一下回车键，这就是多余了」. Where the words land is
+            // already chosen — there is nothing left to confirm, so the press
+            // is the ask.
+            translateNow()
             return true
         }
         if bar.button.contains(local) {
@@ -2815,10 +3560,6 @@ final class CaptureSurface: NSView {
         }
         if bar.colour.contains(local) {
             armColour()
-            return true
-        }
-        if bar.language.contains(local) {
-            armTranslate()
             return true
         }
         if bar.edit.contains(local) {
@@ -2900,26 +3641,206 @@ final class CaptureSurface: NSView {
         }
     }
 
-    /// Asks for the words in the area, in another language, from the button or
-    /// from `T`.
+    /// Translates the area, now.
     ///
-    /// A door of its own beside `识别`, and not a switch on a finished reading,
-    /// because the two asks end in different places: `识别` hands the words to
-    /// the line, `译` hands them to the person and keeps nothing. A switch would
-    /// mean every translation started as a capture, and would leave the answer
-    /// on a bar with no way to say "that is what I wanted" except the same pill
-    /// that would have hung a card.
-    private func armTranslate() {
-        guard mode == .shot, reading == nil else { return }
+    /// `M` and a press on the chip that says where the words land are one act.
+    /// The person using it, 2026-11-13 evening: 「我们的翻译快捷键是 M 键。按 M 键
+    /// 的话就应该直接去做翻译……按 M 键或者点一下，理论上就该去翻译」. Where the
+    /// answer goes already has a value in force, so there is nothing left to
+    /// confirm — asking for a second press would be asking again for an answer
+    /// that is already given.
+    ///
+    /// The globe beside it is a **selector** and nothing else (see
+    /// `selectLanguage`): 「你那个选择语言没有这个功能，所以它只是选择」. Two
+    /// chips, one question each, and only this one runs.
+    ///
+    /// With no area drawn it arms the mode instead, and the next drag translates
+    /// where it lands — the same "choose, then draw" the read and long doors
+    /// have.
+    ///
+    /// A result on screen is **not** a reason to refuse. Changing 译成 or the
+    /// place it goes is a setting, and the setting does nothing until something
+    /// asks again — this press is that ask. Refusing while a reading was up is
+    /// how 繁體 and English both came back looking like dead buttons on
+    /// 2026-11-13: the language was chosen, the same key was pressed, and
+    /// nothing moved. Only a request already in flight is refused, because two
+    /// answers for one area can arrive out of order.
+    private func translateNow() {
+        guard mode == .shot, reading != .going else { return }
+        panel = .none
         if let rect = selection {
-            startReading(rect, purpose: .translate)
+            beginTranslation(rect)
         } else {
             translateArmed = true
             longArmed = false
             readArmed = false
-            panel = .none
+            diagLog("Capture text: asked before the area — the next one is translated")
             needsDisplay = true
         }
+    }
+
+    /// The one place a translation is started, so every entrance to it agrees.
+    ///
+    /// There are four now — `M`, the chip's body, a drag that followed either of
+    /// them, and the check — and a door with four handles and four behaviours is
+    /// how the second press got invented in the first place.
+    ///
+    /// `reading = nil` is not tidiness: `startReading` refuses while a reading
+    /// is up, and a reading on screen is exactly what "ask again" has to clear
+    /// (change 译成, press once more).
+    private func beginTranslation(_ rect: CGRect) {
+        reading = nil
+        translateArmed = false
+        diagLog("Capture text: asked at once, "
+            + (presentation == .card ? "side by side" : "in place"))
+        startReading(rect, purpose: presentation == .card ? .translate : .inPlace)
+    }
+
+    /// The globe: a selection box, and nothing else.
+    ///
+    /// 2026-11-13, twice in one evening: 「那个地球仪的『选择语言』按钮……它是不能
+    /// 有翻译功能的，只有选择功能。其实它没有按钮的作用，只是一个选择框」. So both
+    /// halves open the list, neither lights anything, and neither asks the
+    /// engine. What it chooses is read by `translateNow`, when that press comes.
+    ///
+    /// A mode already armed by `M` survives this: setting the language first and
+    /// dragging afterwards is one flow, not two.
+    private func selectLanguage() {
+        guard mode == .shot, reading != .going else { return }
+        panel = .language
+        needsDisplay = true
+    }
+
+    /// `T`: the next language in the shortlist, the way `R` walks the shapes.
+    ///
+    /// Reported 2026-11-13: 「我们现在用 T 只能跳转到"选择语言"的按钮，但是不能去
+    /// 切换语言。…你看你左侧框选比例的选择，按 R 就可以直接跳」. The ratio chip and
+    /// this one answer the same kind of question — *which of these is in force* —
+    /// and the ratio chip had a key that changed the answer while this one only
+    /// had a key that opened a list.
+    ///
+    /// One target is the floor: with a single language chosen there is nothing to
+    /// walk, so the list opens instead. A key that does nothing on some machines
+    /// is a key that reads as broken on those machines.
+    ///
+    /// The choice is written through, like the menu's: a language picked for one
+    /// capture and forgotten by the next is not a setting. And it says what it
+    /// landed on (`say`) — the chip carries no word, so otherwise two presses and
+    /// one press look exactly alike.
+    private func cycleLanguage() {
+        guard mode == .shot else { return }
+        panel = .none
+        let codes = languageShortlist
+        guard codes.count > 1 else {
+            selectLanguage()
+            return
+        }
+        let index = codes.firstIndex(of: translationLanguage).map { $0 + 1 } ?? 0
+        let code = codes[index % codes.count]
+        translationLanguage = code
+        TranslationTargets.current = code
+        // Logged for the same reason the menu's choice is: nothing on the chip
+        // says which language is in force, so "it did not change" and "it
+        // changed twice" are the same picture.
+        diagLog("Capture: 译成 → \(code)（T）")
+        say(languageNote(code))
+        needsDisplay = true
+    }
+
+    /// What the bar says when the language is walked to `code`.
+    private func languageNote(_ code: String) -> String {
+        guard let name = TranslationCatalogue.named(code)?.name else {
+            return L("The language changed")
+        }
+        return String(format: L("Now into %@"), name)
+    }
+
+    /// Says something for a moment, then puts the line back.
+    ///
+    /// Two seconds rather than one: 「译成 繁體中文」 carries a name, and a name is
+    /// read rather than recognised. A view without a window is the harness or an
+    /// off-screen preview, and it gets no clock at all — the same reason
+    /// `noteReveal` takes none: a still that changes under the camera turns every
+    /// pixel check into a coin toss.
+    private func say(_ note: String) {
+        saidNote = note
+        needsDisplay = true
+        saidTimer?.invalidate()
+        saidTimer = nil
+        guard window != nil else { return }
+        let timer = Timer(timeInterval: 2.0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.saidNote = nil
+                self.saidTimer = nil
+                self.needsDisplay = true
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        saidTimer = timer
+    }
+
+    /// The picture with its words replaced, and those words for the text exit.
+    /// The bar keeps its ordinary reading state: the check hands over the words
+    /// as text, the extra button hands over the picture.
+    ///
+    /// `leftBehind` is how many areas the engine had nothing for. They keep
+    /// their original words on the picture — painting a cover over them would
+    /// lose what they said — so the bar says how many, rather than leaving a
+    /// half-translated screenshot to be read as a bad translation.
+    ///
+    /// `base` and `boxes` are only for the arrival: the area before translation,
+    /// and the blocks that were replaced, in the order they are read. Without
+    /// them the picture is a still — which is what every pixel check wants, and
+    /// what a person watching it did not ask for.
+    func showInPlaceTranslation(_ image: CGImage?, words: String, leftBehind: Int = 0,
+                                base: CGImage? = nil, boxes: [CGRect] = []) {
+        // `readingState`, not `reading`: the guard is here to drop an answer that
+        // arrives after the reading was dismissed, and the harness photographs
+        // this state through `previewReading` instead.
+        guard readingState != nil else { return }
+        translating = false
+        refusal = nil
+        translateNoop = false
+        inPlaceImage = image
+        inPlaceBase = base
+        // Top of the area first. Vision's own order is already roughly this,
+        // but "roughly" is what a paragraph split across two columns tests.
+        inPlaceBoxes = boxes.sorted { $0.maxY > $1.maxY }
+        translateNote = leftBehind > 0
+            ? String(format: L("%d areas could not be translated"), leftBehind)
+            : nil
+        let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        reading = trimmed.isEmpty ? .nothing : .found(trimmed)
+        translation = trimmed.isEmpty ? nil : trimmed
+        // Its own key: a second translation of the same area must play again,
+        // where the card's key deliberately does not restart on a repaint.
+        answerSerial += 1
+        noteReveal(key: "in-place:\(answerSerial)", rows: inPlaceBoxes.count,
+                   animated: image != nil)
+        needsDisplay = true
+        diagLog("Capture text: in-place translation \(image == nil ? "failed" : "ready")"
+            + (inPlaceBoxes.isEmpty ? "" : " in \(inPlaceBoxes.count) block(s)"))
+    }
+
+    /// Nothing on the area is in another language.
+    ///
+    /// The selection is kept and the reading is dropped, deliberately: the
+    /// honest next move is to change 译成 and press `译` again, and a reading
+    /// on screen is exactly what stops `译` from being pressable. The sentence
+    /// says which next move, and it is the same one the card path says.
+    func inPlaceNothingToDo() {
+        translating = false
+        reading = nil
+        translation = nil
+        inPlaceImage = nil
+        inPlaceBase = nil
+        inPlaceBoxes = []
+        translateNote = nil
+        refusal = nil
+        translateNoop = true
+        needsDisplay = true
+        diagLog("Capture text: in-place — nothing in another language")
     }
 
     /// The colour door has one order only: choose it, then point at a pixel.
@@ -2991,21 +3912,30 @@ final class CaptureSurface: NSView {
         // and it is what every later step asks instead of guessing: one answer,
         // set once, so a copy and a translation can never be interleaved.
         readingPurpose = purpose
-        if purpose == .translate {
+        if purpose == .translate || purpose == .inPlace {
             translation = nil
             translating = false
             refusal = nil
             translateNoop = false
+            translateNote = nil
+            inPlaceImage = nil
+            inPlaceBase = nil
+            inPlaceBoxes = []
         }
         // The crosshair and the window highlight have nothing to say over a
         // result: the pointer is answering a question now, not choosing an area.
         // It also stops the watch drawing a cursor over a picture that is no
         // longer what is being looked at.
         endTracking()
-        onReadArea(rect)
+        if purpose == .inPlace {
+            onReadInPlace(rect)
+        } else {
+            onReadArea(rect)
+        }
         needsDisplay = true
         diagLog("Capture text: reading \(Int(rect.width))×\(Int(rect.height)) pt"
-            + (purpose == .translate ? ", to translate" : ""))
+            + (purpose == .translate ? ", to translate"
+               : purpose == .inPlace ? ", in place" : ""))
     }
 
     /// What the read had to say, or nil when it failed outright.
@@ -3035,7 +3965,10 @@ final class CaptureSurface: NSView {
     /// on the screen to be read and then on the pasteboard — and keeps nothing.
     private func finishReading() {
         guard let state = readingState, case .found(let text) = state else { return }
-        guard readingPurpose == .translate else {
+        // Both translation doors hand their words over as text: the card's
+        // check and the in-place picture's check are the same act. Only 识别
+        // hangs the words it read.
+        guard readingPurpose != .hang else {
             onFinishText(text)
             return
         }
@@ -3073,15 +4006,31 @@ final class CaptureSurface: NSView {
             diagLog("Capture text: no translation came back")
             return
         }
-        // The same words back means they are already in the language asked
-        // for — an English page on an English Mac. Switching to them would be
-        // a button that visibly does nothing, so it says so instead.
-        if case .found(let text)? = readingState, trimmed == text {
-            translateNoop = true
-            refusal = nil
-            needsDisplay = true
-            diagLog("Capture text: already in that language")
-            return
+        // An answer that is still the words that were sent is not a translation.
+        // It used to be reported as 「已经是这种语言了」, which is a different
+        // fact altogether: on 2026-11-14 a model asked for 简体中文 handed the
+        // English line straight back six times in a row, and the bar told the
+        // person their English words were already Chinese. "Already is" is
+        // said only by `showTranslationNoop()` — when the source really is the
+        // target, or the system engine answers `nothingToTranslate` — never
+        // guessed from the answer's bytes.
+        //
+        // The same two tests the in-place path uses, so a card and a picture
+        // cannot disagree about what counts as a translation: identical words
+        // long enough to be prose, or an answer still written in the script
+        // that was given when another one was asked for. The second catches
+        // 繁體 coming back 简体 with one character moved (2026-11-13), where
+        // comparing bytes alone said it had translated.
+        if case .found(let original)? = readingState {
+            let target = Locale.Language(identifier: TranslationTargets.current)
+            if CaptureController.sameWords(trimmed, as: original)
+                || SourceLanguage.untouched(trimmed, since: original, into: target) {
+                refusal = .failed
+                translateNoop = false
+                needsDisplay = true
+                diagLog("Capture text: the answer came back untranslated")
+                return
+            }
         }
         translation = trimmed
         refusal = nil
@@ -3253,7 +4202,10 @@ final class CaptureSurface: NSView {
             } else if readArmed, let rect = selection {
                 startReading(rect, purpose: .hang)
             } else if translateArmed, let rect = selection {
-                startReading(rect, purpose: .translate)
+                // The key was pressed before the area existed; this is the area
+                // arriving, and the same rule the read door follows: the drag
+                // that completes a chosen mode runs it.
+                beginTranslation(rect)
             }
             return
         }
@@ -3261,7 +4213,10 @@ final class CaptureSurface: NSView {
         // a drag, and this was not one.
         longArmed = false
         readArmed = false
-        translateArmed = false
+        // Except the translation, which is not a gesture: it says what this
+        // *area* is for, and a click is one more way of naming an area. A click
+        // that threw the mode away would make 「点一个窗口，再按 ✓ 翻译」 two
+        // presses with nothing in between.
         // A click chooses, and does not take (2026-11-03). Same rule as a drag:
         // the gesture says *what*, and Return or a second click says "now". A
         // click used to take the window under it at once, which was the only
@@ -3307,6 +4262,14 @@ final class CaptureSurface: NSView {
         // click — has to agree, or one of them silently photographs the whole
         // screen instead of handing over the value.
         guard !colourAiming, colourResult == nil else { return }
+        // A translation waiting for an area is what this press means — the
+        // whole screen is the area it gets. Every other entrance to this method
+        // does the same, because a ✓ that translated while Return photographed
+        // would be two meanings for one press.
+        if translateArmed {
+            beginTranslation(selection ?? screen.frame)
+            return
+        }
         switch target {
         case .window(let window): onPick(window)
         case .region(let rect): onFinish(rect)
@@ -3775,13 +4738,42 @@ final class CaptureSurface: NSView {
             // as "text tool", which is the editor's word for something else.
             guard mode == .shot, reading == nil else { return }
             armRead()
-        case 17:                    // T — the same words in another language
+        case 17:                    // T — which language the words come back in
             // An entrance like `L` and `W`, and a bare key for the same reason:
             // a global `T` would take that letter from every app for the length
             // of the capture, and choosing a mode only means anything while the
             // choice is still open.
-            guard mode == .shot, reading == nil else { return }
-            armTranslate()
+            //
+            // It **walks the shortlist** rather than opening it (2026-11-13,
+            // after two rounds of it opening the list): 「用 T 只能跳转到"选择
+            // 语言"的按钮，但是不能去切换语言。…按 R 就可以直接跳」. The menu is
+            // still there on the chip, for the case a key cannot serve — picking
+            // a language that is not next in line — and the globe's click is
+            // unchanged: it is a select box, and `T` is now what changes it.
+            //
+            // `reading == nil` is **not** in this guard, and that is deliberate:
+            // after a result is up the language is exactly what a person wants
+            // to change, and refusing here would make the globe dead at the one
+            // moment it is needed.
+            guard mode == .shot else { return }
+            cycleLanguage()
+        case 46:                    // M — translate, now
+            // 「我们的翻译快捷键是 M 键。按 M 键的话就应该直接去做翻译……我还必须
+            // 再按一下回车键，这就是多余了」(2026-11-13). Where the words land
+            // already has a value in force, so there is nothing to confirm: this
+            // key is the ask.
+            //
+            // It was arm-only for two rounds — the check was meant to be the one
+            // act — and that made the ordinary case cost two presses for one
+            // answer. The check is still an entrance (with an area in hand there
+            // is no armed state at all, so it can only mean "capture" again),
+            // but it is no longer the only one.
+            //
+            // `M` for the way the words come back (方式) and not `P` for the
+            // place: it is the chip, not one of its two rows, and the rows are
+            // chosen with the mouse.
+            guard mode == .shot else { return }
+            translateNow()
         case 34:                    // I — one pixel's colour, not a region
             // The same bare-key rule as `L`, `W` and `T`. `I` is what the
             // editor's eyedropper answers to, so the two doors also agree on

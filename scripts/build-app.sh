@@ -125,7 +125,7 @@ fi
 # window whose first row sits a point inside the menu bar's strip answered for
 # the menu bar, so clicking it put the line away; the strip is now only the
 # cheap test and the window server is asked what the click reached.
-VERSION="2.3.0"
+VERSION="2.4.0"
 
 # Builds one architecture and prints the binary's path.
 # The Command Line Tools for macOS 27 ship an SDK whose SwiftUI needs a macro
@@ -209,7 +209,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clothespeg</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>CFBundleVersion</key><string>16</string>
+  <key>CFBundleVersion</key><string>17</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>${LANGUAGES}</array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

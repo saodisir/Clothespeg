@@ -152,4 +152,126 @@ enum SourceLanguage {
         guard han > 0 else { return true }
         return Double(traditional) / Double(han) < 0.15
     }
+
+    // MARK: Script conversion
+
+    /// The writing system a piece of text is in, in the coarse terms a
+    /// translation's success can be judged by.
+    enum Writing: Equatable {
+        case han, kana, hangul, latin, other
+
+        static func of(_ text: String) -> Writing {
+            var counts: [Writing: Int] = [:]
+            for scalar in text.unicodeScalars where CharacterSet.letters.contains(scalar) {
+                counts[of(scalar), default: 0] += 1
+            }
+            return counts.max { $0.value < $1.value }?.key ?? .other
+        }
+
+        static func of(_ language: Locale.Language?) -> Writing {
+            switch language?.languageCode?.identifier ?? "" {
+            case "zh": return .han
+            case "ja": return .kana
+            case "ko": return .hangul
+            case "": return .other
+            default: return .latin
+            }
+        }
+
+        private static func of(_ scalar: Unicode.Scalar) -> Writing {
+            let v = scalar.value
+            if (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v) { return .han }
+            if (0x3040...0x30FF).contains(v) { return .kana }
+            if (0xAC00...0xD7A3).contains(v) { return .hangul }
+            if (0x41...0x5A).contains(v) || (0x61...0x7A).contains(v)
+                || (0x00C0...0x024F).contains(v) || (0x1E00...0x1EFF).contains(v) { return .latin }
+            return .other
+        }
+
+        /// Whether any letter in the text is written in this system.
+        ///
+        /// Different from `of(_:)`, which reports only the *dominant* script.
+        /// A Chinese answer told to keep product names, URLs and code can be
+        /// mostly Latin by letter count and still be a translation — measured
+        /// 2026-11-16, 32 Han against 56 Latin in one answer.
+        static func appears(in text: String, _ writing: Writing) -> Bool {
+            guard writing != .other else { return false }
+            return text.unicodeScalars.contains {
+                CharacterSet.letters.contains($0) && of($0) == writing
+            }
+        }
+    }
+
+    /// Whether an answer is still written the way the input was, when the target
+    /// asked for a different writing system.
+    ///
+    /// The byte test (`answer == input`) is not enough, and that is measured:
+    /// on 2026-11-13 a model asked for 繁體 handed back 简体 with one character
+    /// moved, so the two strings differed, the app called it a translation and
+    /// painted it. Script is the honest question — if the input is Latin and the
+    /// target is Chinese, an answer that is still Latin translated nothing.
+    ///
+    /// Only writes that cannot be confused with each other are judged. Two
+    /// Latin languages are not: English asked for French comes back Latin
+    /// whatever happened, so the script says nothing there. Han against kana is
+    /// not either, because Japanese is written with both. Everything else is a
+    /// real answer — Chinese asked for English that is still Chinese did not
+    /// translate, and neither did Korean asked for Chinese.
+    static func untouched(_ answer: String, since text: String, into target: Locale.Language?) -> Bool {
+        let source = Writing.of(text)
+        let out = Writing.of(answer)
+        let want = Writing.of(target)
+        guard out == source, want != source else { return false }
+        // A translation is allowed to keep the source script for product
+        // names, URLs and code — rule 3 of the prompt asks for exactly that.
+        // What it cannot do is contain *none* of the script that was asked
+        // for. 2026-11-16: a good Chinese answer full of InputTables /
+        // SuperTables / WriteBackExtreme was read as Latin by `of(_:)`, and
+        // the bar called it untranslated.
+        if Writing.appears(in: answer, want) { return false }
+        if (source == .han && want == .kana) || (source == .kana && want == .han) {
+            return false
+        }
+        return true
+    }
+}
+
+/// Simplified ↔ Traditional, converted here rather than by a language model.
+///
+/// This is a script conversion, not a translation: every character has a
+/// counterpart, the answer is exact, and ICU has been doing it on this Mac for
+/// twenty years. Sending it to a 7B model is how 「译成繁體」 came back 简体 —
+/// measured twice on 2026-11-13, once in place and once on the card — because to
+/// a model that reads both scripts the words already are in the language asked
+/// for.
+///
+/// It is also free: no key, no wire, no wait. The card path skips the engine
+/// entirely for this pair.
+enum ScriptConversion {
+    private static let toTraditional = StringTransform("Hans-Hant")
+    private static let toSimplified = StringTransform("Hant-Hans")
+
+    /// The text in the other script, or nil when this is not that pair.
+    static func convert(_ text: String, from source: Locale.Language?,
+                        to target: Locale.Language) -> String? {
+        guard source?.languageCode?.identifier == "zh",
+              target.languageCode?.identifier == "zh" else { return nil }
+        let from = source?.script?.identifier
+        let into = target.script?.identifier
+        let transform: StringTransform
+        switch (from, into) {
+        case ("Hans", "Hant"): transform = toTraditional
+        case ("Hant", "Hans"): transform = toSimplified
+        default: return nil
+        }
+        return text.applyingTransform(transform, reverse: false)
+    }
+
+    static func convert(_ texts: [String], from source: Locale.Language?,
+                        to target: Locale.Language) -> [String]? {
+        guard let first = texts.first, convert(first, from: source, to: target) != nil else {
+            return nil
+        }
+        return texts.map { convert($0, from: source, to: target) ?? $0 }
+    }
 }

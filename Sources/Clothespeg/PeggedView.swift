@@ -679,39 +679,17 @@ struct PeggedView: View {
 
     /// The icon the Finder shows for this file, or a page when it has none
     /// to show — which is the case for something that has since been moved.
+    /// Kept here as a name the drawing below reads: what it answers lives in
+    /// `PayloadCard.fileIcon`, because the drag's small card asks it too.
     private func fileIcon(for url: URL) -> NSImage {
-        let generic = NSWorkspace.shared.icon(for: .data)
-        // A missing file's icon is a question mark, which reads as an error
-        // rather than as the thing itself.
-        guard FileManager.default.fileExists(atPath: url.path) else { return generic }
-        // The icon of what the file is, not of its name: a document renamed
-        // from .txt to .md should look like what it now is.
-        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)
-            ?? .data
-        return NSWorkspace.shared.icon(for: type)
+        PayloadCard.fileIcon(for: url)
     }
 
-    /// What the card calls itself.
-    ///
-    /// One file is named by itself, extension and all: the extension is half
-    /// of what a file is, and a card reading "Desktop" for something the
-    /// Finder calls "Desktop.pdf" is a card that cannot be told apart from
-    /// the folder.
-    ///
-    /// Several are named after where they are, because that is what tells
-    /// them apart — three PDFs from three folders are three documents and
-    /// their names say nothing. When they are not all in the same place there
-    /// is no one place, so the number of places is what the card says.
+    /// What the card calls itself. The words come from the payload, because
+    /// the thing under the pointer during a drag is the same stack and has
+    /// to say the same thing about it.
     private var fileName: String {
-        let files = item.payload.files
-        guard let first = files.first else { return "" }
-        if files.count == 1 { return first.lastPathComponent }
-        let folders = Set(files.map { $0.deletingLastPathComponent().lastPathComponent })
-        if folders.count == 1 { return folders.first ?? first.lastPathComponent }
-        // Not translated: it is a number and a noun that only appear when
-        // a selection is spread across several folders, and a card that says
-        // "4 places" says it in any language the Finder does.
-        return "\(folders.count) \(folders.count == 1 ? "place" : "places")"
+        item.payload.fileHeadline
     }
 
     /// What the corner says this will do: somewhere to go for a folder or a

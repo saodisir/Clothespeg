@@ -127,6 +127,38 @@ final class Translator {
         }
     }
 
+    /// One round trip for a screenful of separate text blocks.
+    ///
+    /// A translation painted back over the pixels needs one answer per block,
+    /// and asking for each line in turn would put a spinner in front of every
+    /// one. The system's batch request takes the whole screen at once — about
+    /// 200 ms for twelve blocks on this Mac. The session and the download
+    /// sheet are the same ones `translate(_:from:to:)` uses; a second way in
+    /// would be a second place for a missing language pack to hang for ever.
+    func translateBlocks(_ texts: [String], from source: Locale.Language?,
+                         to target: Locale.Language?) async throws -> [String] {
+        guard !texts.isEmpty else { return [] }
+        let availability = LanguageAvailability()
+        let status: LanguageAvailability.Status
+        if let source {
+            status = await availability.status(from: source, to: target)
+        } else {
+            status = (try? await availability.status(
+                for: texts.joined(separator: "\n"), to: target)) ?? .supported
+        }
+        guard status != .unsupported else { throw TranslationRefusal.unsupportedPair }
+
+        let session = await session(from: source, to: target)
+        if status != .installed {
+            showHostWindow()
+            try await session.prepareTranslation()
+            parkHostWindow()
+        }
+        let requests = texts.map { TranslationSession.Request(sourceText: $0) }
+        let answers = try await session.translations(from: requests)
+        return answers.map { $0.targetText }
+    }
+
     func session(from source: Locale.Language?,
                  to target: Locale.Language?) async -> TranslationSession {
         if let served, served.0 == source, served.1 == target { return served.2 }

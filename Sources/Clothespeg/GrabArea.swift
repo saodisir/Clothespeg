@@ -130,6 +130,7 @@ struct GrabArea: NSViewRepresentable {
             line.prune()
         }
         view.onTrash = { line.trash(id) }
+        view.onBlocked = { url in line.explainBlockedDrag(url) }
         // The corner mark, which is the second door into the same place for a
         // note: a magnifier over text you cannot edit is the wrong promise.
         view.onZoom = {
@@ -237,6 +238,14 @@ struct GrabArea: NSViewRepresentable {
                       let link = URL(string: item.payload.captionText ?? ""), link.scheme != nil {
                 menu.addItem(ClosureMenuItem(L("Open in Browser")) { NSWorkspace.shared.open(link) })
             }
+            // The permission a card of files needs, and the one thing this
+            // app cannot ask for a second time: once the system's question
+            // is answered no, the switch is in System Settings only. Shown
+            // only while it is actually missing, so the menu of a card that
+            // drags out fine is exactly the menu it always had.
+            if FileAccess.firstBlocked(in: item.payload.files) != nil {
+                menu.addItem(ClosureMenuItem(L("File Access…")) { FileAccess.openSettings() })
+            }
             let inInbox = line.isInInbox(id)
             if inInbox {
                 menu.addItem(ClosureMenuItem(L("Save to Desktop")) { line.saveToDesktop(id) })
@@ -289,6 +298,9 @@ final class GrabView: NSView, NSDraggingSource {
     /// Space over a card: show it at size. A closure rather than a direct
     /// call so the view does not need to know what it is looking at.
     var onZoom: () -> Void = {}
+    /// A drag this app cannot carry out, because it has no permission to
+    /// read the file. Given the file, so the answer can name its folder.
+    var onBlocked: (URL) -> Void = { _ in }
     var menuProvider: () -> NSMenu = { NSMenu() }
 
     /// The line's panel cannot become key, so this view never receives a key
@@ -305,6 +317,14 @@ final class GrabView: NSView, NSDraggingSource {
     /// the mouse comes up, so the card is not carried off the line by the
     /// same gesture that is choosing a place in the recording.
     private var seeking = false
+    /// Which context the window server last asked about, so the log can tell
+    /// a drag that never left this app from one that reached the Finder and
+    /// was refused there. A drag that ends `operation 0` is only diagnosable
+    /// with that difference written down.
+    private var lastContextRaw: Int?
+    /// Whether this drag has already dumped the dragging pasteboard. Same
+    /// reason as the flag above: said once, at the first move.
+    private var loggedPasteboard = false
 
     /// How long you hold before Markup opens. Long enough not to fire on a
     /// slow click, short enough to feel deliberate.
@@ -609,11 +629,25 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = true
         endPress()
 
-        // One dragging item per writer, so several files arrive as several
-        // files. A single item carrying several paths arrives as one thing
-        // with paths in it, and a target has no way to make that into a
-        // copy of three documents — which is why dragging a card of several
-        // did nothing while dragging one worked.
+        // A card whose file this app cannot read is a card the Finder will
+        // refuse, and the refusal comes back with nothing said: the drag
+        // flies back and the reason never surfaces (2026-11-07 — files
+        // copied out of `~/Downloads`, which the system guards and this app
+        // had never been granted). So it is asked before the session
+        // starts, where there is room to answer: no drag is begun, and the
+        // line names the folder and offers the switch that fixes it.
+        if let blocked = FileAccess.firstBlocked(in: payload.files) {
+            diagLog("Drag blocked: no access to \(blocked.path)")
+            // Out of the mouse event, and out of the drag's tracking loop:
+            // the answer is modal, and a modal session started from inside
+            // a press is a half-finished press.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.onBlocked(blocked) }
+            }
+            return
+        }
+        // One dragging item per writer. A card of one file is one item, and a
+        // card of several is one item per file — see `fileWriters`.
         let items: [NSDraggingItem]
         let writers = fileWriters
         if !writers.isEmpty {
@@ -621,26 +655,65 @@ final class GrabView: NSView, NSDraggingSource {
         } else if let writer = pasteboardWriter {
             items = [NSDraggingItem(pasteboardWriter: writer)]
         } else {
+            // Said rather than silent: a press that pulled and got nothing is
+            // the question this log has to answer (the 2026-11-07 report of a
+            // card of several files that would not come off the line).
+            diagLog("Drag abandoned: nothing to carry (\(payload.files.count) files)")
             return
         }
-        // A text card has no thumbnail to drag with, so it goes as a small
-        // card of its own rather than as nothing at all. Several files share
-        // one picture of the stack, since that is what the card shows.
-        let contents = dragImage ?? textDragImage
-        for (offset, item) in items.enumerated() {
-            var frame = imageFrame()
-            // Fanned, so a pile of several is visible as several on the way
-            // out; stacked exactly, they would look like one.
-            if items.count > 1 {
-                frame.origin.x -= CGFloat(offset) * 3
-                frame.origin.y -= CGFloat(offset) * 3
-            }
-            item.setDraggingFrame(frame, contents: contents)
+        // What the target will see, and how many of it. A drag of several
+        // files is several items, one per file, so the count here is the
+        // number of things a drop should produce. The probe pasteboard is
+        // only asked what the writers would offer; nothing is written to it.
+        let probe = NSPasteboard(name: NSPasteboard.Name("app.clothespeg.dragprobe"))
+        let carried = writers.first.map {
+            $0.writableTypes(for: probe).map(\.rawValue).joined(separator: ",")
+        }
+        diagLog("Drag start: \(items.count) item(s), types \(carried ?? "text")")
+        // What follows the pointer. A picture is carried as itself; a card of
+        // files as the pile the line draws; a snippet as a small sheet of its
+        // own words.
+        let contents = ghostImage
+        let frame = imageFrame(for: contents)
+        // What picture it is carrying, and how big: an image that failed to
+        // draw is a drag the system fills in from the pasteboard instead, and
+        // that looks like a file icon and a name per item rather than a card.
+        diagLog("Drag ghost: \(Int(contents.size.width))x\(Int(contents.size.height)) in \(Int(frame.width))x\(Int(frame.height))")
+        Self.dumpGhost(contents)
+        // One picture for the whole drag, however many items carry it.
+        //
+        // The system draws one picture per item, so a card of twenty files is
+        // twenty pictures on screen — the 2026-11-07 "column of white tiles",
+        // and before that "four white blocks", and before that twenty file
+        // names. Three rounds went into this and the first two were wrong for
+        // the same reason: they tried to make the extra pictures *invisible*
+        // instead of *absent*.
+        //
+        // - `NSImage()` is not absent. It is an image with no bitmap, and the
+        //   dragging machinery drew the pasteboard's own representation in its
+        //   place: a file icon with a name under it, once per item.
+        // - A fully transparent (or nearly transparent) full-size image is
+        //   still an image, and each one still gets its own shadow drawn.
+        // - `draggingFormation = .stack` is not the answer either. The SDK
+        //   says `.stack` is "laid out overlapping **diagonally**", which is a
+        //   cascade, not a stack; `.none` keeps the frames as given, and
+        //   `.pile` rotates them at random.
+        //
+        // What the API actually offers is `contents: nil`, which the header
+        // documents as "To hide this item" — meaning the item stays on the
+        // pasteboard (the file is still carried, the drop still produces it)
+        // while the dragging machinery draws nothing for it. That is the only
+        // version of "one shadow" that does not depend on where the system
+        // decides to put the others.
+        for (index, item) in items.enumerated() {
+            item.setDraggingFrame(frame, contents: index == 0 ? contents : nil)
         }
         let session = beginDraggingSession(with: items, event: event, source: self)
         // Released where nothing accepts it: it flies back to the line.
         session.animatesToStartingPositionsOnCancelOrFail = true
         GrabView.isDragging = true
+        lastContextRaw = nil
+        loggedPasteboard = false
         onDragStart()
     }
 
@@ -669,14 +742,29 @@ final class GrabView: NSView, NSDraggingSource {
     /// else by copying the card instead.
     /// What goes on the dragboard.
     ///
-    /// Files go out as `NSURL`s rather than as one item holding a
-    /// newline-separated list of paths. The list is what the pasteboard
-    /// carries and what a paste reads, but a drag is not a paste: the target
-    /// asks for objects and takes the URLs among them, and a single item
-    /// carrying three lines arrives as one object with three paths in it,
-    /// which is a thing no target knows what to do with. Several files were
-    /// dropped and nothing happened; the Finder's own drag is several URLs
-    /// and this is now the same.
+    /// Files go out as one `NSURL` each, which is the shape every target
+    /// takes and the shape a card of one file has always used.
+    ///
+    /// A card of several files goes out the same way, and that is where the
+    /// 2026-11-07 report came from, so the two readings are written down
+    /// here rather than left to be re-derived:
+    ///
+    /// - The board was dumped at the first move and it was correct — three
+    ///   items with three `public.file-url`, eleven with eleven, every file
+    ///   present and readable — and the Finder still answered operation 0,
+    ///   the card flying back, while the same app's card of ONE file was
+    ///   copied. So the data was never the problem.
+    /// - The one item that failed carried a single `public.file-url` too, so
+    ///   it was not the count either. What every failing drag had in common
+    ///   was where the files were: `~/Downloads`. What every working drag
+    ///   had in common was the app's own folder. That is a folder the system
+    ///   guards, and this app has never read a file it only points at, so it
+    ///   has never been granted anything — see `FileAccess`.
+    ///
+    /// `NSFilenamesPboardType` was the other candidate and is now closed:
+    /// `NSPasteboardItem.setPropertyList` refuses it on modern macOS
+    /// ("not a valid UTI string. Cannot set data for an invalid UTI"), so a
+    /// dragged list of paths cannot be written at all any more.
     private var fileWriters: [NSPasteboardWriting] {
         payload.files.map { $0 as NSURL }
     }
@@ -754,6 +842,33 @@ final class GrabView: NSView, NSDraggingSource {
 
     // MARK: NSDraggingSource
 
+    /// Asks for a pile, because a pile is what the card should look like.
+    ///
+    /// The SDK's own words for the four options:
+    ///
+    ///     None  — drag images maintain their set positions relative to each other
+    ///     Pile  — placed on top of each other with random rotations
+    ///     List  — laid out vertically, non-overlapping with the left edges aligned
+    ///     Stack — laid out overlapping diagonally
+    ///
+    /// `.stack` reads like "stacked" and means a diagonal cascade; `.none`
+    /// leaves them wherever they were put, which for twelve items is a spread.
+    /// `.pile` is the only one that is literally "on top of each other", and
+    /// it is what this card means: one thing, made of several files.
+    ///
+    /// The honest limit of this line: the drag's destination picks the
+    /// formation that is actually used (`NSDraggingInfo.draggingFormation`
+    /// defaults to this one, and the Finder overrides it). Three drags logged
+    /// with identical settings on 2026-11-07 came out as one tile, a column,
+    /// and a scatter, and in none of them was this app's own picture on
+    /// screen — the Finder had replaced every item's image with that file's
+    /// icon. So this is a request, not a guarantee; the only thing the source
+    /// really controls is how many items there are, one per file.
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        session.draggingFormation = .pile
+        diagLog("Drag formation: pile, began at \(Int(screenPoint.x)),\(Int(screenPoint.y))")
+    }
+
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         // One answer for every card: copy, and only copy. A drag hands the
@@ -775,8 +890,48 @@ final class GrabView: NSView, NSDraggingSource {
         // AppKit lets the destination pick from this set, and no more. ⌥ in
         // Finder means "force a copy" anyway; ⌘ is the one that forces a move.
         // If a "move with a modifier" ever comes back, it belongs here.
-        guard context == .outsideApplication else { return [] }
+        guard context == .outsideApplication else {
+            // Said on every change rather than once per drag: a drag that
+            // ends `operation 0` and a drag that never left this app's own
+            // windows look identical in the record otherwise, and they are
+            // different problems (2026-11-07).
+            if lastContextRaw != context.rawValue {
+                lastContextRaw = context.rawValue
+                diagLog("Drag context: inside this app — nothing accepts it")
+            }
+            return []
+        }
+        if lastContextRaw != context.rawValue {
+            lastContextRaw = context.rawValue
+            diagLog("Drag context: outside this app, offering copy")
+        }
         return .copy
+    }
+
+    /// What actually reached the drag pasteboard, said once per drag.
+    ///
+    /// A drop the Finder refuses looks exactly the same whether the items
+    /// never made it onto the pasteboard or the target would not take them.
+    /// This asks the pasteboard itself, at the first move: how many items it
+    /// carries, what each of them offers, and whether the files behind them
+    /// can still be read from here.
+    func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        guard !loggedPasteboard else { return }
+        loggedPasteboard = true
+        let board = session.draggingPasteboard
+        let items = board.pasteboardItems ?? []
+        let types = items.map { $0.types.map(\.rawValue).joined(separator: "+") }
+            .joined(separator: " / ")
+        let urls = (board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL])?.count ?? -1
+        diagLog("Drag pasteboard: \(items.count) item(s), \(urls) url(s), types [\(types)]")
+        for url in payload.files {
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            let readable = FileManager.default.isReadableFile(atPath: url.path)
+            let open = FileAccess.canOpen(url)
+            var isFolder: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder)
+            diagLog("Drag file: \(url.lastPathComponent) at \(url.deletingLastPathComponent().path), exists \(exists), readable \(readable), openable \(open), folder \(isFolder.boolValue)")
+        }
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
@@ -784,6 +939,13 @@ final class GrabView: NSView, NSDraggingSource {
         startedDrag = false
         downPoint = nil
         log.notice("Drag ended with operation \(operation.rawValue, privacy: .public)")
+        // The same line in the file log, for the report that needs it: an
+        // operation of zero here is a drag the target refused, and the
+        // absence of any line at all is a drag that never started. The point
+        // is the one it was let go at, in screen coordinates — a refusal
+        // over this app's own panel and a refusal over the Desktop are not
+        // the same thing.
+        diagLog("Drag ended: operation \(operation.rawValue) at \(Int(screenPoint.x)),\(Int(screenPoint.y))")
         onDragEnd()
         // The move and delete branches below are unreachable while the mask
         // offers copy alone. They stay because they are the whole of what a
@@ -801,12 +963,83 @@ final class GrabView: NSView, NSDraggingSource {
         }
     }
 
-    /// The drag preview keeps the photo's aspect ratio inside the card.
-    private func imageFrame() -> NSRect {
-        guard let size = dragImage?.size, size.width > 0, size.height > 0 else { return bounds }
+    /// The drag preview keeps the picture's aspect ratio inside the card.
+    private func imageFrame(for image: NSImage) -> NSRect {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return bounds }
         let scale = min(bounds.width / size.width, bounds.height / size.height)
         let w = size.width * scale, h = size.height * scale
         return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+    }
+
+    /// What the card looks like while it is being carried.
+    private var ghostImage: NSImage {
+        if let dragImage { return dragImage }
+        if !payload.files.isEmpty { return fileDragImage }
+        return textDragImage
+    }
+
+    /// A card of files, carried: the pile the line draws for it, and the name
+    /// under the pile.
+    ///
+    /// It used to be `textDragImage`, which spells out the pasteboard string
+    /// — and for a card of files that string is a list of `file://` URLs, so
+    /// dragging three of them showed three paragraphs of URL on top of each
+    /// other (2026-11-07, twice over: the words were wrong and there was one
+    /// copy of them per file). The count is not drawn here either: the system
+    /// badges a drag of several with its own, and the pile says it again.
+    private var fileDragImage: NSImage {
+        let size = NSSize(width: 104, height: 88)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        NSColor(PayloadCard.paper).setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 9, yRadius: 9).fill()
+
+        let icons = payload.files.prefix(Self.ghostStackLimit).map(PayloadCard.fileIcon(for:))
+        let iconSize = NSSize(width: 34, height: 41)
+        let slots = max(icons.count, 1)
+        for (index, icon) in icons.enumerated() {
+            // The same fan the card itself uses, scaled down: the middle of
+            // the pile stands a little taller than its ends.
+            let x = (size.width - iconSize.width) / 2
+                + CGFloat(index) * 8 - CGFloat(slots - 1) * 4
+            let y = size.height - 10 - iconSize.height
+                - (CGFloat(slots) / 2 - abs(CGFloat(index) - CGFloat(slots) / 2)) * 1.5
+            icon.draw(in: NSRect(x: x, y: y, width: iconSize.width, height: iconSize.height))
+        }
+
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.lineBreakMode = .byTruncatingMiddle
+        let words = NSString(string: payload.fileHeadline)
+        words.draw(in: NSRect(x: 6, y: 7, width: size.width - 12, height: 12),
+                   withAttributes: [
+                       .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+                       .foregroundColor: NSColor.labelColor,
+                       .paragraphStyle: style,
+                   ])
+        return image
+    }
+
+    /// How many icons the carried card shows. The line's card has the width
+    /// for four; this one is smaller and shows three, which is already a pile.
+    private static let ghostStackLimit = 3
+
+    /// Writes the picture this drag handed over, once per drag, beside the log.
+    ///
+    /// The only question left about the 2026-11-07 shadows is whether the tiles
+    /// on the Desktop are this image drawn once per item or the system's own
+    /// fallback for an item it judged to have no picture. A screenshot cannot
+    /// tell those apart; this file can. Kept until that question is closed.
+    private static func dumpGhost(_ image: NSImage) {
+        #if DEBUG
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: ClothespegLog.directoryURL.appendingPathComponent("drag-ghost.png"))
+        #endif
     }
 }
 

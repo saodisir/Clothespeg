@@ -35,6 +35,11 @@
 "Markup" = "Markup";
 "Show in Finder" = "Show in Finder";
 "Save to Desktop" = "Save to Desktop";
+"File Access…" = "File Access…";
+"“%@” needs your permission" = "“%@” needs your permission";
+"macOS decides that in Privacy settings. Allow it, then drag the card again." = "macOS decides that in Privacy settings. Allow it, then drag the card again.";
+"Grant Access" = "Grant Access";
+"Not Now" = "Not Now";
 "Discard" = "Discard";
 "Copy QR code contents" = "Copy QR code contents";
 "Open Link" = "Open Link";
@@ -331,11 +336,22 @@
 "Ratio · the shape of the frame" = "Ratio · the shape of the frame";
 "Long · scroll down, Return when done" = "Long · scroll down, Return when done";
 "Text · the words in the area" = "Text · the words in the area";
-"Translate · the same words, another language" = "Translate · the same words, another language";
-"Language · which one a press translates into" = "Language · which one a press translates into";
+"Language · which one it translates into" = "Language · which one it translates into";
+"Translate · Return, a double-click, or this button · esc leaves" = "Translate · Return, a double-click, or this button · esc leaves";
+"Translate" = "Translate";
+/* Capture · `T` walks the shortlist, and the bar says where it landed for two
+   seconds. The chip has no word on it, so this is the only place the change is
+   visible at all. */
+"Now into %@" = "Now into %@";
+"The language changed" = "The language changed";
 "Edit · take it and open the editor" = "Edit · take it and open the editor";
 "Again · put the last frame back" = "Again · put the last frame back";
 "Capture · Return, a double-click, or this button · esc leaves without one" = "Capture · Return, a double-click, or this button · esc leaves without one";
+/* Capture · the folded bar (the one a reading leaves behind). The second exit
+   is the only control there whose symbol cannot say what it does. */
+"Both texts · the words and their translation" = "Both texts · the words and their translation";
+"The translated picture" = "The translated picture";
+"Leave without taking it" = "Leave without taking it";
 "Scroll up or down · Return when done" = "Scroll up or down · Return when done";
 "Drag the area that should keep growing" = "Drag the area that should keep growing";
 "That scroll was too fast to follow — go a little slower." = "Too fast to follow · slower, with an overlap";
@@ -352,12 +368,25 @@
 "The words in this area" = "The words in this area";
 "Drag the area to translate" = "Drag the area to translate";
 "Translating…" = "Translating…";
+"Translating into %@…" = "Translating into %@…";
 "The words, in the other language" = "The words, in the other language";
+"The words, in %@" = "The words, in %@";
 "Those words could not be translated" = "Those words could not be translated";
 "Cannot tell which language these words are in" = "Cannot tell which language these words are in";
 "This Mac cannot translate between those two languages" = "This Mac cannot translate between those two languages";
 "Those words are already in this language" = "Already in this language · change it in Settings";
 "More text — all of it is in the clipboard" = "More text — all of it is in the clipboard";
+
+/* Capture · where the translation goes (P17): the chipped menu beside 译.
+   Short enough to be scanned in a two-row menu; the longer sentence lives in
+   the chip's tool tip. */
+"Where the translation goes" = "Where the translation goes";
+"Side by side" = "Side by side";
+"In place" = "In place";
+/* Said on the bar when an in-place translation covered only part of the area:
+   it carries a count, and the bar's width is pinned to its longest line, so it
+   must not be longer than the noop sentence above. */
+"%d areas could not be translated" = "%d left untranslated";
 
 /* Clipboard page — the 译 button's language, engine and key */
 "Translation" = "Translation";

@@ -334,6 +334,10 @@ final class ClipboardWatcher {
            let payload = ownCopy(of: only) {
             return payload
         }
+        // The card will hand these files back out when it is dragged, so the
+        // app has to be able to open them; this is where it asks (once per
+        // folder, and only the first time). See FileAccess.
+        FileAccess.claim(unique)
         return .file(unique)
     }
 
@@ -439,8 +443,33 @@ final class ClipboardWatcher {
         guard let string = pb.string(forType: .string) else { return nil }
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= Self.maxTextCharacters else { return nil }
+        // Said before the card hangs rather than after: the types are the only
+        // thing a copy leaves behind that tells one writer from another, and
+        // the question this line answers was asked for a month without it —
+        // see `noteTextTypes`.
+        noteTextTypes(pb, characters: trimmed.count)
         return (.text(trimmed, isCode: Self.looksLikeCode(trimmed)),
                 RichText.from(pasteboard: pb))
+    }
+
+    /// Names what rode on the pasteboard beside the words, every time words
+    /// hang.
+    ///
+    /// The pasteboard will not say who wrote it, and this is the next best
+    /// thing: a tool that wants its own copy back rides a private type beside
+    /// the text, while a plain copy of plain text carries nothing but
+    /// `public.utf8-plain-text` and its old alias. Those two look identical
+    /// from the outside, which is why a card of placeholder words read as a
+    /// mystery for weeks — the answer was on the pasteboard the whole time,
+    /// and nothing was writing it down. One line per copied snippet, and only
+    /// the names: a type's size costs a full read of it, and a large one is
+    /// not worth decoding to learn nothing.
+    private func noteTextTypes(_ pb: NSPasteboard, characters: Int) {
+        let app = NSWorkspace.shared.frontmostApplication
+        let who = [app?.localizedName, app?.bundleIdentifier].compactMap { $0 }
+        let types = (pb.types ?? []).map(\.rawValue).joined(separator: ", ")
+        diagLog("Text card from " + (who.isEmpty ? "nowhere" : who.joined(separator: " "))
+            + ", \(characters) character(s), types: \(types)")
     }
 
     /// A guess at whether this text wants a monospaced face: it runs over

@@ -186,6 +186,36 @@ MainActor.assumeIsolated {
         print(report)
         exit(0)
     }
+    // In-place translation probe: the batch engine and the repaint, from this
+    // binary rather than from a standalone script that happens to compile the
+    // same sources. A session that never arrives is a capture that spins.
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_INPLACE_PROBE"] {
+        let environment = ProcessInfo.processInfo.environment
+        let source = environment["CLOTHESPEG_INPLACE_IMAGE"] ?? "/tmp/clothespeg-b-original.png"
+        let picture = environment["CLOTHESPEG_INPLACE_OUT"] ?? "/tmp/clothespeg-inplace.png"
+        let report: String
+        if #available(macOS 15.0, *) {
+            report = InPlaceProbe.run(image: source, picture: picture)
+        } else {
+            report = "in-place probe: this macOS has no Translation framework"
+        }
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    // Where the boxes came from, before anything is glued together. Offline:
+    // the grouping is the part that decides whether a two-column page keeps its
+    // columns, and that question must not cost an engine round trip.
+    #if DEBUG
+    if let path = ProcessInfo.processInfo.environment["CLOTHESPEG_TEXT_PROBE"] {
+        let source = ProcessInfo.processInfo.environment["CLOTHESPEG_INPLACE_IMAGE"]
+            ?? "/tmp/clothespeg-b-original.png"
+        let report = TextProbe.run(image: source)
+        try? report.write(toFile: path, atomically: true, encoding: .utf8)
+        print(report)
+        exit(0)
+    }
+    #endif
     // Keychain and wire probe: whether a key survives a round trip through the
     // login keychain from *this* binary — an ad-hoc signature cannot read back
     // what it wrote (errSecMissingEntitlement, -34018) — and, when a key is
@@ -333,12 +363,15 @@ MainActor.assumeIsolated {
                                      selected: env["CLOTHESPEG_CAPTURE_SELECT"] != nil
                                         || env["CLOTHESPEG_CAPTURE_READ"] != nil,
                                      aspect: aspect,
-                                     // `language` opens the shortlist; any
-                                     // other value opens the shapes, which is
-                                     // what this variable meant before there
-                                     // were two of them.
+                                     // `language` opens the shortlist and
+                                     // `presentation` the two ways a
+                                     // translation can come back; any other
+                                     // value opens the shapes, which is what
+                                     // this variable meant before there were
+                                     // three of them.
                                      panel: env["CLOTHESPEG_CAPTURE_PANEL"]
-                                        .map { $0 == "language" ? "language" : "ratio" },
+                                        .flatMap { ["language", "presentation"].contains($0)
+                                            ? $0 : "ratio" },
                                      long: env["CLOTHESPEG_CAPTURE_LONG"].flatMap(Int.init),
                                      read: env["CLOTHESPEG_CAPTURE_READ"],
                                      note: env["CLOTHESPEG_CAPTURE_NOTE"]
@@ -350,7 +383,8 @@ MainActor.assumeIsolated {
                                      colourTaken: env["CLOTHESPEG_CAPTURE_COLOUR_TAKEN"] != nil,
                                      synthetic: env["CLOTHESPEG_CAPTURE_SYNTHETIC"] != nil,
                                      pale: env["CLOTHESPEG_CAPTURE_PALE"] != nil,
-                                     reveal: env["CLOTHESPEG_CAPTURE_REVEAL"].flatMap(Double.init)))
+                                     reveal: env["CLOTHESPEG_CAPTURE_REVEAL"].flatMap(Double.init),
+                                     inPlace: env["CLOTHESPEG_CAPTURE_INPLACE"] != nil))
         exit(0)
     }
     let delegate = AppDelegate()
